@@ -1,0 +1,3 @@
+import {useEffect,useState} from 'react'; import {api,Snapshot,Asset} from '../lib/api';
+export function useWorld(){const [snap,setSnap]=useState<Snapshot|null>(null);const [assets,setAssets]=useState<Asset[]>([]);const [connected,setConnected]=useState(false);
+useEffect(()=>{let stop=false; Promise.all([api.snapshot(false),api.assets()]).then(([s,a])=>{if(!stop){setSnap(s);setAssets(a.assets);setConnected(true)}}).catch(()=>setConnected(false)); const es=new EventSource('/api/stream'); es.addEventListener('telemetry',(e:any)=>{if(!stop){setSnap(JSON.parse(e.data));setConnected(true)}}); es.onerror=()=>setConnected(false); return()=>{stop=true;es.close()}},[]); return{snap,assets,connected,refresh:()=>api.snapshot(false).then(setSnap)}}
