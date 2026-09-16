@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "vitest run"
+    "test": "vitest run src",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@react-three/drei": "^9.117.3",
