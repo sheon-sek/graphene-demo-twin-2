@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   import:
-    if: ${{ hashFiles('.bootstrap/chunk-*') != '' }}
+    if: ${{ hashFiles('.bootstrap/READY') != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout bootstrap commit
@@ -22,8 +22,8 @@ jobs:
         run: |
           set -euo pipefail
           workdir="$(mktemp -d)"
-          cat .bootstrap/chunk-* | base64 --decode > "$RUNNER_TEMP/graphene-repo.tar.gz"
-          tar -xzf "$RUNNER_TEMP/graphene-repo.tar.gz" -C "$workdir"
+          cat .bootstrap/chunk-* | base64 --decode > "$RUNNER_TEMP/graphene-repo.tar.xz"
+          tar -xJf "$RUNNER_TEMP/graphene-repo.tar.xz" -C "$workdir"
 
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a "$workdir"/. .
