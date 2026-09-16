@@ -132,8 +132,10 @@ async def serve(
                         f"OPC UA type changed for {path}: "
                         f"{variant_type.name} -> {current_variant_type.name}"
                     )
-                data_value = ua.DataValue(ua.Variant(value, variant_type))
-                data_value.SourceTimestamp = source_timestamp
+                data_value = ua.DataValue(
+                    ua.Variant(value, variant_type),
+                    SourceTimestamp=source_timestamp,
+                )
                 await variable.write_value(data_value)
             await asyncio.sleep(1)
     finally:
