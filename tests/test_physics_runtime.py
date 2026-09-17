@@ -1,40 +1,97 @@
 import json
+
 from graphene_demo_twin.config import ROOT
 from graphene_demo_twin.domain.model import DomainModel, parse_utc
 from graphene_demo_twin.runtime.engine import RuntimeEngine
 
 
 def load_model():
-    m=json.loads((ROOT/'config/generated/graphene-coverage-manifest.json').read_text())
-    t=json.loads((ROOT/'config/generated/graphene-instance-topology.json').read_text())
-    return m,DomainModel(m,t)
+    manifest = json.loads((ROOT / "config/generated/graphene-coverage-manifest.json").read_text())
+    topology = json.loads((ROOT / "config/generated/graphene-instance-topology.json").read_text())
+    return manifest, DomainModel(manifest, topology)
+
 
 def test_meter_pqs_pf_consistency():
-    m,model=load_model(); snap=model.calculate('2026-08-28T06:00:00Z')
-    inst=next(p['instancePath'] for p in m['points'] if p['typeId']=='GPM96' and p['memberName']=='P1')
-    pts={p['memberName']:p for p in m['points'] if p['instancePath']==inst}
-    for phase in ('1','2','3'):
-        if all(k+phase in pts for k in ('P','Q','S','PF')):
-            p=snap.signals[pts['P'+phase]['signalKey']]; q=snap.signals[pts['Q'+phase]['signalKey']]; ss=snap.signals[pts['S'+phase]['signalKey']]; pf=snap.signals[pts['PF'+phase]['signalKey']]
-            assert abs(ss*ss-(p*p+q*q))/max(1,ss*ss) < .002
-            assert abs(p/ss-pf) < .002
+    manifest, model = load_model()
+    snapshot = model.calculate("2026-08-28T06:00:00Z")
+    instance = next(
+        point["instancePath"]
+        for point in manifest["points"]
+        if point["typeId"] == "GPM96" and point["memberName"] == "P1"
+    )
+    points = {point["memberName"]: point for point in manifest["points"] if point["instancePath"] == instance}
+    for phase in ("1", "2", "3"):
+        if all(prefix + phase in points for prefix in ("P", "Q", "S", "PF")):
+            p = snapshot.signals[points["P" + phase]["signalKey"]]
+            q = snapshot.signals[points["Q" + phase]["signalKey"]]
+            apparent = snapshot.signals[points["S" + phase]["signalKey"]]
+            pf = snapshot.signals[points["PF" + phase]["signalKey"]]
+            assert abs(apparent * apparent - (p * p + q * q)) / max(1, apparent * apparent) < 0.002
+            assert abs(p / apparent - pf) < 0.002
+
 
 def test_chiller_output_power_cop_invariant():
-    m,model=load_model(); snap=model.calculate('2026-08-28T06:00:00Z')
-    inst=next(p['instancePath'] for p in m['points'] if p['typeId']=='Chiller' and p['memberName']=='COP')
-    pts={p['memberName']:p for p in m['points'] if p['instancePath']==inst or (p['origin']=='twin-extension' and p['instancePath']==inst)}
-    power=snap.signals[pts['Input Power']['signalKey']]; cop=snap.signals[pts['COP']['signalKey']]; out=snap.signals[pts['Cooling Output']['signalKey']]
-    assert abs(out-power*cop) < .1
+    manifest, model = load_model()
+    snapshot = model.calculate("2026-08-28T06:00:00Z")
+    instance = next(
+        point["instancePath"]
+        for point in manifest["points"]
+        if point["typeId"] == "Chiller" and point["memberName"] == "COP"
+    )
+    points = {
+        point["memberName"]: point
+        for point in manifest["points"]
+        if point["instancePath"] == instance
+    }
+    power = snapshot.signals[points["Input Power"]["signalKey"]]
+    cop = snapshot.signals[points["COP"]["signalKey"]]
+    output = snapshot.signals[points["Cooling Output"]["signalKey"]]
+    assert abs(output - power * cop) < 0.2
+
+
+def test_cooling_network_balance_closes_and_drives_facility_power():
+    _, model = load_model()
+    snapshot = model.calculate("2026-08-28T06:00:00Z")
+    assert snapshot.world is not None
+    balance = snapshot.world.balance
+    assert abs(balance.cooling_demand_kw - balance.cooling_delivered_kw - balance.unmet_cooling_kw) < 0.01
+    assert abs(snapshot.site["plantLoadKw"] - balance.cooling_plant_power_kw) < 0.01
+    expected_facility = snapshot.site["itLoadKw"] + balance.cooling_plant_power_kw + balance.non_cooling_aux_kw
+    assert abs(snapshot.site["facilityLoadKw"] - expected_facility) < 0.01
+    assert abs(snapshot.site["pue"] - snapshot.site["facilityLoadKw"] / snapshot.site["itLoadKw"]) < 0.002
+
+
+def test_physical_world_is_deterministic_random_access():
+    _, model = load_model()
+    first = model.calculate("2026-08-28T06:00:00Z")
+    _ = model.calculate("2026-08-29T03:15:00Z")
+    again = model.calculate("2026-08-28T06:00:00Z")
+    assert first.site == again.site
+    assert first.signals == again.signals
+    assert first.world == again.world
+
 
 def test_energy_is_monotonic_random_access():
-    m,model=load_model(); p=next(p for p in m['points'] if p['sourceClass']=='ENERGY_INTEGRAL' and p['runtimeRequired'])
-    a=model.calculate('2026-08-28T00:00:00Z').signals[p['signalKey']]
-    b=model.calculate('2026-08-29T00:00:00Z').signals[p['signalKey']]
-    again=model.calculate('2026-08-28T00:00:00Z').signals[p['signalKey']]
-    assert b>a>=0 and a==again
+    manifest, model = load_model()
+    point = next(point for point in manifest["points"] if point["sourceClass"] == "ENERGY_INTEGRAL" and point["runtimeRequired"])
+    a = model.calculate("2026-08-28T00:00:00Z").signals[point["signalKey"]]
+    b = model.calculate("2026-08-29T00:00:00Z").signals[point["signalKey"]]
+    again = model.calculate("2026-08-28T00:00:00Z").signals[point["signalKey"]]
+    assert b > a >= 0 and a == again
+
 
 def test_demo_holds_but_open_world_does_not():
-    r=RuntimeEngine(); r.set_mode('demo'); r.seek('2026-08-29T00:00:00Z'); r.state='RUNNING'; r._sim_anchor=parse_utc('2026-08-29T00:00:00Z')
-    assert r.now() <= parse_utc(r.cfg['demoEndUtc']); assert r.state=='HOLDING'
-    r.set_mode('open_world'); r.seek('2026-09-30T00:00:00Z'); r.state='RUNNING'; r._sim_anchor=parse_utc('2026-09-30T00:00:00Z')
-    _=r.now(); assert r.state=='RUNNING'
+    runtime = RuntimeEngine()
+    runtime.set_mode("demo")
+    runtime.seek("2026-08-29T00:00:00Z")
+    runtime.state = "RUNNING"
+    runtime._sim_anchor = parse_utc("2026-08-29T00:00:00Z")
+    assert runtime.now() <= parse_utc(runtime.cfg["demoEndUtc"])
+    assert runtime.state == "HOLDING"
+
+    runtime.set_mode("open_world")
+    runtime.seek("2026-09-30T00:00:00Z")
+    runtime.state = "RUNNING"
+    runtime._sim_anchor = parse_utc("2026-09-30T00:00:00Z")
+    _ = runtime.now()
+    assert runtime.state == "RUNNING"

@@ -1,33 +1,95 @@
 import json
-from datetime import datetime, timezone
+
 from graphene_demo_twin.config import ROOT
 from graphene_demo_twin.domain.model import DomainModel
-from graphene_demo_twin.faults.engine import FaultEngine, FaultActivation
+from graphene_demo_twin.faults.engine import FaultActivation, FaultEngine
+from graphene_demo_twin.runtime.engine import RuntimeEngine
 
 
 def fixture():
-    m=json.loads((ROOT/'config/generated/graphene-coverage-manifest.json').read_text()); t=json.loads((ROOT/'config/generated/graphene-instance-topology.json').read_text()); model=DomainModel(m,t); snap=model.calculate('2026-08-28T02:30:00Z'); return m,snap
+    manifest = json.loads((ROOT / "config/generated/graphene-coverage-manifest.json").read_text())
+    topology = json.loads((ROOT / "config/generated/graphene-instance-topology.json").read_text())
+    model = DomainModel(manifest, topology)
+    snapshot = model.calculate("2026-08-28T02:30:00Z")
+    return manifest, topology, model, snapshot
 
 
-def find(m, contains, member):
-    for p in m['points']:
-        if contains.lower() in p['exportPath'].lower() and p['memberName'].lower()==member.lower(): return p
-    raise AssertionError((contains,member))
+def point_for(manifest, instance_path, *members):
+    for point in manifest["points"]:
+        if point.get("instancePath") == instance_path and point["memberName"] in members:
+            return point
+    raise AssertionError((instance_path, members))
 
 
-def test_crac_valve_fault_correlated_symptoms():
-    m,s=fixture(); target='CRAC/L1_CRAC1'
-    # Actual instance names vary; select first CRAC and use extension path.
-    p=next(p for p in m['points'] if p['typeId']=='CRAC' and p['memberName']=='CHW Valve Feedback'); target=p['instancePath']
-    eff=FaultEngine().apply(s,m,[FaultActivation('x','CRAC_VALVE_STUCK',target,1.0,s.timestamp.isoformat())])
-    feedback=next(q for q in m['points'] if q['instancePath']==target and q['memberName']=='CHW Valve Feedback')
-    flow=next(q for q in m['points'] if q['instancePath']==target and q['memberName']=='CHW Flow')
-    assert abs(eff['values'][feedback['signalKey']]-3)<0.01
-    assert abs(eff['values'][flow['signalKey']]-0.3)<0.01
+def test_crac_valve_fault_correlated_symptoms_are_solved_before_projection():
+    manifest, topology, model, baseline = fixture()
+    valve = next(
+        point
+        for point in manifest["points"]
+        if point["typeId"] == "CRAC" and point["memberName"] == "CHW Valve Feedback"
+    )
+    target = valve["instancePath"]
+    fault = FaultActivation("x", "CRAC_VALVE_STUCK", target, 1.0, baseline.timestamp.isoformat())
+    engine = FaultEngine()
+    constraints = engine.physical_constraints([fault], topology)
+    solved = model.calculate(baseline.timestamp, constraints=constraints)
+
+    feedback = point_for(manifest, target, "CHW Valve Feedback")
+    flow = point_for(manifest, target, "CHW Flow")
+    sat = point_for(manifest, target, "Supply Air Temperature", "SAT")
+
+    assert solved.signals[feedback["signalKey"]] <= 3.1
+    assert solved.signals[flow["signalKey"]] < baseline.signals[flow["signalKey"]]
+    assert solved.signals[sat["signalKey"]] > baseline.signals[sat["signalKey"]]
+    assert solved.site["unmetCoolingKw"] > baseline.site["unmetCoolingKw"]
+    assert solved.site["hallATempC"] > baseline.site["hallATempC"]
+
+
+def test_cooling_tower_failure_propagates_through_topology_to_chiller_and_site_balance():
+    runtime = RuntimeEngine()
+    runtime.set_mode("open_world")
+    runtime.seek("2026-08-28T06:00:00Z")
+    baseline = runtime.snapshot()
+
+    tower = next(asset for asset in runtime.topology["assets"] if asset["typeId"] == "Cooling Tower")
+    linked = next(
+        relation
+        for relation in runtime.topology["relations"]
+        if relation.get("kind") == "serves" and relation.get("from") == tower["assetId"]
+    )
+    chiller = next(asset for asset in runtime.topology["assets"] if asset["assetId"] == linked["to"])
+
+    tower_power = point_for(runtime.manifest, tower["exportPath"], "Power", "Electrical Power")
+    tower_speed = point_for(runtime.manifest, tower["exportPath"], "Fan Speed Feedback")
+    chiller_cop = point_for(runtime.manifest, chiller["exportPath"], "COP")
+    chiller_power = point_for(runtime.manifest, chiller["exportPath"], "Input Power", "Power")
+    chiller_cws = point_for(runtime.manifest, chiller["exportPath"], "CW Supply Temperature")
+
+    runtime.faults.inject("COOLING_TOWER_FAILURE", tower["exportPath"], 1.0, runtime.now())
+    faulted = runtime.snapshot()
+
+    assert faulted["points"][tower_power["exportPath"]]["value"] == 0.0
+    assert faulted["points"][tower_speed["exportPath"]]["value"] == 0.0
+    assert faulted["points"][chiller_cws["exportPath"]]["value"] > baseline["points"][chiller_cws["exportPath"]]["value"]
+    assert faulted["points"][chiller_cop["exportPath"]]["value"] < baseline["points"][chiller_cop["exportPath"]]["value"]
+    assert faulted["points"][chiller_power["exportPath"]]["value"] > baseline["points"][chiller_power["exportPath"]]["value"]
+    assert faulted["site"]["plantLoadKw"] > baseline["site"]["plantLoadKw"]
+    assert faulted["site"]["facilityLoadKw"] > baseline["site"]["facilityLoadKw"]
+    assert faulted["site"]["pue"] > baseline["site"]["pue"]
 
 
 def test_network_failure_changes_quality_and_state():
-    m,s=fixture(); p=next(p for p in m['points'] if p['typeId']=='Network Device' and p['memberName']=='Ping Time'); target=p['instancePath']
-    eff=FaultEngine().apply(s,m,[FaultActivation('x','NETWORK_DEVICE_FAILURE',target,1.0,s.timestamp.isoformat())])
-    assert eff['values'][p['signalKey']]==9999.0
-    assert eff['quality'][p['signalKey']]=='Bad_CommunicationError'
+    manifest, _, _, snapshot = fixture()
+    point = next(
+        point
+        for point in manifest["points"]
+        if point["typeId"] == "Network Device" and point["memberName"] == "Ping Time"
+    )
+    target = point["instancePath"]
+    effective = FaultEngine().apply(
+        snapshot,
+        manifest,
+        [FaultActivation("x", "NETWORK_DEVICE_FAILURE", target, 1.0, snapshot.timestamp.isoformat())],
+    )
+    assert effective["values"][point["signalKey"]] == 9999.0
+    assert effective["quality"][point["signalKey"]] == "Bad_CommunicationError"
