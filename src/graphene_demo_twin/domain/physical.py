@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from math import ceil
 from typing import Any
 
@@ -85,6 +85,7 @@ class PhysicalWorldSolver:
         cooling_cfg = self.physics.get("cooling", {})
         airside_cfg = self.physics.get("airside", {})
         facility_cfg = self.physics.get("facility", {})
+        chw_delta_t_c = float(cooling_cfg.get("chwDesignDeltaTC", 5.5))
         cooling_demand_kw = max(
             0.0,
             it_kw * float(cooling_cfg.get("itHeatFraction", 0.92))
@@ -109,7 +110,7 @@ class PhysicalWorldSolver:
                 fan_speed = 0.42 + 0.42 * clamp(per_unit_demand / crac_design_kw, 0.0, 1.0)
                 fan_power = float(airside_cfg.get("cracFanDesignPowerKw", 4.5)) * fan_speed**3 * availability
                 crac_fan_kw += fan_power
-                chw_flow = unit_delivered / (4.186 * 5.5) if unit_delivered > 0 else 0.0
+                chw_flow = unit_delivered / (4.186 * chw_delta_t_c) if unit_delivered > 0 else 0.0
                 sat = 14.2 + (1.0 - effective) * 8.2
                 rat = 24.0 + (1.0 - effective) * 1.8
                 running = availability > 0.05
@@ -125,7 +126,7 @@ class PhysicalWorldSolver:
                         "CHW Valve Feedback": valve * 100.0,
                         "CHW Flow": chw_flow,
                         "CHW Supply Temperature": 5.5,
-                        "CHW Return Temperature": 11.0 if effective > 0 else 5.5,
+                        "CHW Return Temperature": 5.5 + chw_delta_t_c if effective > 0 else 5.5,
                         "Supply Air Temperature": sat,
                         "Return Air Temperature": rat,
                         "Fan Electrical Power": fan_power,
@@ -146,16 +147,69 @@ class PhysicalWorldSolver:
         active_chillers = chillers[:required_chillers]
         active_paths = {asset["exportPath"].lower() for asset in active_chillers}
         requested_per_chiller = cooling_demand_kw / max(1, required_chillers)
+        required_chw_flow_lps = (
+            requested_per_chiller / max(1.0, 4.186 * max(0.1, chw_delta_t_c))
+            if required_chillers
+            else 0.0
+        )
+
+        pump_power_kw = 0.0
+        pump_flow_by_chiller: dict[str, float] = {}
+        pump_links_by_chiller: set[str] = set()
+        pump_design_flow_lps = float(cooling_cfg.get("chillerPumpDesignFlowLps", 90.0))
+        pump_design_power_kw = float(cooling_cfg.get("chillerPumpDesignPowerKw", 32.0))
+        pump_nominal_speed = clamp(float(cooling_cfg.get("chillerPumpNominalSpeedFraction", 0.74)), 0.0, 1.0)
+        for pump in self.by_type.get("Chiller Pump", []):
+            path = pump["exportPath"]
+            downstream = [
+                target
+                for target in self.serves.get(path.lower(), [])
+                if target.lower() in active_paths
+            ]
+            availability = clamp(self._constraint(constraints, path, "availability", 1.0), 0.0, 1.0)
+            running = bool(downstream) and availability > 0.05
+            speed = pump_nominal_speed * availability if running else 0.0
+            flow = pump_design_flow_lps * speed
+            power = pump_design_power_kw * speed**3
+            pump_power_kw += power
+            dp = 230.0 * speed**2
+            states[path.lower()] = AssetState(
+                path,
+                "Chiller Pump",
+                running=running,
+                load_fraction=speed,
+                power_kw=power,
+                flow_lps=flow,
+                metrics={
+                    "Power": power,
+                    "Current": power * 1000.0 / max(1.0, 400.0 * 1.732 * 0.9),
+                    "Frequency": speed * 50.0,
+                    "Speed Command": speed * 100.0,
+                    "Speed Feedback": speed * 100.0,
+                    "Flow": flow,
+                    "Suction Pressure": 180.0,
+                    "Discharge Pressure": 180.0 + dp,
+                    "Differential Pressure": dp,
+                    "On_Off": 1 if running else 0,
+                    "Status": "RUNNING" if running else "STANDBY",
+                },
+            )
+            if downstream:
+                share = flow / len(downstream)
+                for target in downstream:
+                    key = target.lower()
+                    pump_links_by_chiller.add(key)
+                    pump_flow_by_chiller[key] = pump_flow_by_chiller.get(key, 0.0) + share
 
         towers = self.by_type.get("Cooling Tower", [])
-        tower_conditions: dict[str, tuple[float, float, float, float]] = {}
+        tower_conditions: dict[str, tuple[str, float, float, float]] = {}
         tower_power_kw = 0.0
         for tower in towers:
             path = tower["exportPath"]
             availability = clamp(self._constraint(constraints, path, "availability", 1.0), 0.0, 1.0)
             downstream = self.serves.get(path.lower(), [])
-            linked_running = any(target.lower() in active_paths for target in downstream)
-            running = linked_running and availability > 0.05
+            active_downstream = [target for target in downstream if target.lower() in active_paths]
+            running = bool(active_downstream) and availability > 0.05
             load = clamp(requested_per_chiller / chiller_capacity_kw, 0.0, 1.0) if running else 0.0
             fan_speed = (
                 clamp(
@@ -172,9 +226,7 @@ class PhysicalWorldSolver:
             approach = 3.0 + 5.5 * (1.0 - availability) + 1.4 * (1.0 - fan_speed if running else 1.0)
             cws = wet_bulb + approach
             flow = float(cooling_cfg.get("towerDesignFlowLps", 82.0)) * fan_speed if running else 0.0
-            heat_rejection = requested_per_chiller * 1.22 if running else 0.0
-            delta_t = heat_rejection / max(1.0, flow * 4.186) if flow > 0 else 7.5
-            cwr = cws + delta_t
+            cwr = cws + (7.5 if running else 0.0)
             faulted = availability < 0.95
             states[path.lower()] = AssetState(
                 path,
@@ -206,28 +258,41 @@ class PhysicalWorldSolver:
                     "Auto_Manual": 1,
                 },
             )
-            for target in downstream:
-                tower_conditions[target.lower()] = (availability, cws, cwr, flow)
+            flow_share = flow / len(active_downstream) if active_downstream else 0.0
+            for target in active_downstream:
+                tower_conditions[target.lower()] = (path, availability, cws, flow_share)
 
         chiller_power_kw = 0.0
         condenser_rejection_kw = 0.0
         cooling_delivered_kw = 0.0
+        tower_rejection_kw: dict[str, float] = {}
         for asset in chillers:
             path = asset["exportPath"]
-            is_selected = path.lower() in active_paths
+            path_key = path.lower()
+            is_selected = path_key in active_paths
             availability = clamp(self._constraint(constraints, path, "availability", 1.0), 0.0, 1.0)
             condenser_degradation = clamp(
                 self._constraint(constraints, path, "condenser_degradation", 0.0),
                 0.0,
                 1.0,
             )
-            tower_avail, cws, cwr, cw_flow = tower_conditions.get(
-                path.lower(),
-                (1.0, outside - 0.5, outside + 3.5, 80.0),
+            tower_path, tower_avail, cws, cw_flow = tower_conditions.get(
+                path_key,
+                ("", 1.0, outside - 0.5, 80.0),
             )
             condenser_factor = clamp(tower_avail * (1.0 - 0.35 * condenser_degradation), 0.25, 1.0)
-            running = is_selected and availability > 0.05
-            capacity = chiller_capacity_kw * availability * (0.58 + 0.42 * condenser_factor)
+            hydraulic_factor = (
+                clamp(pump_flow_by_chiller.get(path_key, 0.0) / max(1.0, required_chw_flow_lps), 0.0, 1.0)
+                if path_key in pump_links_by_chiller
+                else 1.0
+            )
+            running = is_selected and availability > 0.05 and hydraulic_factor > 0.01
+            capacity = (
+                chiller_capacity_kw
+                * availability
+                * (0.58 + 0.42 * condenser_factor)
+                * hydraulic_factor
+            )
             cooling = min(requested_per_chiller, capacity) if running else 0.0
             cop = (
                 clamp(
@@ -248,10 +313,17 @@ class PhysicalWorldSolver:
             cooling_delivered_kw += cooling
             load = cooling / chiller_capacity_kw if chiller_capacity_kw else 0.0
             chw_supply = 5.3 + 1.8 * (1.0 - condenser_factor) if running else 11.0
-            chw_return = chw_supply + (5.5 if running else 0.0)
+            chw_return = chw_supply + (chw_delta_t_c if running else 0.0)
             chw_flow = cooling / max(1.0, 4.186 * max(0.1, chw_return - chw_supply)) if running else 0.0
+            if path_key in pump_links_by_chiller:
+                chw_flow = min(chw_flow, pump_flow_by_chiller.get(path_key, 0.0))
+            cwr = (
+                cws + rejection / max(1.0, cw_flow * 4.186)
+                if running and cw_flow > 0
+                else cws + (7.5 if running else 0.0)
+            )
             cond_pressure = 720.0 + max(0.0, cws - 27.0) * 28.0 + condenser_degradation * 150.0
-            states[path.lower()] = AssetState(
+            states[path_key] = AssetState(
                 path,
                 "Chiller",
                 running=running,
@@ -280,40 +352,22 @@ class PhysicalWorldSolver:
                     "Enabled": running,
                 },
             )
+            if tower_path:
+                tower_key = tower_path.lower()
+                tower_rejection_kw[tower_key] = tower_rejection_kw.get(tower_key, 0.0) + rejection
 
-        pump_power_kw = 0.0
-        for pump in self.by_type.get("Chiller Pump", []):
-            path = pump["exportPath"]
-            downstream = self.serves.get(path.lower(), [])
-            running = any(target.lower() in active_paths for target in downstream)
-            availability = clamp(self._constraint(constraints, path, "availability", 1.0), 0.0, 1.0)
-            running = running and availability > 0.05
-            speed = 0.74 * availability if running else 0.0
-            flow = 90.0 * speed
-            power = 32.0 * speed**3
-            pump_power_kw += power
-            dp = 230.0 * speed**2
-            states[path.lower()] = AssetState(
-                path,
-                "Chiller Pump",
-                running=running,
-                load_fraction=speed,
-                power_kw=power,
-                flow_lps=flow,
-                metrics={
-                    "Power": power,
-                    "Current": power * 1000.0 / max(1.0, 400.0 * 1.732 * 0.9),
-                    "Frequency": speed * 50.0,
-                    "Speed Command": speed * 100.0,
-                    "Speed Feedback": speed * 100.0,
-                    "Flow": flow,
-                    "Suction Pressure": 180.0,
-                    "Discharge Pressure": 180.0 + dp,
-                    "Differential Pressure": dp,
-                    "On_Off": 1 if running else 0,
-                    "Status": "RUNNING" if running else "STANDBY",
-                },
+        for tower_key, rejection in tower_rejection_kw.items():
+            tower_state = states[tower_key]
+            metrics = dict(tower_state.metrics)
+            cws = float(metrics["CWS Temperature"])
+            cwr = (
+                cws + rejection / max(1.0, tower_state.flow_lps * 4.186)
+                if tower_state.flow_lps > 0
+                else cws
             )
+            metrics["CWR Temperature"] = cwr
+            metrics["Heat Rejection"] = rejection
+            states[tower_key] = replace(tower_state, metrics=metrics)
 
         cooling_delivered_kw *= crac_delivered_fraction
         unmet = max(0.0, cooling_demand_kw - cooling_delivered_kw)

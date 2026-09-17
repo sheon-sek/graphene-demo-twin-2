@@ -61,6 +61,74 @@ def test_cooling_network_balance_closes_and_drives_facility_power():
     assert abs(snapshot.site["pue"] - snapshot.site["facilityLoadKw"] / snapshot.site["itLoadKw"]) < 0.002
 
 
+def test_chiller_pump_hydraulics_limit_linked_chiller_through_topology():
+    _, model = load_model()
+    timestamp = "2026-08-28T06:00:00Z"
+    baseline = model.calculate(timestamp)
+    assert baseline.world is not None
+
+    chiller_state = next(
+        state
+        for state in baseline.world.assets.values()
+        if state.type_id == "Chiller" and state.running
+    )
+    chiller_asset = next(
+        asset
+        for asset in model.topology["assets"]
+        if asset["exportPath"] == chiller_state.export_path
+    )
+    assets_by_id = {asset["assetId"]: asset for asset in model.topology["assets"]}
+    linked_pumps = [
+        assets_by_id[relation["from"]]
+        for relation in model.topology["relations"]
+        if relation.get("kind") == "serves"
+        and relation.get("to") == chiller_asset["assetId"]
+        and relation.get("from") in assets_by_id
+        and assets_by_id[relation["from"]].get("typeId") == "Chiller Pump"
+    ]
+    assert linked_pumps
+
+    constraints = {
+        pump["exportPath"]: {"availability": 0.0}
+        for pump in linked_pumps
+    }
+    constrained = model.calculate(timestamp, constraints=constraints)
+    assert constrained.world is not None
+    constrained_chiller = constrained.world.asset(chiller_state.export_path)
+    assert constrained_chiller is not None
+    assert constrained_chiller.metrics["Cooling Output"] < chiller_state.metrics["Cooling Output"]
+    assert constrained_chiller.flow_lps < chiller_state.flow_lps
+    assert constrained.site["unmetCoolingKw"] > baseline.site["unmetCoolingKw"]
+    for pump in linked_pumps:
+        pump_state = constrained.world.asset(pump["exportPath"])
+        assert pump_state is not None
+        assert not pump_state.running
+        assert pump_state.power_kw == 0.0
+
+
+def test_condenser_rejection_reconciles_with_running_tower_flow():
+    _, model = load_model()
+    snapshot = model.calculate("2026-08-28T06:00:00Z")
+    assert snapshot.world is not None
+
+    running_towers = [
+        state
+        for state in snapshot.world.assets.values()
+        if state.type_id == "Cooling Tower" and state.running
+    ]
+    assert running_towers
+
+    summed_rejection = 0.0
+    for tower in running_towers:
+        rejection = float(tower.metrics["Heat Rejection"])
+        cws = float(tower.metrics["CWS Temperature"])
+        cwr = float(tower.metrics["CWR Temperature"])
+        thermal_rejection = tower.flow_lps * 4.186 * (cwr - cws)
+        assert abs(thermal_rejection - rejection) < 0.01
+        summed_rejection += rejection
+    assert abs(summed_rejection - snapshot.world.balance.condenser_rejection_kw) < 0.01
+
+
 def test_physical_world_is_deterministic_random_access():
     _, model = load_model()
     first = model.calculate("2026-08-28T06:00:00Z")

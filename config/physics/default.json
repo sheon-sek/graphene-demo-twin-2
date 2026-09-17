@@ -6,6 +6,10 @@
     "itHeatFraction": 0.92,
     "envelopeKwPerC": 18.0,
     "targetChillerLoadFraction": 0.72,
+    "chwDesignDeltaTC": 5.5,
+    "chillerPumpDesignFlowLps": 90.0,
+    "chillerPumpDesignPowerKw": 32.0,
+    "chillerPumpNominalSpeedFraction": 0.74,
     "towerFanDesignPowerKw": 26.0,
     "towerDesignFlowLps": 82.0
   },
