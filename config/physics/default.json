@@ -30,5 +30,9 @@
   },
   "facility": {
     "nonCoolingAuxKw": 180.0
+  },
+  "energy": {
+    "stepSeconds": 300,
+    "repeatPeriodSeconds": 604800
   }
 }

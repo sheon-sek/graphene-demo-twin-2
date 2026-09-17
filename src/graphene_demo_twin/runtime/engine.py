@@ -6,6 +6,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 import json
 import logging
+import math
 import time
 import uuid
 from typing import Any
@@ -59,7 +60,9 @@ class RuntimeEngine:
 
     def now(self):
         if self.state == "RUNNING":
-            current = self._sim_anchor + timedelta(seconds=(time.monotonic() - self._wall_anchor) * self.time_scale)
+            current = self._sim_anchor + timedelta(
+                seconds=(time.monotonic() - self._wall_anchor) * self.time_scale
+            )
             if self.mode == "demo" and current >= parse_utc(self.cfg["demoEndUtc"]):
                 self.state = "HOLDING"
                 self.sim_time = parse_utc(self.cfg["demoEndUtc"])
@@ -98,7 +101,11 @@ class RuntimeEngine:
             self._event("RUNTIME_RESUMED")
 
     def reset(self):
-        reset_to = parse_utc(self.cfg["demoStartUtc"]) if self.mode == "demo" else parse_utc(self.cfg["modelEpochUtc"])
+        reset_to = (
+            parse_utc(self.cfg["demoStartUtc"])
+            if self.mode == "demo"
+            else parse_utc(self.cfg["modelEpochUtc"])
+        )
         self._anchor(reset_to)
         self.state = "PAUSED"
         self._event("CLOCK_RESET")
@@ -119,8 +126,21 @@ class RuntimeEngine:
             raise ValueError("invalid mode")
         self._anchor()
         self.mode = mode
-        self.time_scale = self.cfg["demoTimeScale"] if mode == "demo" else self.cfg["openWorldTimeScale"]
+        self.time_scale = (
+            self.cfg["demoTimeScale"] if mode == "demo" else self.cfg["openWorldTimeScale"]
+        )
         self._event("MODE_CHANGED", mode=mode)
+
+    def _scenario_severity(self, scenario: dict, dt: datetime, target: str) -> float:
+        start = parse_utc(scenario["startLocal"])
+        elapsed = max(0.0, (dt - start).total_seconds())
+        ramp = float(scenario.get("rampSeconds", 0) or 0)
+        if not ramp:
+            return 1.0
+        if target.lower() in self.model.authoritative_energy_assets:
+            step = self.model.energy_step_seconds
+            elapsed = math.floor(elapsed / step) * step
+        return min(1.0, max(0.0, elapsed / max(1.0, ramp)))
 
     def scripted_faults(self, dt):
         if self.mode != "demo":
@@ -131,41 +151,112 @@ class RuntimeEngine:
             end = parse_utc(scenario["endLocal"]) if scenario.get("endLocal") else None
             if dt < start or (end and dt >= end):
                 continue
-            severity = (
-                min(1, max(0, (dt - start).total_seconds() / max(1, scenario.get("rampSeconds", 1))))
-                if scenario.get("rampSeconds")
-                else 1
-            )
             target = self._resolve_target(scenario)
+            severity = self._scenario_severity(scenario, dt, target)
             out.append(
                 FaultActivation(
                     scenario["id"],
                     scenario["recipeId"],
                     target,
                     severity,
-                    dt.isoformat(),
+                    start.isoformat(),
                     source="SCRIPTED",
                     rampSeconds=scenario.get("rampSeconds", 0),
+                    durationSeconds=(end - start).total_seconds() if end else None,
                 )
             )
         return out
 
+    def scripted_energy_segments(self, dt: datetime) -> list[FaultActivation]:
+        """Piecewise-constant scripted constraints only for authoritative energy assets."""
+        if self.mode != "demo" or not self.model.authoritative_energy_assets:
+            return []
+
+        segments: list[FaultActivation] = []
+        step = self.model.energy_step_seconds
+        for scenario in demo_scenarios()["scenarios"]:
+            target = self._resolve_target(scenario)
+            if target.lower() not in self.model.authoritative_energy_assets:
+                continue
+            if scenario["recipeId"] not in self.faults.PHYSICAL_RECIPES:
+                continue
+
+            start = parse_utc(scenario["startLocal"])
+            configured_end = (
+                parse_utc(scenario["endLocal"]) if scenario.get("endLocal") else None
+            )
+            end = min(dt, configured_end) if configured_end else dt
+            if end <= start:
+                continue
+
+            ramp = float(scenario.get("rampSeconds", 0) or 0)
+            ramp_end = min(end, start + timedelta(seconds=ramp)) if ramp else start
+            cursor = start
+            while ramp and cursor < ramp_end:
+                right = min(ramp_end, cursor + timedelta(seconds=step))
+                severity = self._scenario_severity(scenario, cursor, target)
+                segments.append(
+                    FaultActivation(
+                        scenario["id"],
+                        scenario["recipeId"],
+                        target,
+                        severity,
+                        cursor.isoformat(),
+                        source="SCRIPTED",
+                        durationSeconds=(right - cursor).total_seconds(),
+                    )
+                )
+                cursor = right
+            if end > ramp_end:
+                segments.append(
+                    FaultActivation(
+                        scenario["id"],
+                        scenario["recipeId"],
+                        target,
+                        1.0,
+                        ramp_end.isoformat(),
+                        source="SCRIPTED",
+                        durationSeconds=(end - ramp_end).total_seconds(),
+                    )
+                )
+        return segments
+
     def _resolve_target(self, scenario):
-        assets = [asset for asset in self.topology["assets"] if asset["typeId"] == scenario.get("targetType")]
+        assets = [
+            asset
+            for asset in self.topology["assets"]
+            if asset["typeId"] == scenario.get("targetType")
+        ]
         if scenario.get("targetMatch"):
             match = scenario["targetMatch"].lower()
             hits = [asset for asset in assets if match in asset["exportPath"].lower()]
             if hits:
                 return hits[0]["exportPath"]
-        index = max(0, min(len(assets) - 1, scenario.get("targetOrdinal", 1) - 1)) if assets else 0
+        index = (
+            max(0, min(len(assets) - 1, scenario.get("targetOrdinal", 1) - 1))
+            if assets
+            else 0
+        )
         return assets[index]["exportPath"] if assets else scenario.get("targetType", "")
 
     def snapshot(self, include_points=True):
         dt = self.now()
         scripted = self.scripted_faults(dt)
-        activations = self.faults.activations(scripted)
+        activations = self.faults.activations_at(dt, scripted)
         constraints = self.faults.physical_constraints(activations, self.topology)
-        base = self.model.calculate(dt, self.mode, constraints)
+        energy_windows = self.faults.physical_constraint_timeline(
+            self.model.epoch,
+            dt,
+            self.topology,
+            target_paths=self.model.authoritative_energy_assets,
+            scripted_segments=self.scripted_energy_segments(dt),
+        )
+        base = self.model.calculate(
+            dt,
+            self.mode,
+            constraints,
+            constraint_windows=energy_windows,
+        )
         effective = self.faults.apply(
             base,
             self.manifest,
@@ -179,6 +270,7 @@ class RuntimeEngine:
             ground_truth = {
                 "modeledAssetCount": len(base.world.assets),
                 "networkBalance": asdict(base.world.balance),
+                "authoritativeEnergyAssetCount": len(self.model.authoritative_energy_assets),
             }
         return {
             "status": self.status(),

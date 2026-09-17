@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
+import json
 import math
 from typing import Any
 
 from graphene_demo_twin.config import physics_config, world_config
+from graphene_demo_twin.domain.energy import ConstraintWindow, PeriodicPowerIntegrator
 from graphene_demo_twin.domain.physical import PhysicalWorld, PhysicalWorldSolver
 
 
@@ -23,6 +25,21 @@ def parse_utc(value: str | datetime) -> datetime:
 def deterministic_noise(seed: str, signal: str, dt: datetime, bucket_seconds: int = 60) -> float:
     bucket = int(dt.timestamp()) // bucket_seconds
     raw = hashlib.sha256(f"{seed}|{signal}|{bucket}".encode()).digest()
+    return int.from_bytes(raw[:8], "big") / (2**64 - 1) * 2 - 1
+
+
+def periodic_deterministic_noise(
+    seed: str,
+    signal: str,
+    dt: datetime,
+    epoch: datetime,
+    bucket_seconds: int,
+    period_seconds: int,
+) -> float:
+    period_buckets = period_seconds // bucket_seconds
+    bucket = int((dt - epoch).total_seconds()) // bucket_seconds
+    periodic_bucket = bucket % period_buckets
+    raw = hashlib.sha256(f"{seed}|periodic|{signal}|{periodic_bucket}".encode()).digest()
     return int.from_bytes(raw[:8], "big") / (2**64 - 1) * 2 - 1
 
 
@@ -59,38 +76,123 @@ class DomainModel:
         self.physics = physics_config()
         self.seed = seed or self.cfg["seed"]
         self.epoch = parse_utc(self.cfg["modelEpochUtc"])
+        self.energy_step_seconds = int(self.physics.get("energy", {}).get("stepSeconds", 300))
+        self.energy_period_seconds = int(
+            self.physics.get("energy", {}).get("repeatPeriodSeconds", 7 * 86400)
+        )
+        if self.energy_period_seconds % self.energy_step_seconds:
+            raise ValueError("energy repeat period must be a multiple of energy step")
         self.world_solver = PhysicalWorldSolver(topology, self.physics)
+
+        probe = self.world_solver.solve(self.epoch, self._site_seed(self.epoch), {})
+        self.authoritative_energy_assets = {
+            point["instancePath"].lower()
+            for point in self.manifest["points"]
+            if point.get("sourceClass") == "ENERGY_INTEGRAL"
+            and point.get("instancePath")
+            and probe.asset(point["instancePath"]) is not None
+        }
+        self.energy_integrator = PeriodicPowerIntegrator(
+            epoch=self.epoch,
+            step_seconds=self.energy_step_seconds,
+            period_seconds=self.energy_period_seconds,
+            asset_paths=self.authoritative_energy_assets,
+            cache_key=self._energy_cache_key(),
+            power_sampler=self._physical_power_sample,
+        )
 
     def calculate(
         self,
         timestamp: str | datetime,
         world_profile: str = "demo",
         constraints: dict[str, dict[str, float]] | None = None,
+        constraint_windows: list[ConstraintWindow] | None = None,
     ) -> BaseWorldSnapshot:
         dt = parse_utc(timestamp)
         if dt < self.epoch:
             raise ValueError(f"timestamp before model epoch {self.epoch.isoformat()}")
 
-        local_hour = (dt.hour + 8 + dt.minute / 60) % 24
+        site_seed = self._site_seed(dt)
+        world = self.world_solver.solve(dt, site_seed, constraints)
+        site = world.site
+        signals = {}
+        for point in self.manifest["points"]:
+            signals[point["signalKey"]] = self._value_for(
+                point,
+                dt,
+                site,
+                world,
+                constraint_windows,
+            )
+        return BaseWorldSnapshot(dt, world_profile, site, signals, world)
+
+    def _energy_cache_key(self) -> str:
+        serves = [
+            (relation.get("from"), relation.get("to"))
+            for relation in self.topology.get("relations", [])
+            if relation.get("kind") == "serves"
+        ]
+        assets = [
+            (asset.get("assetId"), asset.get("typeId"), asset.get("exportPath"))
+            for asset in self.topology.get("assets", [])
+        ]
+        payload = {
+            "seed": self.seed,
+            "physics": self.physics,
+            "energyStepSeconds": self.energy_step_seconds,
+            "energyPeriodSeconds": self.energy_period_seconds,
+            "energyAssets": sorted(self.authoritative_energy_assets),
+            "assets": assets,
+            "serves": serves,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+    def _physics_bucket(self, dt: datetime) -> datetime:
+        elapsed = max(0.0, (dt - self.epoch).total_seconds())
+        bucket = int(elapsed // self.energy_step_seconds)
+        return self.epoch + timedelta(seconds=bucket * self.energy_step_seconds)
+
+    def _periodic_noise(self, signal: str, dt: datetime, bucket_seconds: int) -> float:
+        return periodic_deterministic_noise(
+            self.seed,
+            signal,
+            dt,
+            self.epoch,
+            bucket_seconds,
+            self.energy_period_seconds,
+        )
+
+    def _site_seed(self, dt: datetime) -> dict[str, float]:
+        """Periodic fixed-step physical driver shared by power and its energy primitive."""
+        driver_dt = self._physics_bucket(dt)
+        local_hour = (
+            driver_dt.hour + 8 + driver_dt.minute / 60 + driver_dt.second / 3600
+        ) % 24
         demand_seed_kw = _interp_profile(
             local_hour,
             [(0, 620), (6, 690), (9, 820), (13, 1030), (15, 1080), (19, 910), (23, 670)],
         )
-        slow = 1 + 0.018 * math.sin((dt - self.epoch).total_seconds() / 86400 / 7 * 2 * math.pi)
-        demand_seed_kw *= slow * (1 + 0.01 * deterministic_noise(self.seed, "site.plant_load", dt, 300))
+        slow = 1 + 0.018 * math.sin(
+            (driver_dt - self.epoch).total_seconds() / 86400 / 7 * 2 * math.pi
+        )
+        demand_seed_kw *= slow * (
+            1 + 0.01 * self._periodic_noise("site.plant_load", driver_dt, 300)
+        )
         it_kw = demand_seed_kw * 2.35
-        outside = 29 + 3.5 * math.sin((_day_fraction(dt) - 0.25) * 2 * math.pi)
-        outside += 0.35 * deterministic_noise(self.seed, "weather.temp", dt, 600)
-        hall_a = 23.1 + 0.25 * math.sin(_day_fraction(dt) * 2 * math.pi)
-        hall_a += 0.08 * deterministic_noise(self.seed, "hall.a.temp", dt, 300)
-        hall_b = 23.3 + 0.23 * math.sin((_day_fraction(dt) + 0.03) * 2 * math.pi)
-        hall_b += 0.08 * deterministic_noise(self.seed, "hall.b.temp", dt, 300)
-        hall_a_rh = 51.5 + 1.8 * math.sin((_day_fraction(dt) + 0.1) * 2 * math.pi)
-        hall_a_rh += 0.3 * deterministic_noise(self.seed, "hall.a.rh", dt, 300)
-        hall_b_rh = 52.0 + 1.7 * math.sin((_day_fraction(dt) + 0.08) * 2 * math.pi)
-        hall_b_rh += 0.3 * deterministic_noise(self.seed, "hall.b.rh", dt, 300)
+        outside = 29 + 3.5 * math.sin((_day_fraction(driver_dt) - 0.25) * 2 * math.pi)
+        outside += 0.35 * self._periodic_noise("weather.temp", driver_dt, 600)
+        hall_a = 23.1 + 0.25 * math.sin(_day_fraction(driver_dt) * 2 * math.pi)
+        hall_a += 0.08 * self._periodic_noise("hall.a.temp", driver_dt, 300)
+        hall_b = 23.3 + 0.23 * math.sin((_day_fraction(driver_dt) + 0.03) * 2 * math.pi)
+        hall_b += 0.08 * self._periodic_noise("hall.b.temp", driver_dt, 300)
+        hall_a_rh = 51.5 + 1.8 * math.sin((_day_fraction(driver_dt) + 0.1) * 2 * math.pi)
+        hall_a_rh += 0.3 * self._periodic_noise("hall.a.rh", driver_dt, 300)
+        hall_b_rh = 52.0 + 1.7 * math.sin((_day_fraction(driver_dt) + 0.08) * 2 * math.pi)
+        hall_b_rh += 0.3 * self._periodic_noise("hall.b.rh", driver_dt, 300)
 
-        site_seed = {
+        return {
             "plantLoadKw": round(demand_seed_kw, 3),
             "itLoadKw": round(it_kw, 3),
             "facilityLoadKw": round(it_kw + demand_seed_kw + 180, 3),
@@ -101,12 +203,17 @@ class DomainModel:
             "hallARhPct": round(hall_a_rh, 3),
             "hallBRhPct": round(hall_b_rh, 3),
         }
-        world = self.world_solver.solve(dt, site_seed, constraints)
-        site = world.site
-        signals = {}
-        for point in self.manifest["points"]:
-            signals[point["signalKey"]] = self._value_for(point, dt, site, world)
-        return BaseWorldSnapshot(dt, world_profile, site, signals, world)
+
+    def _physical_power_sample(
+        self,
+        timestamp: datetime,
+        constraints: dict[str, dict[str, float]],
+    ) -> dict[str, float]:
+        world = self.world_solver.solve(timestamp, self._site_seed(timestamp), constraints)
+        return {
+            path: world.asset(path).power_kw if world.asset(path) is not None else 0.0
+            for path in self.authoritative_energy_assets
+        }
 
     def _asset_scalar(self, asset: str, low: float, high: float) -> float:
         raw = hashlib.sha256(f"{self.seed}|asset|{asset}".encode()).digest()
@@ -116,15 +223,21 @@ class DomainModel:
         phase = []
         for index in range(3):
             base = self._asset_scalar(f"{asset}|p{index}", 18, 115)
-            daily = 1 + 0.12 * math.sin((_day_fraction(dt) - 0.18 + index * 0.015) * 2 * math.pi)
+            daily = 1 + 0.12 * math.sin(
+                (_day_fraction(dt) - 0.18 + index * 0.015) * 2 * math.pi
+            )
             p = max(
                 0.1,
                 base
                 * daily
                 * (1 + 0.015 * deterministic_noise(self.seed, f"{asset}.phase{index}.p", dt, 300)),
             )
-            pf = 0.94 + 0.018 * deterministic_noise(self.seed, f"{asset}.phase{index}.pf", dt, 600)
-            voltage = 230 * (1 + 0.006 * deterministic_noise(self.seed, f"{asset}.phase{index}.v", dt, 300))
+            pf = 0.94 + 0.018 * deterministic_noise(
+                self.seed, f"{asset}.phase{index}.pf", dt, 600
+            )
+            voltage = 230 * (
+                1 + 0.006 * deterministic_noise(self.seed, f"{asset}.phase{index}.v", dt, 300)
+            )
             apparent = p / pf
             reactive = math.sqrt(max(0, apparent * apparent - p * p))
             current = p * 1000 / max(1, voltage * pf)
@@ -177,23 +290,32 @@ class DomainModel:
             "Cooling Output": cooling,
             "COP": cop,
             "kW per RT": 3.517 / cop,
-            "CHW Supply Temperature": 5.3 + 0.05 * deterministic_noise(self.seed, f"{asset}.chws", dt, 300),
-            "CHW Return Temperature": 11.2 + 0.1 * deterministic_noise(self.seed, f"{asset}.chwr", dt, 300),
+            "CHW Supply Temperature": 5.3
+            + 0.05 * deterministic_noise(self.seed, f"{asset}.chws", dt, 300),
+            "CHW Return Temperature": 11.2
+            + 0.1 * deterministic_noise(self.seed, f"{asset}.chwr", dt, 300),
             "CHW Flow": max(0.1, cooling / (4.186 * 5.9)),
-            "CW Supply Temperature": 29.2 + 0.15 * deterministic_noise(self.seed, f"{asset}.cws", dt, 300),
-            "CW Return Temperature": 33.0 + 0.18 * deterministic_noise(self.seed, f"{asset}.cwr", dt, 300),
+            "CW Supply Temperature": 29.2
+            + 0.15 * deterministic_noise(self.seed, f"{asset}.cws", dt, 300),
+            "CW Return Temperature": 33.0
+            + 0.18 * deterministic_noise(self.seed, f"{asset}.cwr", dt, 300),
             "CW Flow": max(0.1, cooling / (4.186 * 3.8)),
-            "CW Approach": 3.2 + 0.08 * deterministic_noise(self.seed, f"{asset}.approach", dt, 300),
-            "Condenser Pressure": 760 + 20 * deterministic_noise(self.seed, f"{asset}.cond", dt, 300),
+            "CW Approach": 3.2
+            + 0.08 * deterministic_noise(self.seed, f"{asset}.approach", dt, 300),
+            "Condenser Pressure": 760
+            + 20 * deterministic_noise(self.seed, f"{asset}.cond", dt, 300),
         }
 
     def _energy_integral(self, asset: str, dt: datetime) -> float:
+        """Compatibility integral for domains not yet migrated to authoritative power."""
         hours = (dt - self.epoch).total_seconds() / 3600
         base = self._asset_scalar(asset, 4, 90)
         amplitude = 0.12 * base
         omega = 2 * math.pi / 24
         phase = self._asset_scalar(asset + "|phase", 0, 2 * math.pi)
-        integral = base * hours + amplitude / omega * (math.cos(phase) - math.cos(omega * hours + phase))
+        integral = base * hours + amplitude / omega * (
+            math.cos(phase) - math.cos(omega * hours + phase)
+        )
         return max(0, integral)
 
     @staticmethod
@@ -210,7 +332,14 @@ class DomainModel:
             return round(value, 4)
         return value
 
-    def _value_for(self, point: dict, dt: datetime, site: dict, world: PhysicalWorld | None = None) -> Any:
+    def _value_for(
+        self,
+        point: dict,
+        dt: datetime,
+        site: dict,
+        world: PhysicalWorld | None = None,
+        constraint_windows: list[ConstraintWindow] | None = None,
+    ) -> Any:
         if (
             point.get("sourceClass") in {"STATIC_METADATA", "SUPPORT_CONTROL", "TEST_SUPPORT"}
             and point.get("sourceValue") is not None
@@ -222,12 +351,23 @@ class DomainModel:
         dtype = point["dataType"]
         unit = point.get("engUnit")
         noise = deterministic_noise(self.seed, point["signalKey"], dt)
-        asset = point.get("instancePath") or point.get("folderPath") or point["exportPath"].rsplit("/", 1)[0]
+        asset = (
+            point.get("instancePath")
+            or point.get("folderPath")
+            or point["exportPath"].rsplit("/", 1)[0]
+        )
         member = point["memberName"]
 
         state = world.asset(asset) if world else None
         if state is not None and member in state.metrics:
             return self._physical_value(state.metrics[member], dtype)
+        if (
+            state is not None
+            and point.get("sourceClass") == "ENERGY_INTEGRAL"
+            and asset.lower() in self.authoritative_energy_assets
+        ):
+            energy = self.energy_integrator.energy_kwh(asset, dt, constraint_windows)
+            return self._physical_value(energy, dtype)
 
         if dtype == "Boolean":
             return False
@@ -236,7 +376,18 @@ class DomainModel:
                 return 0
             if any(
                 token in name
-                for token in ("on_off", "on off", "running", "run", "status", "comm", "auto_manual", "mode", "link", "admin")
+                for token in (
+                    "on_off",
+                    "on off",
+                    "running",
+                    "run",
+                    "status",
+                    "comm",
+                    "auto_manual",
+                    "mode",
+                    "link",
+                    "admin",
+                )
             ):
                 return 1
             return int(max(0, round(10 + 2 * noise)))
@@ -267,7 +418,9 @@ class DomainModel:
             if member == "Wh_Im":
                 return round(self._energy_integral(asset, dt), 3)
         if point.get("typeId") == "BCPM":
-            watts = self._asset_scalar(asset, 2.5, 14.0) * (1 + 0.12 * math.sin(_day_fraction(dt) * 2 * math.pi))
+            watts = self._asset_scalar(asset, 2.5, 14.0) * (
+                1 + 0.12 * math.sin(_day_fraction(dt) * 2 * math.pi)
+            )
             if name == "active power":
                 return round(watts, 3)
             if name == "current":
@@ -298,10 +451,17 @@ class DomainModel:
             return round(23.2 + 0.6 * noise, 3)
         if "energy" in name or "wh_im" in name or "accumulated" in name:
             return round(self._energy_integral(asset, dt), 3)
-        if unit in {"kW", "kVA", "kVAR"} or "power" in name or name in {"ptot", "p1", "p2", "p3"}:
+        if unit in {"kW", "kVA", "kVAR"} or "power" in name or name in {
+            "ptot",
+            "p1",
+            "p2",
+            "p3",
+        }:
             base = max(
                 0.1,
-                site["facilityLoadKw"] / max(1, self.manifest["sourceCounts"].get("udtInstances", 831)) * 4.8,
+                site["facilityLoadKw"]
+                / max(1, self.manifest["sourceCounts"].get("udtInstances", 831))
+                * 4.8,
             )
             if "chiller" in path:
                 base = site["plantLoadKw"] / 3
@@ -315,7 +475,11 @@ class DomainModel:
                 base *= 0.36
             return round(max(0, base * (1 + 0.04 * noise)), 3)
         if unit == "V" or "voltage" in name:
-            nominal = 400 if any(token in name for token in ("l1-l2", "l2-l3", "l3-l1", "v12", "v23", "v31")) else 230
+            nominal = (
+                400
+                if any(token in name for token in ("l1-l2", "l2-l3", "l3-l1", "v12", "v23", "v31"))
+                else 230
+            )
             return round(nominal * (1 + 0.008 * noise), 3)
         if unit == "A" or "current" in name:
             return round(max(0, 42 * (1 + 0.18 * noise)), 3)
