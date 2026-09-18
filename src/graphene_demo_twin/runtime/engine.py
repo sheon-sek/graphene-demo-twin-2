@@ -167,16 +167,29 @@ class RuntimeEngine:
             )
         return out
 
+    def _energy_constraint_targets(self) -> set[str]:
+        """Assets whose physical constraints can change authoritative Cooling Tower power."""
+        targets = set(self.model.authoritative_energy_assets)
+        targets.update(
+            asset["exportPath"].lower()
+            for asset in self.topology["assets"]
+            if asset.get("typeId") == "PAHU"
+        )
+        return targets
+
     def scripted_energy_segments(self, dt: datetime) -> list[FaultActivation]:
-        """Piecewise-constant physical constraints that can affect authoritative energy."""
+        """Piecewise-constant constraints for assets that can affect authoritative energy."""
         if self.mode != "demo" or not self.model.authoritative_energy_assets:
             return []
 
+        energy_targets = self._energy_constraint_targets()
         segments: list[FaultActivation] = []
         step = self.model.energy_step_seconds
         for scenario in demo_scenarios()["scenarios"]:
             target = self._resolve_target(scenario)
             if scenario["recipeId"] not in self.faults.PHYSICAL_RECIPES:
+                continue
+            if target.lower() not in energy_targets:
                 continue
 
             start = parse_utc(scenario["startLocal"])
@@ -246,6 +259,7 @@ class RuntimeEngine:
             self.model.epoch,
             dt,
             self.topology,
+            target_paths=self._energy_constraint_targets(),
             scripted_segments=self.scripted_energy_segments(dt),
         )
         base = self.model.calculate(
