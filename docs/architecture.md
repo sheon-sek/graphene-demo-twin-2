@@ -27,3 +27,9 @@ Reference exports -> Schema Generator -> Coverage Manifest / Topology / Signal R
 - Equipment domains that have not yet migrated to `PhysicalWorldSolver` continue to use deterministic compatibility sources; they are not claimed to have full physical causality yet.
 
 The backend is a single deployable FastAPI service. OPC UA is an adapter, not a physics engine. The frontend reads REST for authoritative initial state and SSE for live telemetry.
+
+## Cooling control and staging
+
+The cooling solver treats the real Graphene Chiller System Control setpoints as authoritative control inputs for the migrated cooling slice. The configured CHWS setpoint drives both Chiller and CRAC chilled-water supply state, while minimum/maximum Chillers and the Chiller Load Limit determine the required staging count and per-Chiller capacity. The configured maximum remains distinct from the number of Chiller assets currently present in topology; staging is always capped by physical availability. Aggregate Graphene control points such as Plant Load, Required Chillers and Running Chillers are projected from this solved control state.
+
+Running-hours lead rotation remains compatibility metadata until authoritative operating-hours integration and an explicit mapping between control-channel names and physical Chiller assets are modeled.
