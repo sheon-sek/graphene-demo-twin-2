@@ -51,15 +51,44 @@ def test_cooling_tower_failure_propagates_through_topology_to_chiller_and_site_b
     runtime.seek("2026-08-28T06:00:00Z")
     baseline = runtime.snapshot()
 
-    tower = next(asset for asset in runtime.topology["assets"] if asset["typeId"] == "Cooling Tower")
-    linked = next(
-        relation
-        for relation in runtime.topology["relations"]
-        if relation.get("kind") == "serves" and relation.get("from") == tower["assetId"]
-    )
-    chiller = next(asset for asset in runtime.topology["assets"] if asset["assetId"] == linked["to"])
+    assets_by_id = {asset["assetId"]: asset for asset in runtime.topology["assets"]}
+    tower = None
+    chiller = None
+    tower_power = None
+    for candidate in runtime.topology["assets"]:
+        if candidate["typeId"] != "Cooling Tower":
+            continue
+        candidate_power = point_for(
+            runtime.manifest, candidate["exportPath"], "Power", "Electrical Power"
+        )
+        if baseline["points"][candidate_power["exportPath"]]["value"] <= 0:
+            continue
+        linked = next(
+            (
+                relation
+                for relation in runtime.topology["relations"]
+                if relation.get("kind") == "serves"
+                and relation.get("from") == candidate["assetId"]
+                and relation.get("to") in assets_by_id
+                and assets_by_id[relation["to"]].get("typeId") == "Chiller"
+            ),
+            None,
+        )
+        if linked is None:
+            continue
+        candidate_chiller = assets_by_id[linked["to"]]
+        candidate_cop = point_for(runtime.manifest, candidate_chiller["exportPath"], "COP")
+        if baseline["points"][candidate_cop["exportPath"]]["value"] <= 0:
+            continue
+        tower = candidate
+        chiller = candidate_chiller
+        tower_power = candidate_power
+        break
 
-    tower_power = point_for(runtime.manifest, tower["exportPath"], "Power", "Electrical Power")
+    assert tower is not None
+    assert chiller is not None
+    assert tower_power is not None
+
     tower_speed = point_for(runtime.manifest, tower["exportPath"], "Fan Speed Feedback")
     chiller_cop = point_for(runtime.manifest, chiller["exportPath"], "COP")
     chiller_power = point_for(runtime.manifest, chiller["exportPath"], "Input Power", "Power")
