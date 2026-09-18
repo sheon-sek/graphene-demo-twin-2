@@ -19,7 +19,13 @@
     "pahuStaticPressureSetpointPa": 600,
     "designStaticPressureSetpointPa": 450,
     "cracDesignCoolingKw": 110,
-    "cracFanDesignPowerKw": 4.5
+    "cracFanDesignPowerKw": 4.5,
+    "pahuDesignCoolingKw": 220,
+    "pahuSupplyAirTempSetpointC": 15,
+    "pahuReturnAirTempSetpointC": 25,
+    "pahuSupplyAirRhSetpointPct": 47.5,
+    "pahuReturnAirRhSetpointPct": 52.5,
+    "pahuAfterHoursExtraDemandFraction": 0.25
   },
   "electrical": {
     "nominalVoltageV": 230,

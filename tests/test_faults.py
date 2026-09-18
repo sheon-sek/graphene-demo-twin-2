@@ -107,6 +107,40 @@ def test_cooling_tower_failure_propagates_through_topology_to_chiller_and_site_b
     assert faulted["site"]["pue"] > baseline["site"]["pue"]
 
 
+
+def test_pahu_after_hours_becomes_physical_demand_and_propagates_to_plant():
+    runtime = RuntimeEngine()
+    runtime.set_mode("open_world")
+    runtime.seek("2026-08-28T11:30:00Z")
+    baseline = runtime.snapshot()
+
+    target = next(
+        asset
+        for asset in runtime.topology["assets"]
+        if asset.get("typeId") == "PAHU" and asset["exportPath"] == "PAHU/R_PAHU2"
+    )
+    fan_speed = point_for(runtime.manifest, target["exportPath"], "Fan Speed Feedback")
+    chw_flow = point_for(runtime.manifest, target["exportPath"], "CHW Flow")
+
+    runtime.faults.inject("PAHU_AFTER_HOURS", target["exportPath"], 1.0, runtime.now())
+    faulted = runtime.snapshot()
+
+    baseline_balance = baseline["groundTruth"]["networkBalance"]
+    faulted_balance = faulted["groundTruth"]["networkBalance"]
+    assert (
+        faulted["points"][fan_speed["exportPath"]]["value"]
+        > baseline["points"][fan_speed["exportPath"]]["value"]
+    )
+    assert (
+        faulted["points"][chw_flow["exportPath"]]["value"]
+        > baseline["points"][chw_flow["exportPath"]]["value"]
+    )
+    assert faulted_balance["pahu_cooling_demand_kw"] > baseline_balance["pahu_cooling_demand_kw"]
+    assert faulted_balance["cooling_demand_kw"] > baseline_balance["cooling_demand_kw"]
+    assert faulted["site"]["plantLoadKw"] > baseline["site"]["plantLoadKw"]
+    assert faulted["site"]["facilityLoadKw"] > baseline["site"]["facilityLoadKw"]
+
+
 def test_network_failure_changes_quality_and_state():
     manifest, _, _, snapshot = fixture()
     point = next(

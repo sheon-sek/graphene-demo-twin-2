@@ -168,7 +168,7 @@ class RuntimeEngine:
         return out
 
     def scripted_energy_segments(self, dt: datetime) -> list[FaultActivation]:
-        """Piecewise-constant scripted constraints only for authoritative energy assets."""
+        """Piecewise-constant physical constraints that can affect authoritative energy."""
         if self.mode != "demo" or not self.model.authoritative_energy_assets:
             return []
 
@@ -176,8 +176,6 @@ class RuntimeEngine:
         step = self.model.energy_step_seconds
         for scenario in demo_scenarios()["scenarios"]:
             target = self._resolve_target(scenario)
-            if target.lower() not in self.model.authoritative_energy_assets:
-                continue
             if scenario["recipeId"] not in self.faults.PHYSICAL_RECIPES:
                 continue
 
@@ -248,7 +246,6 @@ class RuntimeEngine:
             self.model.epoch,
             dt,
             self.topology,
-            target_paths=self.model.authoritative_energy_assets,
             scripted_segments=self.scripted_energy_segments(dt),
         )
         base = self.model.calculate(

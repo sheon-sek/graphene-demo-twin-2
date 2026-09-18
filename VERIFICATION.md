@@ -36,3 +36,14 @@ The migrated cooling control layer is also checked for:
 - configured maximum Chillers remains distinct from currently available topology assets and staging cannot exceed physical availability;
 - Chiller load fraction cannot exceed the configured load-limit setpoint;
 - Graphene Plant Load, Required Chillers, Running Chillers, Min/Max Chillers, CHWS Temperature SP and Chiller Load Limit are projections of one authoritative cooling-control state.
+
+## PAHU demand aggregation verification
+
+The PAHU migration adds checks that:
+
+- all 15 real PAHU assets are solved from one airside thermal-demand source and are connected through explicit Chiller `serves` topology;
+- the sum of PAHU Cooling Demand equals the authoritative PAHU/network cooling demand;
+- the sum of PAHU CHW Flow equals the network PAHU CHW flow balance;
+- real SAT/RAT/setpoints and diagnostic static-pressure/fan/valve/CHW-flow paths project from the same PAHU `AssetState`;
+- `PAHU_AFTER_HOURS` increases the selected PAHU fan speed and CHW flow and propagates to higher aggregate cooling demand and facility load;
+- indirect PAHU physical constraints change the authoritative Cooling Tower Energy slope consistently with the resulting Cooling Tower power.

@@ -229,6 +229,76 @@ def test_graphene_chiller_control_points_project_authoritative_control_state():
             assert projected == value
 
 
+
+def test_pahu_demand_aggregates_into_shared_chw_demand_through_topology():
+    _, model = load_model()
+    snapshot = model.calculate("2026-08-28T06:00:00Z")
+    assert snapshot.world is not None
+    world = snapshot.world
+
+    pahus = [state for state in world.assets.values() if state.type_id == "PAHU"]
+    assert len(pahus) == 15
+    assert all(state.running for state in pahus)
+
+    summed_demand = sum(float(state.metrics["Cooling Demand"]) for state in pahus)
+    summed_flow = sum(state.flow_lps for state in pahus)
+    assert abs(summed_demand - world.balance.pahu_cooling_demand_kw) < 0.01
+    assert abs(world.balance.cooling_demand_kw - world.balance.pahu_cooling_demand_kw) < 0.01
+    assert abs(summed_flow - world.balance.pahu_chw_flow_lps) < 0.01
+    assert abs(world.balance.zone_cooling_demand_kw - world.balance.pahu_cooling_demand_kw) < 0.01
+
+    assets_by_id = {asset["assetId"]: asset for asset in model.topology["assets"]}
+    pahu_ids = {
+        asset["assetId"]: asset
+        for asset in model.topology["assets"]
+        if asset.get("typeId") == "PAHU"
+    }
+    served_pahus = {
+        relation["to"]
+        for relation in model.topology["relations"]
+        if relation.get("kind") == "serves"
+        and relation.get("to") in pahu_ids
+        and relation.get("from") in assets_by_id
+        and assets_by_id[relation["from"]].get("typeId") == "Chiller"
+    }
+    assert served_pahus == set(pahu_ids)
+
+
+def test_pahu_graphene_points_project_one_authoritative_asset_state():
+    manifest, model = load_model()
+    snapshot = model.calculate("2026-08-28T06:00:00Z")
+    assert snapshot.world is not None
+
+    state = next(state for state in snapshot.world.assets.values() if state.type_id == "PAHU")
+    points = {
+        point["memberName"]: point
+        for point in manifest["points"]
+        if point.get("instancePath") == state.export_path
+    }
+    for member in (
+        "Supply Air Temperature",
+        "Return Air Temperature",
+        "Supply Air Temperature Setpoint",
+        "Return Air Temperature Setpoint",
+        "Static Pressure",
+        "Static Pressure Setpoint",
+        "Fan Speed Command",
+        "Fan Speed Feedback",
+        "CHW Valve Command",
+        "CHW Valve Feedback",
+        "CHW Flow",
+        "On_Off",
+        "Fan On_Off",
+    ):
+        point = points[member]
+        expected = state.metrics[member]
+        projected = snapshot.signals[point["signalKey"]]
+        if isinstance(expected, float):
+            assert abs(projected - expected) < 0.001
+        else:
+            assert projected == expected
+
+
 def test_energy_is_monotonic_random_access():
     manifest, model = load_model()
     point = next(point for point in manifest["points"] if point["sourceClass"] == "ENERGY_INTEGRAL" and point["runtimeRequired"])

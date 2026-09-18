@@ -26,6 +26,7 @@ class FaultEngine:
         "COOLING_TOWER_FAILURE",
         "CHILLER_CONDENSER_DEGRADATION",
         "CRAC_VALVE_STUCK",
+        "PAHU_AFTER_HOURS",
     }
 
     def __init__(self):
@@ -199,6 +200,10 @@ class FaultEngine:
                 )
                 row["valve_position"] = min(
                     row.get("valve_position", 1.0), 1.0 - 0.97 * severity
+                )
+            elif fault.recipeId == "PAHU_AFTER_HOURS":
+                row["after_hours_operation"] = max(
+                    row.get("after_hours_operation", 0.0), severity
                 )
         return constraints
 
@@ -391,6 +396,8 @@ class FaultEngine:
                         values[point["signalKey"]] = 42.0
                 site["hallBRhPct"] = round(site.get("hallBRhPct", 52) + 8 * severity, 3)
             elif fault.recipeId == "PAHU_AFTER_HOURS":
+                if physical_applied:
+                    continue
                 for point in matching:
                     name = point["memberName"].lower()
                     if name in {"on_off", "fan on_off", "fan on off"}:

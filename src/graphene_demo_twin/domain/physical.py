@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from math import ceil
+from math import ceil, sqrt
 from typing import Any
 
 
@@ -22,6 +22,9 @@ class AssetState:
 
 @dataclass(frozen=True)
 class NetworkBalance:
+    zone_cooling_demand_kw: float
+    pahu_cooling_demand_kw: float
+    pahu_chw_flow_lps: float
     cooling_demand_kw: float
     cooling_delivered_kw: float
     unmet_cooling_kw: float
@@ -63,6 +66,7 @@ class PhysicalWorldSolver:
         self.physics = physics
         self.assets = topology.get("assets", [])
         self.by_id = {asset["assetId"]: asset for asset in self.assets}
+        self.by_path = {asset["exportPath"].lower(): asset for asset in self.assets}
         self.by_type: dict[str, list[dict]] = {}
         for asset in self.assets:
             self.by_type.setdefault(asset.get("typeId") or "", []).append(asset)
@@ -107,11 +111,129 @@ class PhysicalWorldSolver:
             0.05,
             1.0,
         )
-        cooling_demand_kw = max(
+        zone_cooling_demand_kw = max(
             0.0,
             it_kw * float(cooling_cfg.get("itHeatFraction", 0.92))
             + max(0.0, outside - 24.0) * float(cooling_cfg.get("envelopeKwPerC", 18.0)),
         )
+
+        pahus = self.by_type.get("PAHU", [])
+        pahu_cooling_demand_kw = zone_cooling_demand_kw
+        pahu_chw_flow_lps = 0.0
+        if pahus:
+            pahu_cooling_demand_kw = 0.0
+            per_unit_zone_demand_kw = zone_cooling_demand_kw / len(pahus)
+            pahu_design_kw = float(airside_cfg.get("pahuDesignCoolingKw", 220.0))
+            sat_setpoint_c = float(airside_cfg.get("pahuSupplyAirTempSetpointC", 15.0))
+            rat_setpoint_c = float(airside_cfg.get("pahuReturnAirTempSetpointC", 25.0))
+            supply_rh_setpoint = float(airside_cfg.get("pahuSupplyAirRhSetpointPct", 47.5))
+            return_rh_setpoint = float(airside_cfg.get("pahuReturnAirRhSetpointPct", 52.5))
+            static_pressure_setpoint = float(
+                airside_cfg.get("pahuStaticPressureSetpointPa", 600.0)
+            )
+            design_static_pressure = max(
+                1.0, float(airside_cfg.get("designStaticPressureSetpointPa", 450.0))
+            )
+            pressure_speed_factor = sqrt(
+                max(0.1, static_pressure_setpoint / design_static_pressure)
+            )
+            after_hours_extra_fraction = max(
+                0.0, float(airside_cfg.get("pahuAfterHoursExtraDemandFraction", 0.25))
+            )
+            return_rh = (
+                float(site_seed.get("hallARhPct", 52.0))
+                + float(site_seed.get("hallBRhPct", 52.0))
+            ) / 2.0
+
+            for asset in pahus:
+                path = asset["exportPath"]
+                upstream_chillers = [
+                    upstream
+                    for upstream in self.served_by.get(path.lower(), [])
+                    if self.by_path.get(upstream.lower(), {}).get("typeId") == "Chiller"
+                ]
+                connected = bool(upstream_chillers)
+                availability = clamp(
+                    self._constraint(constraints, path, "availability", 1.0), 0.0, 1.0
+                )
+                after_hours = clamp(
+                    self._constraint(constraints, path, "after_hours_operation", 0.0),
+                    0.0,
+                    1.0,
+                )
+                running = connected and availability > 0.05
+                demand_multiplier = 1.0 + after_hours_extra_fraction * after_hours
+                cooling_demand = (
+                    per_unit_zone_demand_kw * demand_multiplier * availability
+                    if running
+                    else 0.0
+                )
+                load = clamp(cooling_demand / max(1.0, pahu_design_kw), 0.0, 1.0)
+                fan_speed = (
+                    clamp((0.42 + 0.38 * load) * pressure_speed_factor, 0.0, 1.0)
+                    if running
+                    else 0.0
+                )
+                if running and after_hours > 0.0:
+                    fan_speed = max(
+                        fan_speed,
+                        clamp((0.58 + 0.12 * after_hours) * availability, 0.0, 1.0),
+                    )
+                valve = (
+                    clamp(cooling_demand / max(1.0, pahu_design_kw), 0.0, 1.0)
+                    if running
+                    else 0.0
+                )
+                chw_flow = (
+                    cooling_demand / max(1.0, 4.186 * max(0.1, chw_delta_t_c))
+                    if running
+                    else 0.0
+                )
+                static_pressure = (
+                    static_pressure_setpoint * (0.97 + 0.03 * fan_speed)
+                    if running
+                    else 0.0
+                )
+                sat = (
+                    sat_setpoint_c + 0.35 * (1.0 - load)
+                    if running
+                    else rat_setpoint_c
+                )
+                rat = rat_setpoint_c + 0.6 * load
+                supply_rh = max(35.0, return_rh - 4.0 * valve)
+
+                pahu_cooling_demand_kw += cooling_demand
+                pahu_chw_flow_lps += chw_flow
+                states[path.lower()] = AssetState(
+                    path,
+                    "PAHU",
+                    running=running,
+                    load_fraction=load,
+                    flow_lps=chw_flow,
+                    metrics={
+                        "Cooling Demand": cooling_demand,
+                        "Supply Air Temperature": sat,
+                        "Return Air Temperature": rat,
+                        "Supply Air Temperature Setpoint": sat_setpoint_c,
+                        "Return Air Temperature Setpoint": rat_setpoint_c,
+                        "Supply Air Relative Humidity": supply_rh,
+                        "Return Air Relative Humidity": return_rh,
+                        "Supply Air Relative Humidity Setpoint": supply_rh_setpoint,
+                        "Return Air Relative Humidity Setpoint": return_rh_setpoint,
+                        "Static Pressure": static_pressure,
+                        "Static Pressure Setpoint": static_pressure_setpoint,
+                        "Fan Speed Command": fan_speed * 100.0,
+                        "Fan Speed Feedback": fan_speed * 100.0,
+                        "CHW Valve Command": valve * 100.0,
+                        "CHW Valve Feedback": valve * 100.0,
+                        "CHW Flow": chw_flow,
+                        "On_Off": 1 if running else 0,
+                        "Fan On_Off": 1 if running else 0,
+                        "Auto_Manual": 1,
+                    },
+                )
+
+        cooling_demand_kw = pahu_cooling_demand_kw if pahus else zone_cooling_demand_kw
 
         cracs = self.by_type.get("CRAC", [])
         crac_fan_kw = 0.0
@@ -419,6 +541,9 @@ class PhysicalWorldSolver:
         site["facilityLoadKw"] = round(it_kw + cooling_plant_power_kw + non_cooling_aux_kw, 3)
         site["pue"] = round(site["facilityLoadKw"] / max(1.0, it_kw), 3)
         balance = NetworkBalance(
+            zone_cooling_demand_kw=zone_cooling_demand_kw,
+            pahu_cooling_demand_kw=pahu_cooling_demand_kw,
+            pahu_chw_flow_lps=pahu_chw_flow_lps,
             cooling_demand_kw=cooling_demand_kw,
             cooling_delivered_kw=cooling_delivered_kw,
             unmet_cooling_kw=unmet,

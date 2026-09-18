@@ -134,3 +134,33 @@ def test_scripted_tower_fault_updates_authoritative_energy(monkeypatch):
     runtime.seek(start + timedelta(seconds=2 * runtime.model.energy_step_seconds))
     faulted = runtime.snapshot()
     assert abs(faulted["points"][energy["exportPath"]]["value"] - initial_energy) < 0.001
+
+
+
+def test_indirect_pahu_constraint_updates_authoritative_tower_energy_slope():
+    runtime = RuntimeEngine()
+    runtime.set_mode("open_world")
+    start = parse_utc("2026-08-28T11:30:00Z")
+    runtime.seek(start)
+    baseline = runtime.snapshot()
+    energy, power = _running_tower_points(runtime, baseline)
+
+    target = next(
+        asset
+        for asset in runtime.topology["assets"]
+        if asset.get("typeId") == "PAHU" and asset["exportPath"] == "PAHU/R_PAHU2"
+    )
+    initial_energy = baseline["points"][energy["exportPath"]]["value"]
+
+    runtime.faults.inject("PAHU_AFTER_HOURS", target["exportPath"], 1.0, runtime.now())
+    fault_start = runtime.snapshot()
+    fault_power = fault_start["points"][power["exportPath"]]["value"]
+    assert fault_power > baseline["points"][power["exportPath"]]["value"]
+    assert abs(fault_start["points"][energy["exportPath"]]["value"] - initial_energy) < 0.001
+
+    runtime.seek(start + timedelta(seconds=runtime.model.energy_step_seconds))
+    after = runtime.snapshot()
+    delta_kwh = after["points"][energy["exportPath"]]["value"] - initial_energy
+    assert abs(
+        delta_kwh - fault_power * runtime.model.energy_step_seconds / 3600.0
+    ) < 0.002
