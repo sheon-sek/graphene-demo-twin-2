@@ -1,35 +1,37 @@
 {
   "cooling": {
-    "chillerDesignCapacityKw": 1450.0,
-    "chwsSetpointC": 5.3,
+    "chillerDesignCapacityKw": 1450,
+    "chwsSetpointC": 7,
     "designChwsSetpointC": 6.5,
     "itHeatFraction": 0.92,
-    "envelopeKwPerC": 18.0,
-    "targetChillerLoadFraction": 0.72,
+    "envelopeKwPerC": 18,
     "chwDesignDeltaTC": 5.5,
-    "chillerPumpDesignFlowLps": 90.0,
-    "chillerPumpDesignPowerKw": 32.0,
+    "chillerPumpDesignFlowLps": 90,
+    "chillerPumpDesignPowerKw": 32,
     "chillerPumpNominalSpeedFraction": 0.74,
-    "towerFanDesignPowerKw": 26.0,
-    "towerDesignFlowLps": 82.0
+    "towerFanDesignPowerKw": 26,
+    "towerDesignFlowLps": 82,
+    "minimumChillers": 1,
+    "maximumChillers": 4,
+    "chillerLoadLimitFraction": 0.85
   },
   "airside": {
-    "pahuStaticPressureSetpointPa": 600.0,
-    "designStaticPressureSetpointPa": 450.0,
-    "cracDesignCoolingKw": 110.0,
+    "pahuStaticPressureSetpointPa": 600,
+    "designStaticPressureSetpointPa": 450,
+    "cracDesignCoolingKw": 110,
     "cracFanDesignPowerKw": 4.5
   },
   "electrical": {
-    "nominalVoltageV": 230.0,
-    "nominalFrequencyHz": 50.0,
+    "nominalVoltageV": 230,
+    "nominalFrequencyHz": 50,
     "modeledLossFraction": 0.012
   },
   "environment": {
     "hallTempC": 23.2,
-    "hallRhPct": 52.0
+    "hallRhPct": 52
   },
   "facility": {
-    "nonCoolingAuxKw": 180.0
+    "nonCoolingAuxKw": 180
   },
   "energy": {
     "stepSeconds": 300,

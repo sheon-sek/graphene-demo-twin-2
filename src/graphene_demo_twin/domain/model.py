@@ -332,6 +332,27 @@ class DomainModel:
             return round(value, 4)
         return value
 
+    @staticmethod
+    def _cooling_control_value(point: dict, world: PhysicalWorld | None) -> Any | None:
+        if world is None:
+            return None
+        control = world.cooling_control
+        values = {
+            "Chiller System Control/Controls/Demo Cooling Demand": control.plant_load_fraction * 100.0,
+            "Chiller System Control/Plant Load": control.plant_load_fraction * 100.0,
+            "Chiller System Control/Required Chillers": control.required_chillers,
+            "Chiller System Control/Running Chillers": control.running_chillers,
+            "Chiller System Control/Minimum Chillers": control.minimum_chillers,
+            "Chiller System Control/Maximum Chillers": control.maximum_chillers,
+            "Chiller System Control/Controls/Minimum Chillers": control.minimum_chillers,
+            "Chiller System Control/Controls/Maximum Chillers": control.maximum_chillers,
+            "Chiller System Control/Cooling Blocks/CB-001/CHWS Temperature SP": control.chws_setpoint_c,
+            "Chiller System Control/Cooling Blocks/CB-001/Chiller Load Limit": (
+                control.chiller_load_limit_fraction * 100.0
+            ),
+        }
+        return values.get(point["exportPath"])
+
     def _value_for(
         self,
         point: dict,
@@ -368,6 +389,10 @@ class DomainModel:
         ):
             energy = self.energy_integrator.energy_kwh(asset, dt, constraint_windows)
             return self._physical_value(energy, dtype)
+
+        control_value = self._cooling_control_value(point, world)
+        if control_value is not None:
+            return self._physical_value(control_value, dtype)
 
         if dtype == "Boolean":
             return False

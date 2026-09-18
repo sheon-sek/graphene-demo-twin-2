@@ -139,6 +139,96 @@ def test_physical_world_is_deterministic_random_access():
     assert first.world == again.world
 
 
+
+def _control_seed(it_load_kw: float):
+    return {
+        "plantLoadKw": 0.0,
+        "itLoadKw": it_load_kw,
+        "facilityLoadKw": it_load_kw,
+        "pue": 1.0,
+        "outsideTempC": 24.0,
+        "hallATempC": 23.2,
+        "hallBTempC": 23.2,
+        "hallARhPct": 52.0,
+        "hallBRhPct": 52.0,
+    }
+
+
+def test_chiller_control_setpoints_drive_staging_and_capacity():
+    _, model = load_model()
+    timestamp = parse_utc("2026-08-28T06:00:00Z")
+
+    low = model.world_solver.solve(timestamp, _control_seed(400.0))
+    high = model.world_solver.solve(timestamp, _control_seed(4000.0))
+
+    assert low.cooling_control.minimum_chillers == 1
+    assert low.cooling_control.maximum_chillers == 4
+    assert low.cooling_control.available_chillers == 3
+    assert low.cooling_control.required_chillers == 1
+    assert high.cooling_control.required_chillers == 3
+    assert high.cooling_control.running_chillers == sum(
+        1 for state in high.assets.values() if state.type_id == "Chiller" and state.running
+    )
+    assert all(
+        state.load_fraction <= high.cooling_control.chiller_load_limit_fraction + 1e-9
+        for state in high.assets.values()
+        if state.type_id == "Chiller"
+    )
+
+
+def test_chws_control_setpoint_is_shared_by_chillers_and_cracs():
+    _, model = load_model()
+    world = model.world_solver.solve(parse_utc("2026-08-28T06:00:00Z"), _control_seed(400.0))
+    setpoint = world.cooling_control.chws_setpoint_c
+
+    running_chillers = [
+        state for state in world.assets.values() if state.type_id == "Chiller" and state.running
+    ]
+    running_cracs = [
+        state for state in world.assets.values() if state.type_id == "CRAC" and state.running
+    ]
+    assert running_chillers
+    assert running_cracs
+    assert all(
+        abs(state.metrics["CHW Supply Temperature"] - setpoint) < 1e-9
+        for state in running_chillers
+    )
+    assert all(
+        abs(state.metrics["CHW Supply Temperature"] - setpoint) < 1e-9
+        for state in running_cracs
+    )
+
+
+def test_graphene_chiller_control_points_project_authoritative_control_state():
+    manifest, model = load_model()
+    snapshot = model.calculate("2026-08-28T06:00:00Z")
+    assert snapshot.world is not None
+    control = snapshot.world.cooling_control
+    by_path = {point["exportPath"]: point for point in manifest["points"]}
+
+    expected = {
+        "Chiller System Control/Controls/Demo Cooling Demand": control.plant_load_fraction * 100.0,
+        "Chiller System Control/Plant Load": control.plant_load_fraction * 100.0,
+        "Chiller System Control/Required Chillers": control.required_chillers,
+        "Chiller System Control/Running Chillers": control.running_chillers,
+        "Chiller System Control/Minimum Chillers": control.minimum_chillers,
+        "Chiller System Control/Maximum Chillers": control.maximum_chillers,
+        "Chiller System Control/Controls/Minimum Chillers": control.minimum_chillers,
+        "Chiller System Control/Controls/Maximum Chillers": control.maximum_chillers,
+        "Chiller System Control/Cooling Blocks/CB-001/CHWS Temperature SP": control.chws_setpoint_c,
+        "Chiller System Control/Cooling Blocks/CB-001/Chiller Load Limit": (
+            control.chiller_load_limit_fraction * 100.0
+        ),
+    }
+    for path, value in expected.items():
+        point = by_path[path]
+        projected = snapshot.signals[point["signalKey"]]
+        if isinstance(value, float):
+            assert abs(projected - value) < 0.001
+        else:
+            assert projected == value
+
+
 def test_energy_is_monotonic_random_access():
     manifest, model = load_model()
     point = next(point for point in manifest["points"] if point["sourceClass"] == "ENERGY_INTEGRAL" and point["runtimeRequired"])

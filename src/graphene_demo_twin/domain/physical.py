@@ -31,10 +31,23 @@ class NetworkBalance:
 
 
 @dataclass(frozen=True)
+class CoolingControlState:
+    minimum_chillers: int
+    maximum_chillers: int
+    available_chillers: int
+    required_chillers: int
+    running_chillers: int
+    chiller_load_limit_fraction: float
+    chws_setpoint_c: float
+    plant_load_fraction: float
+
+
+@dataclass(frozen=True)
 class PhysicalWorld:
     assets: dict[str, AssetState]
     balance: NetworkBalance
     site: dict[str, Any]
+    cooling_control: CoolingControlState
 
     def asset(self, export_path: str | None) -> AssetState | None:
         if not export_path:
@@ -86,6 +99,14 @@ class PhysicalWorldSolver:
         airside_cfg = self.physics.get("airside", {})
         facility_cfg = self.physics.get("facility", {})
         chw_delta_t_c = float(cooling_cfg.get("chwDesignDeltaTC", 5.5))
+        chws_setpoint_c = float(cooling_cfg.get("chwsSetpointC", 7.0))
+        minimum_chillers = max(0, int(cooling_cfg.get("minimumChillers", 1)))
+        maximum_chillers = max(minimum_chillers, int(cooling_cfg.get("maximumChillers", 4)))
+        chiller_load_limit = clamp(
+            float(cooling_cfg.get("chillerLoadLimitFraction", 0.85)),
+            0.05,
+            1.0,
+        )
         cooling_demand_kw = max(
             0.0,
             it_kw * float(cooling_cfg.get("itHeatFraction", 0.92))
@@ -125,8 +146,10 @@ class PhysicalWorldSolver:
                         "CHW Valve Command": valve_command * 100.0,
                         "CHW Valve Feedback": valve * 100.0,
                         "CHW Flow": chw_flow,
-                        "CHW Supply Temperature": 5.5,
-                        "CHW Return Temperature": 5.5 + chw_delta_t_c if effective > 0 else 5.5,
+                        "CHW Supply Temperature": chws_setpoint_c,
+                        "CHW Return Temperature": (
+                            chws_setpoint_c + chw_delta_t_c if effective > 0 else chws_setpoint_c
+                        ),
                         "Supply Air Temperature": sat,
                         "Return Air Temperature": rat,
                         "Fan Electrical Power": fan_power,
@@ -138,12 +161,23 @@ class PhysicalWorldSolver:
 
         chillers = self.by_type.get("Chiller", [])
         chiller_capacity_kw = float(cooling_cfg.get("chillerDesignCapacityKw", 1450.0))
-        target_load = float(cooling_cfg.get("targetChillerLoadFraction", 0.72))
+        available_chillers = len(chillers)
+        effective_maximum_chillers = min(available_chillers, maximum_chillers)
+        effective_minimum_chillers = min(effective_maximum_chillers, minimum_chillers)
+        staging_capacity_kw = max(1.0, chiller_capacity_kw * chiller_load_limit)
         required_chillers = (
-            min(len(chillers), max(1, ceil(cooling_demand_kw / max(1.0, chiller_capacity_kw * target_load))))
-            if chillers
+            min(
+                effective_maximum_chillers,
+                max(effective_minimum_chillers, ceil(cooling_demand_kw / staging_capacity_kw)),
+            )
+            if effective_maximum_chillers
             else 0
         )
+        configured_plant_capacity_kw = max(
+            1.0,
+            chiller_capacity_kw * chiller_load_limit * max(1, maximum_chillers),
+        )
+        plant_load_fraction = clamp(cooling_demand_kw / configured_plant_capacity_kw, 0.0, 1.0)
         active_chillers = chillers[:required_chillers]
         active_paths = {asset["exportPath"].lower() for asset in active_chillers}
         requested_per_chiller = cooling_demand_kw / max(1, required_chillers)
@@ -289,6 +323,7 @@ class PhysicalWorldSolver:
             running = is_selected and availability > 0.05 and hydraulic_factor > 0.01
             capacity = (
                 chiller_capacity_kw
+                * chiller_load_limit
                 * availability
                 * (0.58 + 0.42 * condenser_factor)
                 * hydraulic_factor
@@ -312,7 +347,7 @@ class PhysicalWorldSolver:
             condenser_rejection_kw += rejection
             cooling_delivered_kw += cooling
             load = cooling / chiller_capacity_kw if chiller_capacity_kw else 0.0
-            chw_supply = 5.3 + 1.8 * (1.0 - condenser_factor) if running else 11.0
+            chw_supply = chws_setpoint_c + 1.8 * (1.0 - condenser_factor) if running else 11.0
             chw_return = chw_supply + (chw_delta_t_c if running else 0.0)
             chw_flow = cooling / max(1.0, 4.186 * max(0.1, chw_return - chw_supply)) if running else 0.0
             if path_key in pump_links_by_chiller:
@@ -391,4 +426,19 @@ class PhysicalWorldSolver:
             cooling_plant_power_kw=cooling_plant_power_kw,
             non_cooling_aux_kw=non_cooling_aux_kw,
         )
-        return PhysicalWorld(states, balance, site)
+        running_chillers = sum(
+            1
+            for state in states.values()
+            if state.type_id == "Chiller" and state.running
+        )
+        cooling_control = CoolingControlState(
+            minimum_chillers=minimum_chillers,
+            maximum_chillers=maximum_chillers,
+            available_chillers=available_chillers,
+            required_chillers=required_chillers,
+            running_chillers=running_chillers,
+            chiller_load_limit_fraction=chiller_load_limit,
+            chws_setpoint_c=chws_setpoint_c,
+            plant_load_fraction=plant_load_fraction,
+        )
+        return PhysicalWorld(states, balance, site, cooling_control)

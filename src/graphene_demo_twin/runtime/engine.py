@@ -270,6 +270,7 @@ class RuntimeEngine:
             ground_truth = {
                 "modeledAssetCount": len(base.world.assets),
                 "networkBalance": asdict(base.world.balance),
+                "coolingControl": asdict(base.world.cooling_control),
                 "authoritativeEnergyAssetCount": len(self.model.authoritative_energy_assets),
             }
         return {
