@@ -21,7 +21,7 @@ Reference exports -> Schema Generator -> Coverage Manifest / Topology / Signal R
 
 - Asset state is solved before point projection. Graphene points do not independently invent equipment physics.
 - Physical propagation follows explicit topology relations such as `serves` / `servedBy`; the solver does not create proximity links.
-- The initial closed-loop slice covers Chiller, Cooling Tower, Chiller Pump and CRAC behavior, including cooling demand, condenser-water effects, chilled-water delivery and cooling-plant electrical balance.
+- The migrated closed-loop slice covers Chiller, Cooling Tower, Chiller Pump, PAHU, CRAC and the first authoritative Hall thermal state, including cooling demand, condenser-water effects, chilled-water delivery, airside delivery, zone thermal balance and cooling-plant electrical balance.
 - A physical fault changes solver constraints. For example, a cooling-tower failure reduces tower availability before the linked chiller is solved, so tower power/flow, condenser-water temperature, chiller COP/input power and facility balance change coherently.
 - Non-physical concerns such as communication quality and alarm presentation remain in the shared Fault Engine after the physical solve.
 - Equipment domains that have not yet migrated to `PhysicalWorldSolver` continue to use deterministic compatibility sources; they are not claimed to have full physical causality yet.
@@ -43,3 +43,19 @@ The real PAHU SAT/RAT/RH/setpoint/run-state surface and the existing diagnostic 
 `PAHU_AFTER_HOURS` is now a physical pre-solve constraint. It raises the selected PAHU's unnecessary after-hours airflow/CHW demand, which propagates through aggregate CHW demand into Chiller load, Cooling Tower power and facility load/PUE. Because indirect PAHU constraints can change Cooling Tower power, authoritative Cooling Tower Energy integration tracks the physical-constraint history of current Tower-power driver assets (Cooling Towers and PAHUs), rather than only faults directly targeting a Cooling Tower. Unrelated long-running physical ramps are excluded from the energy timeline so random-access integration stays bounded.
 
 CRAC remains the existing migrated cooling-delivery gate in this increment; a later airside refinement can separate CRAC/PAHU zone allocation without inventing a split not present in the current source data.
+
+## Hall / zone thermal state
+
+The first thermal-zone migration is intentionally limited to the topology that is actually supported by the generated Graphene evidence. All 64 real `Temperature and Humidity` sensor instances are located in `Hall-A`, while the current topology does not provide an explicit PAHU/CRAC-to-Datahall or PAHU/CRAC-to-`Hall-A` service allocation. The solver therefore exposes one authoritative aggregate `ThermalZoneState` for `Hall-A` instead of inventing per-Datahall equipment assignments.
+
+`Hall-A` closes a deterministic heat balance from authoritative zone heat demand and solved airside cooling delivery:
+
+```text
+zone heat
+- airside cooling delivered
+= thermal unmet cooling
+→ Hall-A temperature / humidity state
+→ real Temperature and Humidity sensor observations
+```
+
+The 64 real sensor instances project `Temp` and `Humidity` from that shared Hall state with bounded deterministic per-signal observation variation. The runtime ground-truth payload exposes the zone state directly. `Hall-B` remains compatibility state because the current source topology does not justify a second authoritative thermal zone, and PAHU/CRAC return-air values are not yet forced onto the Hall state without an explicit zone-serving relationship.
