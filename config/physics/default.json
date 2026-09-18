@@ -34,7 +34,10 @@
   },
   "environment": {
     "hallTempC": 23.2,
-    "hallRhPct": 52
+    "hallRhPct": 52,
+    "thermalUnmetGainC": 4.5,
+    "returnAirDeltaC": 0.8,
+    "humidityUnmetGainPct": 3
   },
   "facility": {
     "nonCoolingAuxKw": 180

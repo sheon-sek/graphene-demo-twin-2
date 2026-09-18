@@ -323,3 +323,63 @@ def test_demo_holds_but_open_world_does_not():
     runtime._sim_anchor = parse_utc("2026-09-30T00:00:00Z")
     _ = runtime.now()
     assert runtime.state == "RUNNING"
+
+
+def test_hall_thermal_zone_closes_balance_and_projects_real_sensors():
+    manifest, model = load_model()
+    snapshot = model.calculate("2026-08-28T06:00:00Z")
+    assert snapshot.world is not None
+
+    zone = snapshot.world.thermal_zones["Hall-A"]
+    assert abs(
+        zone.zone_heat_kw - zone.airside_cooling_kw - zone.unmet_cooling_kw
+    ) < 0.01
+    assert abs(
+        zone.zone_heat_kw - snapshot.world.balance.zone_cooling_demand_kw
+    ) < 0.01
+    assert abs(
+        zone.airside_cooling_kw
+        - min(zone.zone_heat_kw, snapshot.world.balance.cooling_delivered_kw)
+    ) < 0.01
+    assert abs(snapshot.site["hallATempC"] - zone.temperature_c) < 0.001
+    assert abs(snapshot.site["hallARhPct"] - zone.humidity_pct) < 0.001
+
+    sensor_points = [
+        point
+        for point in manifest["points"]
+        if point.get("typeId") == "Temperature and Humidity"
+        and point.get("memberName") in {"Temp", "Humidity"}
+    ]
+    assert len(sensor_points) == 128
+    for point in sensor_points:
+        value = snapshot.signals[point["signalKey"]]
+        if point["memberName"] == "Temp":
+            assert abs(value - zone.temperature_c) <= 0.251
+        else:
+            assert abs(value - zone.humidity_pct) <= 0.801
+
+
+def test_hall_thermal_state_responds_to_airside_delivery_loss():
+    _, model = load_model()
+    timestamp = "2026-08-28T06:00:00Z"
+    baseline = model.calculate(timestamp)
+    assert baseline.world is not None
+
+    crac_paths = [
+        asset["exportPath"]
+        for asset in model.topology["assets"]
+        if asset.get("typeId") == "CRAC"
+    ]
+    assert crac_paths
+    constrained = model.calculate(
+        timestamp,
+        constraints={path: {"availability": 0.0} for path in crac_paths},
+    )
+    assert constrained.world is not None
+
+    baseline_zone = baseline.world.thermal_zones["Hall-A"]
+    constrained_zone = constrained.world.thermal_zones["Hall-A"]
+    assert constrained_zone.airside_cooling_kw < baseline_zone.airside_cooling_kw
+    assert constrained_zone.unmet_cooling_kw > baseline_zone.unmet_cooling_kw
+    assert constrained_zone.temperature_c > baseline_zone.temperature_c
+    assert constrained.site["hallATempC"] > baseline.site["hallATempC"]

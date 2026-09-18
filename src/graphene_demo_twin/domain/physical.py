@@ -46,11 +46,23 @@ class CoolingControlState:
 
 
 @dataclass(frozen=True)
+class ThermalZoneState:
+    zone_id: str
+    zone_heat_kw: float
+    airside_cooling_kw: float
+    unmet_cooling_kw: float
+    temperature_c: float
+    return_air_temperature_c: float
+    humidity_pct: float
+
+
+@dataclass(frozen=True)
 class PhysicalWorld:
     assets: dict[str, AssetState]
     balance: NetworkBalance
     site: dict[str, Any]
     cooling_control: CoolingControlState
+    thermal_zones: dict[str, ThermalZoneState] = field(default_factory=dict)
 
     def asset(self, export_path: str | None) -> AssetState | None:
         if not export_path:
@@ -102,6 +114,7 @@ class PhysicalWorldSolver:
         cooling_cfg = self.physics.get("cooling", {})
         airside_cfg = self.physics.get("airside", {})
         facility_cfg = self.physics.get("facility", {})
+        environment_cfg = self.physics.get("environment", {})
         chw_delta_t_c = float(cooling_cfg.get("chwDesignDeltaTC", 5.5))
         chws_setpoint_c = float(cooling_cfg.get("chwsSetpointC", 7.0))
         minimum_chillers = max(0, int(cooling_cfg.get("minimumChillers", 1)))
@@ -528,13 +541,45 @@ class PhysicalWorldSolver:
 
         cooling_delivered_kw *= crac_delivered_fraction
         unmet = max(0.0, cooling_demand_kw - cooling_delivered_kw)
-        hall_penalty = 4.5 * unmet / max(1.0, cooling_demand_kw)
+        thermal_load_kw = zone_cooling_demand_kw
+        airside_cooling_kw = min(thermal_load_kw, cooling_delivered_kw)
+        thermal_unmet_kw = max(0.0, thermal_load_kw - airside_cooling_kw)
+        thermal_unmet_fraction = thermal_unmet_kw / max(1.0, thermal_load_kw)
+        thermal_gain_c = float(environment_cfg.get("thermalUnmetGainC", 4.5))
+        return_air_delta_c = float(environment_cfg.get("returnAirDeltaC", 0.8))
+        humidity_unmet_gain_pct = float(environment_cfg.get("humidityUnmetGainPct", 3.0))
+        hall_a_temperature = (
+            float(site_seed["hallATempC"]) + thermal_gain_c * thermal_unmet_fraction
+        )
+        hall_a_humidity = max(
+            0.0,
+            min(
+                100.0,
+                float(site_seed["hallARhPct"])
+                + humidity_unmet_gain_pct * thermal_unmet_fraction,
+            ),
+        )
+        thermal_zones = {
+            "Hall-A": ThermalZoneState(
+                zone_id="Hall-A",
+                zone_heat_kw=thermal_load_kw,
+                airside_cooling_kw=airside_cooling_kw,
+                unmet_cooling_kw=thermal_unmet_kw,
+                temperature_c=hall_a_temperature,
+                return_air_temperature_c=hall_a_temperature + return_air_delta_c,
+                humidity_pct=hall_a_humidity,
+            )
+        }
+        legacy_hall_b_penalty = thermal_gain_c * unmet / max(1.0, cooling_demand_kw)
         site = dict(site_seed)
         site["coolingDemandKw"] = round(cooling_demand_kw, 3)
         site["coolingDeliveredKw"] = round(cooling_delivered_kw, 3)
         site["unmetCoolingKw"] = round(unmet, 3)
-        site["hallATempC"] = round(float(site_seed["hallATempC"]) + hall_penalty, 3)
-        site["hallBTempC"] = round(float(site_seed["hallBTempC"]) + hall_penalty, 3)
+        site["hallATempC"] = round(hall_a_temperature, 3)
+        site["hallARhPct"] = round(hall_a_humidity, 3)
+        site["hallBTempC"] = round(
+            float(site_seed["hallBTempC"]) + legacy_hall_b_penalty, 3
+        )
         cooling_plant_power_kw = chiller_power_kw + tower_power_kw + pump_power_kw + crac_fan_kw
         non_cooling_aux_kw = float(facility_cfg.get("nonCoolingAuxKw", 180.0))
         site["plantLoadKw"] = round(cooling_plant_power_kw, 3)
@@ -566,4 +611,4 @@ class PhysicalWorldSolver:
             chws_setpoint_c=chws_setpoint_c,
             plant_load_fraction=plant_load_fraction,
         )
-        return PhysicalWorld(states, balance, site, cooling_control)
+        return PhysicalWorld(states, balance, site, cooling_control, thermal_zones)

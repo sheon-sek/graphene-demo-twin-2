@@ -282,6 +282,10 @@ class RuntimeEngine:
                 "modeledAssetCount": len(base.world.assets),
                 "networkBalance": asdict(base.world.balance),
                 "coolingControl": asdict(base.world.cooling_control),
+                "thermalZones": {
+                    zone_id: asdict(zone)
+                    for zone_id, zone in base.world.thermal_zones.items()
+                },
                 "authoritativeEnergyAssetCount": len(self.model.authoritative_energy_assets),
             }
         return {

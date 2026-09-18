@@ -83,6 +83,27 @@ class DomainModel:
         if self.energy_period_seconds % self.energy_step_seconds:
             raise ValueError("energy repeat period must be a multiple of energy step")
         self.world_solver = PhysicalWorldSolver(topology, self.physics)
+        assets_by_id = {
+            asset["assetId"]: asset
+            for asset in self.topology.get("assets", [])
+            if asset.get("assetId")
+        }
+        self.thermal_zone_by_instance: dict[str, str] = {}
+        for relation in self.topology.get("relations", []):
+            if relation.get("kind") != "locatedIn":
+                continue
+            asset = assets_by_id.get(relation.get("from"))
+            zone_ref = relation.get("to")
+            if (
+                not asset
+                or asset.get("typeId") != "Temperature and Humidity"
+                or not isinstance(zone_ref, str)
+                or not zone_ref.startswith("zone:")
+            ):
+                continue
+            self.thermal_zone_by_instance[asset["exportPath"].lower()] = (
+                zone_ref.removeprefix("zone:")
+            )
 
         probe = self.world_solver.solve(self.epoch, self._site_seed(self.epoch), {})
         self.authoritative_energy_assets = {
@@ -456,6 +477,15 @@ class DomainModel:
             metrics = self._chiller_metrics(asset, dt, site)
             if member in metrics:
                 return round(metrics[member], 4)
+        if point.get("typeId") == "Temperature and Humidity" and world is not None:
+            zone_id = self.thermal_zone_by_instance.get(asset.lower())
+            zone = world.thermal_zones.get(zone_id) if zone_id else None
+            if zone is not None:
+                if member == "Temp":
+                    return round(zone.temperature_c + 0.25 * noise, 3)
+                if member == "Humidity":
+                    observed = zone.humidity_pct + 0.8 * noise
+                    return round(max(0.0, min(100.0, observed)), 3)
         if "supply air temperature" in name or name == "sat":
             return round((14.4 if "crac" in path else 15.2) + 0.25 * noise, 3)
         if "return air temperature" in name or name == "rat":
