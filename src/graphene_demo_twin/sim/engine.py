@@ -12,6 +12,9 @@ from graphene_demo_twin.sim.state import AssetState, WorldState, state_hash
 
 STEP_S = 1.0
 """The fixed step, in seconds."""
+COMPLETION_PASSES = 20
+"""Most passes of the domains' `complete` for the initial state to settle; a coupled
+steady state converges in a handful."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,9 +42,11 @@ class Domain(Protocol):
     declares them as `commands: Mapping[type_id, tuple[CommandSpec, ...]]`. A domain whose
     steady state derives from other domains' (site totals, running averages) may also define
     `complete(state, ctx)`, called in registration order once every domain's initial state is
-    in place, and then once more in the same order, so a steady state may also derive from
-    domains registered after it (a room's heat balance from the losses the electrical network
-    works out). It sets only its own variables, from the state as it finds it.
+    in place, and then again in the same order until a pass changes nothing, so a steady state
+    may also derive from domains registered after it and settle with the ones it is coupled
+    to (a room's heat balance from the losses the electrical network works out, and a CRAC
+    unit's load from the room it cools). It sets only its own variables, from the state as it
+    finds it.
     """
 
     def initial(self, ctx: StepContext) -> Mapping[str, AssetState]:
@@ -143,10 +148,13 @@ class Simulation:
                     raise ValueError(f"two domains own {node} variables {sorted(clash)}")
                 owned.update(variables)
         state = WorldState(start_time, assets)
-        for _ in range(2):
-            for domain in self.domains:
-                if (complete := getattr(domain, "complete", None)) is not None:
-                    complete(state, ctx)
+        completions = [c for d in self.domains if (c := getattr(d, "complete", None)) is not None]
+        settled = None
+        for _ in range(COMPLETION_PASSES):
+            for complete in completions:
+                complete(state, ctx)
+            if settled == (settled := state_hash(state)):
+                break
         return state
 
     def _domain_for(self, event: Event) -> Domain:

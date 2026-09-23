@@ -2,11 +2,12 @@
 volume with first-order thermal inertia, and the sensors placed in it observe it.
 
 Heat in is everything that dissipates in the room: a hall's IT Load, a UPS room's module
-losses, a switch room's transformer losses, the control room's circuits, and every room's
-lighting. Heat out is the cooling its air suppliers (its upstream `air` connections in the
-Plant Design) actually deliver: each removes heat in proportion to its airflow and to how far
-the room's return air sits above the air it supplies. Zones exchange heat only through those
-connections; the Plant Design joins no zone to another, so every zone is independent.
+losses, a switch room's transformer losses, the control room's circuits and the load its UPS
+carries, and every room's lighting. Heat out is the cooling its air suppliers (its upstream
+`air` connections in the Plant Design) actually deliver: each removes heat in proportion to its
+airflow and to how far the room's return air sits above the air it supplies. Zones exchange
+heat only through those connections; the Plant Design joins no zone to another, so every zone
+is independent.
 
 Moisture: the fresh-air handlers serving a zone hold its dew point low, a little above it on
 humid days; without one running it drifts towards the outdoor dew point. Relative humidity
@@ -144,7 +145,9 @@ class ThermalZoneDomain:
         s["it_heat_kw"] = it
         s["heat_kw"] = heat
         s["cooling_kw"] = cooling
-        s["delivered_fraction"] = cooling / heat if heat > 0.0 else 1.0
+        # The zone's cooling demand is the heat it takes in: what the airside must remove to
+        # hold it where it is. Pulling stored heat back out delivers more than that.
+        s["delivered_fraction"] = min(max(cooling / heat, 0.0), 1.0) if heat > 0.0 else 1.0
         s["cold_aisle_c"] = mixed + recirculation * (temp - mixed)
         s["rh_pct"] = relative_humidity_pct(temp, s["dew_point_c"])
 
@@ -378,23 +381,24 @@ def served_room(design: PlantDesign, unit: str) -> str | None:
 def heat_sources(design: PlantDesign, zone: str) -> tuple[tuple[str, str], ...]:
     """(node, the variable holding the heat it dissipates) for the zone itself (its lighting)
     and every load on the power graph placed in it, except its cooling equipment and the
-    meters whose stand-in draw is spent elsewhere. A UPS module dissipates only its losses:
-    what it draws to charge its battery is stored, and what it delivers is spent where its
-    load is."""
+    meters whose stand-in draw is spent elsewhere. A UPS module dissipates its losses: what
+    it draws to charge its battery is stored, and what it delivers is spent where its load
+    is. A UPS with no branch below it (the control UPS) carries a load in its own room, so
+    what it delivers is spent there too."""
     net = network(design)
     stand_ins = {f.meter for f in net.feeds if f.stand_in}
-    ups = set(net.ups)
     powered_nodes = {*net.supply_flag, *net.it, *net.ups, *net.incomers}
-    return (
-        (zone, "power_kw"),
-        *(
-            (a.path, "loss_kw" if a.path in ups else "power_kw")
-            for a in design.assets_in(zone)
-            if a.path in powered_nodes
-            and a.type_id not in AIR_UNIT_TYPES
-            and a.path not in stand_ins
-        ),
-    )
+    sources: list[tuple[str, str]] = [(zone, "power_kw")]
+    for a in design.assets_in(zone):
+        if a.path not in powered_nodes or a.type_id in AIR_UNIT_TYPES or a.path in stand_ins:
+            continue
+        if a.path not in net.ups_branch:
+            sources.append((a.path, "power_kw"))
+            continue
+        sources.append((a.path, "loss_kw"))
+        if net.ups_branch[a.path] is None:
+            sources.append((a.path, "output_kw"))
+    return tuple(sources)
 
 
 @functools.cache

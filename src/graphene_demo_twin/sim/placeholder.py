@@ -70,6 +70,11 @@ class PlaceholderCracDomain:
             for crac in assets_of(ctx.design, CRAC_TYPE)
         }
 
+    def complete(self, state: WorldState, ctx: StepContext) -> None:
+        """Each unit settled on the return air its room starts at."""
+        for crac in assets_of(ctx.design, CRAC_TYPE):
+            self._update(state, ctx, crac, settle=1.0)
+
     def handles(self, event: Event, design: PlantDesign) -> bool:
         placed = design.assets.get(event.target)
         return (
@@ -86,45 +91,50 @@ class PlaceholderCracDomain:
 
     def step(self, state: WorldState, ctx: StepContext) -> None:
         for crac in assets_of(ctx.design, CRAC_TYPE):
-            s = state.assets[crac]
-            fan_loss = s.get("constraint.fan_loss", 0.0)
-            blockage = s.get("constraint.filter_blockage", 0.0)
-            trip = s.get("constraint.compressor_trip", 0.0)
-            derate = s.get("constraint.condenser_derate", 0.0)
-            offset = s.get("controller.setpoint_offset_c", 0.0)
-            room = served_room(ctx.design, crac)
-            return_c = state.assets.get(room, {}).get("temp_c", HALL_C) if room else HALL_C
+            self._update(state, ctx, crac, settle=ctx.dt / self.SUPPLY_TAU_S)
 
-            # Controller
-            run_cmd = True if s["mode"] == "auto" else s["hand_run"]
-            target = s["setpoint_c"] + offset
-            demand = min(max((return_c - target) / self.COIL_DT_K, 0.0), 1.0)
+    def _update(self, state: WorldState, ctx: StepContext, crac: str, settle: float) -> None:
+        """Run the unit and its Controller, moving supply air `settle` of the way to what
+        the coil leaves."""
+        s = state.assets[crac]
+        fan_loss = s.get("constraint.fan_loss", 0.0)
+        blockage = s.get("constraint.filter_blockage", 0.0)
+        trip = s.get("constraint.compressor_trip", 0.0)
+        derate = s.get("constraint.condenser_derate", 0.0)
+        offset = s.get("controller.setpoint_offset_c", 0.0)
+        room = served_room(ctx.design, crac)
+        return_c = state.assets.get(room, {}).get("temp_c", HALL_C) if room else HALL_C
 
-            # Equipment: it stops without supply and restarts when supply returns.
-            tripped = trip >= 0.5 or fan_loss >= 0.9
-            running = run_cmd and not tripped and powered(state, ctx.design, crac)
-            compressor = min(demand, 1.0 - derate) if running else 0.0
-            leaving = return_c - compressor * self.COIL_DT_K
-            s["run_cmd"] = run_cmd
-            s["running"] = running
-            s["tripped"] = tripped
-            s["fan_pct"] = self.NOMINAL_FAN_PCT * (1.0 - fan_loss) if running else 0.0
-            s["airflow"] = (1.0 - fan_loss) * (1.0 - blockage) if running else 0.0
-            s["compressor_pct"] = 100.0 * compressor
-            s["return_c"] = return_c
-            s["supply_c"] += (leaving - s["supply_c"]) * ctx.dt / self.SUPPLY_TAU_S
+        # Controller
+        run_cmd = True if s["mode"] == "auto" else s["hand_run"]
+        target = s["setpoint_c"] + offset
+        demand = min(max((return_c - target) / self.COIL_DT_K, 0.0), 1.0)
 
-            # Device alarm logic, reading the unit's own state
-            s["alarm_filter"] = running and blockage >= 0.25
-            s["alarm_high_pressure"] = trip >= 0.5 or (compressor > 0.0 and derate >= 0.4)
-            s["alarm_trip"] = tripped
-            s["alarm_loss_of_signal"] = s.get("comm", "good") == "bad"
-            s["has_alarm"] = (
-                s["alarm_filter"]
-                or s["alarm_high_pressure"]
-                or s["alarm_trip"]
-                or s["alarm_loss_of_signal"]
-            )
+        # Equipment: it stops without supply and restarts when supply returns.
+        tripped = trip >= 0.5 or fan_loss >= 0.9
+        running = run_cmd and not tripped and powered(state, ctx.design, crac)
+        compressor = min(demand, 1.0 - derate) if running else 0.0
+        leaving = return_c - compressor * self.COIL_DT_K
+        s["run_cmd"] = run_cmd
+        s["running"] = running
+        s["tripped"] = tripped
+        s["fan_pct"] = self.NOMINAL_FAN_PCT * (1.0 - fan_loss) if running else 0.0
+        s["airflow"] = (1.0 - fan_loss) * (1.0 - blockage) if running else 0.0
+        s["compressor_pct"] = 100.0 * compressor
+        s["return_c"] = return_c
+        s["supply_c"] += (leaving - s["supply_c"]) * settle
+
+        # Device alarm logic, reading the unit's own state
+        s["alarm_filter"] = running and blockage >= 0.25
+        s["alarm_high_pressure"] = trip >= 0.5 or (compressor > 0.0 and derate >= 0.4)
+        s["alarm_trip"] = tripped
+        s["alarm_loss_of_signal"] = s.get("comm", "good") == "bad"
+        s["has_alarm"] = (
+            s["alarm_filter"]
+            or s["alarm_high_pressure"]
+            or s["alarm_trip"]
+            or s["alarm_loss_of_signal"]
+        )
 
 
 class PlaceholderNetworkDomain:

@@ -8,13 +8,16 @@ from graphene_demo_twin.plant_design import ConnectionKind
 from graphene_demo_twin.projection import PointSource, Projector
 from graphene_demo_twin.sim import Event, Simulation
 from graphene_demo_twin.sim.electrical import network
+from graphene_demo_twin.sim.placeholder import assets_of
 from graphene_demo_twin.sim.thermal import (
     COLD_AISLE_SPREAD_C,
+    CRAC_TYPE,
     HOT_AISLE_SPREAD_C,
     ThermalZoneDomain,
     air_suppliers,
     cold_aisle_sensors,
     hot_aisle_sensors,
+    supplier_air,
     zones,
 )
 from graphene_demo_twin.world import default_domains, default_projector
@@ -73,6 +76,46 @@ def test_zones_start_in_steady_state_with_heat_in_equal_to_cooling_out(plant_des
     sim.advance(600)
     for zone in zones(plant_design):  # only the IT Load's noise and daily shape move it
         assert sim.state.assets[zone]["temp_c"] == pytest.approx(before[zone], abs=0.5), zone
+
+
+def test_crac_units_start_in_steady_state_with_the_zone_they_serve(plant_design):
+    # Every CRAC reads its room's return air and loads its compressor for it before the first
+    # step, and the zones are balanced against what those units draw: the first step with
+    # no event moves nothing an observer could read.
+    sim = _sim(plant_design)
+    cracs = {c: dict(sim.state.assets[c]) for c in assets_of(plant_design, CRAC_TYPE)}
+    temps = {z: sim.state.assets[z]["temp_c"] for z in zones(plant_design)}
+    for crac, s in cracs.items():
+        room = next(n for n in plant_design.downstream(crac, ConnectionKind.AIR))
+        assert s["return_c"] == pytest.approx(temps[room], abs=1e-9), crac
+    sim.step()
+    for crac, s in cracs.items():
+        now = sim.state.assets[crac]
+        for key, value in s.items():
+            if isinstance(value, float):
+                assert now[key] == pytest.approx(value, abs=1e-6), (crac, key)
+            else:
+                assert now[key] == value, (crac, key)
+    for zone, temp in temps.items():
+        assert sim.state.assets[zone]["temp_c"] == pytest.approx(temp, abs=1e-6), zone
+
+
+def test_the_control_ups_heats_the_bms_control_room_with_what_it_carries(plant_design):
+    # UPS 25 has no downstream branch: the BMS control room and network load it carries is
+    # spent in L1-SUP, as well as its own losses.
+    sim = _sim(plant_design)
+    sim.advance(30)
+    a = sim.state.assets
+    ups = a["UPS/UPS 25"]
+    assert ups["output_kw"] > 40.0
+    circuits = sum(
+        a[x.path]["power_kw"]
+        for x in plant_design.assets_in("L1-SUP")
+        if x.type_id in ("IPS", "RCMS")
+    )
+    assert a["L1-SUP"]["heat_kw"] == pytest.approx(
+        a["L1-SUP"]["power_kw"] + circuits + ups["loss_kw"] + ups["output_kw"], rel=1e-9
+    )
 
 
 def test_heat_in_is_it_load_plus_losses_and_heat_out_is_delivered_cooling(plant_design):
@@ -176,6 +219,26 @@ def test_a_support_room_loses_cooling_on_its_own(plant_design):
         assert sim.state.assets[hall] == base.state.assets[hall], hall
 
 
+def test_delivered_fraction_is_the_share_of_demand_met_through_loss_and_recovery(plant_design):
+    sim = _sim(plant_design)
+    for event in _dh05_loses_cooling(START):
+        sim.schedule(event)
+    sim.advance(1800)
+    hot = sim.state.assets["DH05"]
+    assert 0.0 < hot["delivered_fraction"] < 1.0
+    assert hot["delivered_fraction"] == pytest.approx(hot["cooling_kw"] / hot["heat_kw"])
+    for fault in ("crac.compressor_trip", "crac.fan_failure"):
+        sim.schedule(_clear(sim.time, CRAC5, fault))
+    for _ in range(600):
+        sim.step()
+        s = sim.state.assets["DH05"]
+        assert 0.0 <= s["delivered_fraction"] <= 1.0
+    # Pulling the stored heat back out, the airside delivers more than the hall's demand.
+    s = sim.state.assets["DH05"]
+    assert s["cooling_kw"] > s["heat_kw"]
+    assert s["delivered_fraction"] == 1.0
+
+
 def test_clear_lets_the_hall_recover_through_its_own_inertia(plant_design):
     sim = _sim(plant_design)
     for event in _dh05_loses_cooling(START):
@@ -255,6 +318,51 @@ def test_cold_aisle_and_hot_aisle_sensors_observe_their_zone_with_bounded_spread
     )
 
 
+def test_less_airflow_recirculates_more_hot_aisle_air_into_the_cold_aisle(plant_design, projector):
+    base, sim = _sim(plant_design), _sim(plant_design)
+    sim.schedule(_inject(START, CRAC5, "crac.fan_failure", severity=0.5))
+    base.advance(1800)
+    sim.advance(1800)
+    assert sim.state.assets[CRAC5]["running"]  # a weaker fan, not a trip
+
+    def recirculated(state) -> float:
+        """The share of the cold aisle's air that came back from the hot aisle."""
+        flow = supplied = 0.0
+        for supplier, share in air_suppliers(plant_design, "DH05"):
+            airflow, supply_c = supplier_air(state, plant_design, supplier)
+            flow += share * airflow
+            supplied += share * airflow * supply_c
+        mixed = supplied / flow
+        zone = state.assets["DH05"]
+        return (zone["cold_aisle_c"] - mixed) / (zone["temp_c"] - mixed)
+
+    assert recirculated(sim.state) > recirculated(base.state) + 0.05
+    p, q = projector.project(sim.state), projector.project(base.state)
+    for sensor, (hall, _) in cold_aisle_sensors(plant_design).items():
+        if hall == "DH05":
+            path = f"{sensor}/Temperature"
+            assert p.values[path] > q.values[path] + 0.5, path
+
+
+def test_current_heat_load_is_the_heat_the_halls_generate_not_the_cooling_they_get(
+    plant_design, projector
+):
+    view = "Chiller System Control/Data Halls/Current Heat Load"
+    base, outage, surge = _sim(plant_design), _sim(plant_design), _sim(plant_design)
+    for event in _dh05_loses_cooling(START):
+        outage.schedule(event)
+    surge.schedule(_inject(START, "~IT-DH04", "it.load_surge"))
+    for s in (base, outage, surge):
+        s.advance(1800)
+    p, q, r = (projector.project(s.state).values for s in (outage, base, surge))
+    halls_heat = sum(outage.state.assets[h]["heat_kw"] for h in HALLS)
+    halls_cooling = sum(outage.state.assets[h]["cooling_kw"] for h in HALLS)
+    assert halls_cooling < halls_heat - 50.0
+    assert p[view] == pytest.approx(halls_heat, rel=1e-9)
+    assert p[view] == pytest.approx(q[view], rel=1e-9)  # the tripped unit generates no heat
+    assert r[view] > q[view] + 100.0
+
+
 @pytest.mark.parametrize(
     ("sensor", "member", "prefix"),
     [(TH, "Temp", "th"), (EM, "Temperature", "em")],
@@ -272,15 +380,23 @@ def test_a_sensor_fault_changes_only_the_observation(
     sim.advance(3600)
 
     # The world is unchanged: every zone, and every other sensor, reads as without the fault.
+    # Offset and drift corrupt only the temperature element; a stuck sensor freezes both
+    # readings. Only an Environment Monitoring sensor feeds its hall's cold-aisle aggregates.
     for zone in zones(plant_design):
         assert sim.state.assets[zone] == base.state.assets[zone], zone
     p, q = projector.project(sim.state), projector.project(base.state)
     changed = {path for path in q.values if p.values[path] != q.values[path]}
-    own = {f"{sensor}/{member}", f"{sensor}/Humidity"}
     folder = "Environment Monitoring/Level 2/DH05/"
-    aggregates = {path for path in changed if path.startswith(folder) and path.count("/") == 3}
+    allowed = {f"{sensor}/{member}"}
+    if prefix == "em":
+        allowed |= {f"{folder}Avg Cold Aisle Temp", f"{folder}Max Cold Aisle Temp"}
+    if kind == "stuck":
+        allowed.add(f"{sensor}/Humidity")
+        if prefix == "em":
+            allowed |= {f"{folder}Avg Cold Aisle Humidity", f"{folder}Max Cold Aisle Humidity"}
     assert f"{sensor}/{member}" in changed
-    assert changed - own - aggregates == set()
+    assert changed <= allowed
+    assert f"{folder}Avg Cold Aisle Temp" in changed or prefix == "th"
 
     # So the reading disagrees with the zone state and with its neighbours, which agree.
     reading, truth = p.values[f"{sensor}/{member}"], q.values[f"{sensor}/{member}"]
