@@ -6,3 +6,6 @@ apps/web/node_modules/
 apps/web/dist/
 *.pyc
 .DS_Store
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/*.tsbuildinfo
