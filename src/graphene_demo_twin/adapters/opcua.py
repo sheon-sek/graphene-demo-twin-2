@@ -123,7 +123,10 @@ async def serve(
 
     try:
         while True:
-            points = runtime.snapshot()["points"]
+            # Offload the CPU-bound snapshot to a worker thread: called synchronously
+            # here it would block this event loop for seconds, leaving the OPC UA
+            # server unable to service client reads and keepalives mid-cycle.
+            points = (await asyncio.to_thread(runtime.snapshot))["points"]
             source_timestamp = runtime.now()
             for path, variable, variant_type in variables:
                 value, current_variant_type = _encode_point_value(points[path], ua)
