@@ -5,7 +5,7 @@ import pytest
 
 from graphene_demo_twin.faults import FaultConflict, FaultError
 from graphene_demo_twin.sim import Event, EventError
-from graphene_demo_twin.twin import Twin
+from graphene_demo_twin.twin import Frame, Twin
 from graphene_demo_twin.world import SETTLING_S
 
 START = 1_790_000_000
@@ -48,10 +48,42 @@ def test_tick_publishes_one_frame_per_live_world_step(twin, clock):
     assert frame is twin.frame
     assert (frame.seq, frame.time) == (1, START + 1)
 
-    clock.now += 5  # catch-up after a stall publishes once, at the latest second
+
+def _published(twin: Twin, after: int = 0) -> list[Frame]:
+    """Every frame published after `after`, in order, as a surface reading them would see."""
+
+    async def read() -> list[Frame]:
+        frames: list[Frame] = []
+        seq = after
+        while seq < twin.frame.seq:
+            frames.append(frame := await twin.next_frame(seq))
+            seq = frame.seq
+        return frames
+
+    return asyncio.run(read())
+
+
+def test_a_stall_still_publishes_every_second_it_missed(twin, clock):
+    clock.now += 5
     frame = twin.tick()
-    assert (frame.seq, frame.time) == (2, START + 6)
+    assert (frame.seq, frame.time) == (5, START + 5)
     assert frame.projection.time == frame.state.time == twin.live.time
+
+    frames = _published(twin)
+    assert [f.time for f in frames] == [START + s for s in range(1, 6)]
+    assert [f.seq for f in frames] == [1, 2, 3, 4, 5]
+    assert all(f.projection.time == f.state.time == f.time for f in frames)
+    temps = [f.projection.values[HOT_AISLE_DH03] for f in frames]
+    assert len(set(temps)) > 1  # each frame is its own step, not the last one repeated
+
+
+def test_a_reader_further_behind_than_the_backlog_gets_the_oldest_kept_frame(
+    asset_model, plant_design, clock
+):
+    twin = Twin(asset_model, plant_design, seed=7, clock=clock, frame_backlog=3)
+    clock.now += 5
+    twin.tick()
+    assert [f.time for f in _published(twin)] == [START + 3, START + 4, START + 5]
 
 
 def test_frames_are_snapshots_the_live_world_cannot_change(twin, clock):
@@ -63,13 +95,51 @@ def test_frames_are_snapshots_the_live_world_cannot_change(twin, clock):
     assert twin.frame.state.assets["DH03"] != before
 
 
-def test_a_submit_that_steps_the_world_is_still_published(twin, clock):
-    clock.now += 1
-    twin.submit("fault.inject", CRAC3, TRIP)  # catches up to START + 1 itself
-    assert twin.live.time == START + 1
-    assert twin.frame.time == START
-    assert twin.tick().time == START + 1
-    assert [e.kind for e in twin.live.events] == ["fault.inject"]
+def test_a_submit_publishes_each_second_it_steps_then_the_new_event(twin, clock):
+    clock.now += 3
+    event = twin.submit("fault.inject", CRAC3, TRIP)  # catches up to START + 3
+    assert event.at == START + 3
+
+    frames = _published(twin)
+    assert [f.time for f in frames] == [START + 1, START + 2, START + 3, START + 3]
+    assert [f.events for f in frames] == [(), (), (), (event,)]
+    assert frames[-1].event_count == 1
+    # Logging an event changes no state, so its frame carries the same step.
+    assert frames[-1].projection is frames[-2].projection
+    assert twin.frame.events == twin.live.events
+    assert twin.tick() is None
+
+
+def test_fault_actions_publish_each_second_they_step_then_the_new_event(twin, clock):
+    clock.now += 2
+    injected = twin.inject_fault(CRAC3, "crac.compressor_trip", {})
+    clock.now += 2
+    cleared = twin.clear_fault(CRAC3, "crac.compressor_trip")
+
+    frames = _published(twin)
+    assert [f.time for f in frames] == [START + s for s in (1, 2, 2, 3, 4, 4)]
+    assert [f.event_count for f in frames] == [0, 0, 1, 1, 1, 2]
+    assert twin.frame.events == (injected, cleared) == twin.live.events
+
+
+def test_creating_a_fork_publishes_each_second_it_steps(twin, clock):
+    clock.now += 2
+    session = twin.forks.create()
+    assert session.fork.forked_at == START + 2
+    assert [f.time for f in _published(twin)] == [START + 1, START + 2]
+
+
+def test_a_fault_preview_publishes_each_second_it_steps(twin, clock):
+    clock.now += 2
+    twin.preview_fault(CRAC3, "crac.compressor_trip", {}, 60)
+    assert [f.time for f in _published(twin)] == [START + 1, START + 2]
+
+
+def test_reset_publishes_each_second_it_steps_before_the_new_epoch(twin, clock):
+    clock.now += 2
+    twin.reset()
+    frames = _published(twin)
+    assert [(f.epoch, f.time) for f in frames] == [(0, START + 1), (0, START + 2), (1, START + 2)]
 
 
 def test_bad_operator_actions_are_rejected(twin):
@@ -82,12 +152,12 @@ def test_reset_publishes_a_fresh_world_in_a_new_epoch(asset_model, plant_design,
     twin.command(CRAC1, "mode", "hand")
     twin.command(CRAC1, "setpoint", 16.0)
     clock.now += 900
-    twin.tick()
+    last = twin.tick()
     assert twin.frame.projection.values[HOT_AISLE_DH03] > 27
 
     frame = twin.reset()
     assert frame is twin.frame
-    assert frame.epoch == 1 and frame.seq == 2
+    assert frame.epoch == 1 and frame.seq == last.seq + 1
     assert frame.state.faults == {}
     assert twin.live.events == ()
 
@@ -147,6 +217,21 @@ def test_run_publishes_on_each_wall_clock_second(twin, clock):
     asyncio.run(exercise())
     assert twin.frame.time == START + 4
     assert twin.frame.seq == 4
+
+
+def test_run_publishes_every_second_after_a_late_wakeup(twin, clock):
+    async def exercise():
+        stop = asyncio.Event()
+
+        async def late_sleep(seconds: float) -> None:
+            clock.now += seconds + 3  # the scheduler stalled for three more seconds
+            stop.set()
+            await asyncio.sleep(0)
+
+        await twin.run(stop, sleep=late_sleep)
+
+    asyncio.run(exercise())
+    assert [f.time for f in _published(twin)] == [START + s for s in range(1, 5)]
 
 
 def test_forks_run_ahead_without_touching_the_live_world(twin, clock):

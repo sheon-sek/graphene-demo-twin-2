@@ -40,16 +40,20 @@ class LiveWorld:
 
     @property
     def time(self) -> int:
-        return self._sim.time
+        with self._lock:
+            return self._sim.time
 
     @property
     def state(self) -> WorldState:
-        """The current state; read it, never write it (fork to try things)."""
-        return self._sim.state
+        """A snapshot of the current state; changing it never reaches the Live World (only
+        logged events do)."""
+        with self._lock:
+            return self._sim.state.copy()
 
     @property
     def events(self) -> tuple[Event, ...]:
-        return self._sim.events
+        with self._lock:
+            return self._sim.events
 
     def state_hash(self) -> str:
         with self._lock:
@@ -70,9 +74,10 @@ class LiveWorld:
             return self._sim.schedule(Event(self._sim.time, kind, target, params or {}))
 
     def reset(self) -> None:
-        """Discard the Event Log and rebuild from the initial state, as a restart would."""
+        """Discard the Event Log and rebuild from the initial state, as a restart would, but
+        never at an earlier sim time than now, so SourceTimestamps stay monotonic."""
         with self._lock:
-            self._sim = self._fresh()
+            self._sim = self._fresh(not_before=self._sim.time)
 
     def fork(self) -> WhatIfFork:
         """A What-if Fork of the world as it is now; nothing done to it reaches the Live World."""
@@ -87,12 +92,23 @@ class LiveWorld:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         """Step on every wall-clock second boundary until `stop` is set, calling `on_tick`
-        after each second that advanced the world (the 1 Hz publish point)."""
+        after each step (the 1 Hz publish point), so a late wakeup still publishes every
+        second it missed."""
         while not stop.is_set():
             now = self._clock()
             await sleep(math.floor(now) + 1 - now)
-            if self.catch_up() and on_tick is not None:
-                on_tick(self)
+            while self.step_if_behind():
+                if on_tick is not None:
+                    on_tick(self)
 
-    def _fresh(self) -> Simulation:
-        return Simulation(self._design, self._domains, self._seed, math.floor(self._clock()))
+    def step_if_behind(self) -> bool:
+        """Take one step if sim time is behind the wall-clock second; returns whether it did."""
+        with self._lock:
+            if self._sim.time >= math.floor(self._clock()):
+                return False
+            self._sim.step()
+            return True
+
+    def _fresh(self, not_before: int = 0) -> Simulation:
+        start = max(math.floor(self._clock()), not_before)
+        return Simulation(self._design, self._domains, self._seed, start)

@@ -46,7 +46,7 @@ def test_status_reports_the_published_frame(client, twin, clock):
     body = client.get("/api/status").json()
     assert body["time"] == START + 3
     assert body["timestamp"] == "2026-09-21T14:13:23Z"
-    assert body["seq"] == 1 and body["epoch"] == 0
+    assert body["seq"] == 3 and body["epoch"] == 0  # one frame per second stepped
     assert body["seed"] == 7
     assert body["events"] == 0
     assert body["coverage"]["total"] == 8741
@@ -143,6 +143,22 @@ def test_operator_actions_append_to_the_event_log(client, twin):
     )
     assert rejected.status_code == 422
     assert "L1_CRAC9" in rejected.json()["detail"]
+
+
+def test_the_event_log_is_read_from_the_published_frame(client, twin, clock):
+    clock.now += 3  # the clock moves on before the operator acts
+    client.post(
+        "/api/events", json={"kind": "fault.inject", "target": "DH03", "params": COOLING_LOSS}
+    )
+    status = client.get("/api/status").json()
+    log = client.get("/api/events").json()
+    points = client.get("/api/points", params={"path": HOT_AISLE_DH03}).json()
+    assert log["time"] == status["time"] == points["time"] == START + 3
+    assert status["events"] == len(log["events"]) == 1
+
+    # A change the twin has not published yet is not shown.
+    twin.live.submit("fault.clear", "DH03", {"fault": "placeholder.cooling_loss"})
+    assert len(client.get("/api/events").json()["events"]) == 1
 
 
 def test_reset_needs_confirmation_and_clears_the_log(client, twin):

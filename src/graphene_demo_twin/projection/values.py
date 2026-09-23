@@ -67,6 +67,8 @@ def coerce(value: Any, data_type: str) -> Scalar:
         case "Boolean":
             if not isinstance(value, bool | int | float):
                 raise ValueError(f"not a boolean: {value!r}")
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError(f"not finite: {value!r}")
             return bool(value)
         case "String":
             if isinstance(value, dict | list):

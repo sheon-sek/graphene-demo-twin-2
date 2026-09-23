@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from asyncua import Server, ua
 from asyncua.common.node import Node
 
-from graphene_demo_twin.projection import Quality
+from graphene_demo_twin.projection import Projection, Quality
 from graphene_demo_twin.sim import Scalar
 from graphene_demo_twin.twin import Frame, Twin
 
@@ -57,6 +57,7 @@ class OpcUaSurface:
         self.published_seq = -1
         """`seq` of the last frame written to the address space."""
         self._server: Server | None = None
+        self._written: Projection | None = None
         self._variables: dict[str, tuple[ua.NodeId, ua.VariantType]] = {}
 
     @property
@@ -84,6 +85,9 @@ class OpcUaSurface:
 
     async def publish(self, frame: Frame) -> None:
         assert self._server is not None
+        if frame.projection is self._written:  # same step, only the Event Log changed
+            self.published_seq = frame.seq
+            return
         stamp = datetime.fromtimestamp(frame.time, UTC)
         projection = frame.projection
         for path, (node_id, variant_type) in self._variables.items():
@@ -97,6 +101,7 @@ class OpcUaSurface:
                     ServerTimestamp=stamp,
                 ),
             )
+        self._written = projection
         self.published_seq = frame.seq
 
     async def stop(self) -> None:

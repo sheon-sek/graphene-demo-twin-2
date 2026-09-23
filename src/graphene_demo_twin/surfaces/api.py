@@ -265,7 +265,8 @@ def create_app(twin: Twin, console_dir: Path | None = CONSOLE_DIR) -> FastAPI:
 
     @app.get("/api/events")
     def list_events() -> dict[str, Any]:
-        return {"time": twin.live.time, "events": [event_json(e) for e in twin.live.events]}
+        frame = twin.frame
+        return {"time": frame.time, "events": [event_json(e) for e in frame.events]}
 
     @app.post("/api/events", status_code=status.HTTP_201_CREATED)
     async def submit_event(body: EventIn) -> dict[str, Any]:

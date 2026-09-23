@@ -25,8 +25,15 @@ class Event:
     target: str
     """The Plant Design node acted on."""
     params: Mapping[str, Any] = field(default_factory=dict)
+    """Named scalars, frozen on creation so a logged event never changes after the fact."""
 
     def __post_init__(self) -> None:
         if not isinstance(self.at, int) or isinstance(self.at, bool):
             raise EventError(f"event time must be whole sim seconds, got {self.at!r}")
-        object.__setattr__(self, "params", MappingProxyType(dict(self.params)))
+        params = dict(self.params)
+        for name, value in params.items():
+            if not isinstance(name, str):
+                raise EventError(f"event parameter names must be strings, got {name!r}")
+            if not isinstance(value, str | int | float | bool | None):
+                raise EventError(f"event parameter {name!r} must be a scalar, got {value!r}")
+        object.__setattr__(self, "params", MappingProxyType(params))

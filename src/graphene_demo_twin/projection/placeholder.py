@@ -4,7 +4,7 @@ them."""
 from collections.abc import Callable, Iterable
 
 from graphene_demo_twin.asset_model import AssetModel
-from graphene_demo_twin.plant_design import PlantDesign
+from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
 from graphene_demo_twin.projection.projector import Binding, QualityBinding
 from graphene_demo_twin.projection.values import Quality
 from graphene_demo_twin.sim import Scalar, WorldState
@@ -37,9 +37,10 @@ communication is lost."""
 
 
 def placeholder_bindings(asset_model: AssetModel, design: PlantDesign) -> list[Binding]:
-    """Per Data Hall: temperature sensors report their own reading, the hall's branch circuit
-    monitors split its IT Load, and the Dashboard Plant View sums IT Load and IT energy.
-    Every CRAC reports its unit state."""
+    """Per Data Hall: temperature sensors in the hall report their own reading, the branch
+    circuit monitors that supply it (over its authored power connections) split its IT Load,
+    and the Dashboard Plant View sums IT Load and IT energy. Every CRAC reports its unit
+    state."""
     halls = [r for r in design.rooms.values() if r.kind == "hall"]
     bindings: list[Binding] = []
     for crac in assets_of(design, CRAC_TYPE):
@@ -47,14 +48,16 @@ def placeholder_bindings(asset_model: AssetModel, design: PlantDesign) -> list[B
             bindings.append(Binding(f"{crac}/{member}", _read(crac, read)))
     for hall in halls:
         sensors = [a for a in design.assets_in(hall.id) if a.type_id == SENSOR_TYPE]
-        meters = [a for a in design.assets_in(hall.id) if a.type_id == BRANCH_METER_TYPE]
+        meters = [
+            path
+            for path in design.upstream(hall.id, ConnectionKind.POWER)
+            if path in design.assets and design.asset(path).type_id == BRANCH_METER_TYPE
+        ]
         for sensor in sensors:
             bindings.append(Binding(f"{sensor.path}/Temp", _var(sensor.path, "temp_c")))
         for meter in meters:
             share = 1.0 / len(meters)
-            bindings.append(
-                Binding(f"{meter.path}/Active Power", _var(hall.id, "it_load_kw", share))
-            )
+            bindings.append(Binding(f"{meter}/Active Power", _var(hall.id, "it_load_kw", share)))
         bindings.append(
             Binding(
                 f"Dashboard/Energy/Floors/{hall.floor}/Data Halls/{hall.id}/IT Energy",
