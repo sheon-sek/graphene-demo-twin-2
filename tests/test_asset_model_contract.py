@@ -7,11 +7,32 @@ These tests fail if the parsed path set, per-point data types or UDT membership 
 import json
 import shutil
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
-from graphene_demo_twin.asset_model import REFERENCE_DIR, load_asset_model
+from graphene_demo_twin.asset_model import REFERENCE_DIR, AssetModel, load_asset_model
 
 CONTRACT_SHA256 = "93f2fec4832414be9dc48bae82d975201bd577452c41fd534a8a60673e7afbce"
+
+
+def _raw_export_membership() -> dict[str, tuple[str | None, str | None]]:
+    """Map each exported atomic tag to its nearest UDT instance and root UDT instance (Asset),
+    walking the raw instance export without the loader."""
+    export = json.loads((REFERENCE_DIR / "real-graphene-demo-tag-instances.json").read_text())
+    membership: dict[str, tuple[str | None, str | None]] = {}
+
+    def walk(node: dict, prefix: str, instance: str | None, asset: str | None) -> None:
+        for child in node.get("tags", []):
+            path = f"{prefix}/{child['name']}" if prefix else child["name"]
+            if child["tagType"] == "AtomicTag":
+                membership[path] = (instance, asset)
+            elif child["tagType"] == "UdtInstance":
+                walk(child, path, path, asset or path)
+            else:
+                walk(child, path, instance, asset)
+
+    walk(export, "", None, None)
+    return membership
 
 
 def _raw_export_counts() -> tuple[set[str], Counter[str]]:
@@ -44,6 +65,44 @@ def test_point_paths_are_exactly_the_exported_atomic_tags(asset_model):
     assert tag_types["AtomicTag"] == 8741
     assert tag_types["UdtInstance"] == 831
     assert set(asset_model.points) == atomic_paths
+
+
+def _membership_drift(model) -> dict[str, tuple]:
+    """Points whose (UDT instance, Asset) differ from the raw export's nesting."""
+    expected = _raw_export_membership()
+    return {
+        path: ((p.udt_instance, p.asset), expected.get(path))
+        for path, p in model.points.items()
+        if (p.udt_instance, p.asset) != expected.get(path)
+    }
+
+
+def test_udt_membership_is_exactly_the_exported_nesting(asset_model):
+    assert _membership_drift(asset_model) == {}
+    membership = _raw_export_membership().values()
+    assert {i for i, _ in membership} - {None} == set(asset_model.udt_instances)
+    assert {a for _, a in membership} - {None} == set(asset_model.assets)
+
+
+def test_membership_check_detects_a_point_moved_to_another_instance(asset_model):
+    ports = "Network Switches/MAIN CORE SWITCH A/Ports"
+    moved = f"{ports}/Port 07/Speed"
+    drifted = AssetModel(
+        asset_model.udt_types.values(),
+        asset_model.udt_instances.values(),
+        [
+            replace(p, udt_instance=f"{ports}/Port 01") if p.path == moved else p
+            for p in asset_model.points.values()
+        ],
+    )
+    assert drifted.contract_checksum() == asset_model.contract_checksum()
+    assert set(_membership_drift(drifted)) == {moved}
+
+
+def test_every_type_parent_is_none_or_a_registered_type(asset_model):
+    for udt_type in asset_model.udt_types.values():
+        assert udt_type.parent is None or udt_type.parent in asset_model.udt_types, udt_type
+    assert asset_model.udt_types["GEM630-CT-L"].parent is None
 
 
 def test_contract_checksum_is_pinned(asset_model):

@@ -152,6 +152,10 @@ CLASSIFIED = {
         "Cooling Towers Plant/R_P1_P1/VSD Speed Control",
         "Chiller System Control/Stage Up Wait Time",
         "Chiller System Control/Minimum DP",
+        # Hand/auto selections are Operator Commands (CONTEXT.md).
+        "Chiller/R_C1/Auto_Manual",
+        "Buffer Tank/R_BT1/Normally Opened Valve Auto_Manual Mode",
+        "Buffer Tank/R_BT1/Normally Closed Valve Auto_Manual Mode",
     ],
     SourceClass.FEEDBACK: [
         "Chiller/R_C1/On_Off",
@@ -175,7 +179,6 @@ CLASSIFIED = {
         "Dashboard/PUE",
     ],
     SourceClass.EQUIPMENT_STATE: [
-        "Chiller/R_C1/Auto_Manual",
         "Chiller System Control/Chillers/CH-001/Current State",
         "Chiller System Control/Chillers/CH-001/Status",
         "Chiller System Control/Running Chillers",
