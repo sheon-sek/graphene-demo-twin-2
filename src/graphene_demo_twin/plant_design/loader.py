@@ -167,6 +167,7 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
     shafts, shaft_problems = _parse_shafts(raw["shafts"], floor_names, rooms)
     problems += shaft_problems
     problems += _check_floor_changes(connections, shafts, rooms, assets)
+    problems += _check_phases(connections, asset_model)
 
     if problems:
         raise PlantDesignError(problems)
@@ -246,6 +247,30 @@ def _check_floor_changes(
             problems.append(
                 f"{c.kind} connection {c.source} → {c.target} changes floor from {a} to {b}, "
                 f"but no shaft carries {c.kind} between them"
+            )
+    return problems
+
+
+def _phases(node: str, asset_model: AssetModel) -> int | None:
+    """How many phases a meter measures, from the points it has; None for anything else."""
+    if node not in asset_model.assets:
+        return None
+    names = {p.name for p in asset_model.points_of(node)}
+    if "V1" not in names:
+        return None
+    return 3 if "V2" in names else 1
+
+
+def _check_phases(connections: list[Connection], asset_model: AssetModel) -> list[str]:
+    """A single-phase meter's circuit cannot feed a three-phase meter."""
+    problems = []
+    for c in connections:
+        if c.kind is not ConnectionKind.POWER or _phases(c.target, asset_model) != 3:
+            continue
+        if _phases(c.source, asset_model) == 1:
+            problems.append(
+                f"power connection {c.source} → {c.target} feeds a three-phase meter "
+                "from a single-phase one"
             )
     return problems
 

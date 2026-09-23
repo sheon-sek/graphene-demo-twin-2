@@ -8,7 +8,9 @@ draws from three UPS branches at once (distributed redundancy).
 
 Each step the domain
 1. flows this step's loads up the tree to the sources, with the switching the last step left:
-   every meter reads the sum of what it feeds, and a transformer or UPS adds its losses;
+   every meter reads the sum of what it feeds, and a transformer or UPS adds its losses. It
+   records that switching (`fed`, `fed_by`, `fed_v_pu`, …) beside the flow, so everything
+   observed about the step describes the one interval the power flowed in;
 2. advances the equipment: UPS batteries, genset engines and their fuel;
 3. switches: the ATS and genset Controllers act, breakers trip, UPS change mode, and every
    node's `live` flag is set for the next step.
@@ -42,8 +44,14 @@ TX_MAGNETISING_KVAR, TX_REACTANCE = 25.0, 0.06
 TX_TAP, TX_DROP = 0.025, 0.045
 """Off-load tap boost, and the LV voltage drop at rated load, per unit."""
 
-GENSET_KW = 2400.0
-"""3,000 kVA at 0.8 power factor."""
+GENSET_KW, GENSET_KVA = 3000.0, 3750.0
+"""Prime rating: two sets of a side carry its whole load (N+1)."""
+OVERLOAD_TRIP_S = 10
+"""The genset breaker trips after this long above its rating."""
+CHARGE_HEADROOM = 0.9
+"""Share of the online gensets' rating the ATS Controller lets UPS recharging fill."""
+CHARGE_WALK_IN = 0.1
+"""How fast (share of the wanted charge per second) recharging resumes on the gensets."""
 RATED_RPM, CRANK_RPM = 1500.0, 150.0
 CONFIRM_S = 1
 """Utility must be gone this long before the ATS Controller starts the gensets."""
@@ -65,7 +73,10 @@ DAY_START, DAY_STOP = 0.8, 0.9
 BULK_TANK_L, BULK_INITIAL_L = 50_000.0, 45_000.0
 PUMP_LPM, PUMP_KW, PLC_KW = 40.0, 4.0, 0.5
 
-UPS_KVA, UPS_KW = 500.0, 450.0
+UPS_KVA_PER_KW, UPS_PF = 0.8, 0.9
+"""A hall UPS module's kVA per kW of its hall's design IT Load, and its output power factor:
+any two of the three carry the design load at under 70 %, so a hall stays within the 75 %
+distributed-redundancy limit anywhere in its operating band."""
 CONTROL_UPS_KVA, CONTROL_UPS_KW = 100.0, 90.0
 CONTROL_LOAD_KW = 45.0
 """BMS control room and network load the control UPS carries."""
@@ -248,6 +259,12 @@ class Network:
             for n in design.downstream(b, POWER)
         }
         """IT equipment → the UPS branches it draws from."""
+        self.ups_design_kw: dict[str, float] = {
+            self.feeder[b]: design.it_basis[assets[n].room].design_kw
+            for n, branches in self.it.items()
+            for b in branches
+        }
+        """Hall UPS → the design IT Load of the hall it serves."""
         self.tanks: dict[str, tuple[str, ...]] = {
             t: design.downstream(t, ConnectionKind.FUEL) for t in of_type(TANK_TYPE)
         }
@@ -337,13 +354,18 @@ def ups_rating(net: Network, ups: str) -> tuple[float, float, float, float]:
             CONTROL_BATTERY_MIN,
         )
     else:
-        kw, kva, no_load, minutes = UPS_KW, UPS_KVA, UPS_NO_LOAD_KW, BATTERY_MIN
+        kva = UPS_KVA_PER_KW * net.ups_design_kw[ups]
+        kw, no_load, minutes = UPS_PF * kva, UPS_NO_LOAD_KW, BATTERY_MIN
     return kw, kva, no_load, kw * minutes / 60.0
 
 
 def ups_load_pct(net: Network, ups: str, output_kw: float) -> float:
     kw, kva, _, _ = ups_rating(net, ups)
     return 100.0 * max(output_kw / kw, output_kw * math.hypot(1.0, IT_TAN) / kva)
+
+
+def genset_load_pct(p_kw: float, q_kvar: float) -> float:
+    return 100.0 * max(p_kw / GENSET_KW, math.hypot(p_kw, q_kvar) / GENSET_KVA)
 
 
 def grid(ctx: StepContext) -> tuple[float, float]:
@@ -364,10 +386,10 @@ class ElectricalDomain:
         net = network(ctx.design)
         v, hz = grid(ctx)
         states: dict[str, AssetState] = {}
-        for m in (*net.order, *net.incomers):
-            states[m] = {"p_kw": 0.0, "q_kvar": 0.0, "energy_kwh": 0.0, "live": True}
+        for m in (*net.order, *net.incomers, *net.branch_meters):
+            states[m] = {"p_kw": 0.0, "q_kvar": 0.0, "energy_kwh": 0.0, "live": True, "fed": True}
         for i in net.incomers:
-            states[i].update(power_kw=0.0, q_loss_kvar=0.0, v_pu=v, hz=hz)
+            states[i].update(power_kw=0.0, q_loss_kvar=0.0, v_pu=v, hz=hz, fed_v_pu=v, fed_hz=hz)
         for bus in net.buses:
             states[bus.node].update(
                 source="utility",
@@ -377,20 +399,25 @@ class ElectricalDomain:
                 restore_s=0,
                 v_pu=v,
                 hz=hz,
+                fed_v_pu=v,
+                fed_hz=hz,
+                fed_units=len(bus.incomers),
+                charge_share=1.0,
             )
         for board in net.boards.values():
             states[board.node].update(source=board.preferred, fed_by=board.preferred, timer_s=0)
-        for b in net.branch_meters:
-            states[b] = {"p_kw": 0.0, "q_kvar": 0.0, "energy_kwh": 0.0, "live": True}
         for u in net.ups:
             states[u] = {
                 "mode": "online",
+                "fed_mode": "online",
                 "soc": 1.0,
                 "p_kw": 0.0,
                 "q_kvar": 0.0,
                 "output_kw": 0.0,
                 "loss_kw": 0.0,
                 "battery_kw": 0.0,
+                "charge_want_kw": 0.0,
+                "charge_kw": 0.0,
                 "power_kw": 0.0,
                 "load_pct": 0.0,
                 "live": True,
@@ -422,6 +449,8 @@ class ElectricalDomain:
                 "overcrank": False,
                 "fuel_shutdown": False,
                 "overload": False,
+                "overload_s": 0,
+                "overload_trip": False,
                 "prealarm": False,
                 "general_alarm": False,
                 "has_alarm": False,
@@ -439,9 +468,6 @@ class ElectricalDomain:
             }
         for room in net.ups_rooms:
             states[room] = {"ups_heat_kw": 0.0}
-        for a in ctx.design.assets.values():
-            if a.type_id == "IPS" and a.room:
-                states[a.path] = {"insulation_kohm": 500.0}
         return states
 
     def complete(self, state: WorldState, ctx: StepContext) -> None:
@@ -466,6 +492,13 @@ class ElectricalDomain:
         a = state.assets
         hours = ctx.dt / 3600.0 if integrate else 0.0
 
+        # The switching this step flows through, kept beside the flow it carried.
+        for node in (*net.incomers, *net.order, *net.branch_meters):
+            a[node]["fed"] = a[node]["live"]
+        for node in (*net.incomers, *(bus.node for bus in net.buses)):
+            s = a[node]
+            s["fed_v_pu"], s["fed_hz"] = s["v_pu"], s["hz"]
+
         for tank in net.tanks:
             s = a[tank]
             on = a[net.feeder[tank]]["live"]
@@ -485,7 +518,8 @@ class ElectricalDomain:
                 s["energy_kwh"] += p * hours
 
         for u in net.ups:
-            self._ups_flow(net, a[u], u, a, hours)
+            share = net.supply(state, u).get("charge_share", 1.0)
+            self._ups_flow(net, a[u], u, a, hours, share)
         for room, modules in net.ups_rooms.items():
             a[room]["ups_heat_kw"] = sum(a[u]["loss_kw"] for u in modules)
 
@@ -533,32 +567,39 @@ class ElectricalDomain:
                     si["p_kw"] = si["q_kvar"] = si["power_kw"] = si["q_loss_kvar"] = 0.0
                 si["energy_kwh"] += si["p_kw"] * hours
             online = [g for g in bus.gensets if a[g]["online"]] if s["source"] == "genset" else []
+            s["fed_units"] = len(supplying) + len(online)
             for g in bus.gensets:
                 sg = a[g]
                 share = 1.0 / len(online) if g in online else 0.0
                 sg["p_kw"], sg["q_kvar"] = p * share, q * share
-                sg["load_pct"] = 100.0 * sg["p_kw"] / GENSET_KW
+                sg["load_pct"] = genset_load_pct(sg["p_kw"], sg["q_kvar"])
 
-    def _ups_flow(self, net: Network, s: AssetState, ups: str, a, hours: float) -> None:
+    def _ups_flow(
+        self, net: Network, s: AssetState, ups: str, a, hours: float, charge_share: float
+    ) -> None:
+        """Input = output + losses + what the battery stores (+) or gives (-). The losses are
+        the module's dissipation, its `power_kw` as a consumer (with the BMS load for the
+        control UPS); the battery is storage, neither consumed nor dissipated."""
         kw, _, no_load, capacity = ups_rating(net, ups)
         branch = net.ups_branch[ups]
         mode = s["mode"]
+        s["fed_mode"] = mode
         if branch is not None:
             out = a[branch]["p_kw"]
         else:
             out = CONTROL_LOAD_KW if mode != "off" else 0.0
         capacity *= 1.0 - s.get("constraint.battery_fade", 0.0)
         soc = s["soc"]
-        charge = 0.0
-        if mode in ("online", "bypass") and soc < 1.0:
-            charge = CHARGE_C * capacity * min(1.0, (1.0 - soc) / (1.0 - TAPER_SOC))
+        want = CHARGE_C * capacity * min(1.0, (1.0 - soc) / (1.0 - TAPER_SOC)) if soc < 1.0 else 0.0
+        charge = want * charge_share if mode in ("online", "bypass") else 0.0
+        stored = charge * CHARGE_EFFICIENCY
         if mode == "online":
-            loss = no_load + UPS_LOSS * out
-            inp, battery = out + loss + charge, charge
+            loss = no_load + UPS_LOSS * out + charge - stored
+            inp, battery = out + loss + stored, stored
             q = inp * UPS_INPUT_TAN
         elif mode == "bypass":
-            loss = BYPASS_LOSS * out
-            inp, battery = out + loss + charge, charge
+            loss = BYPASS_LOSS * out + charge - stored
+            inp, battery = out + loss + stored, stored
             q = out * IT_TAN + charge * UPS_INPUT_TAN
         elif mode == "battery":
             loss = no_load + UPS_LOSS * out
@@ -567,10 +608,11 @@ class ElectricalDomain:
             out = loss = inp = battery = q = 0.0
         s["p_kw"], s["q_kvar"] = inp, q
         s["output_kw"], s["loss_kw"], s["battery_kw"] = out, loss, battery
-        s["power_kw"] = inp - out if branch is not None else inp
+        s["charge_want_kw"], s["charge_kw"] = want, charge
+        s["power_kw"] = loss if branch is not None else out + loss
         s["load_pct"] = ups_load_pct(net, ups, out)
         if battery > 0.0:
-            soc += battery * CHARGE_EFFICIENCY * hours / capacity
+            soc += battery * hours / capacity
             s["soc"] = 1.0 if soc >= 1.0 - 1e-4 else soc
         elif battery < 0.0:
             s["soc"] = max(soc + battery * hours / capacity, 0.0)
@@ -656,6 +698,33 @@ class ElectricalDomain:
             s = a[b]
             s["live"] = a[net.feeder[b]]["live"] and not _tripped(s)
 
+        self._charge_limit(net, state)
+
+    def _charge_limit(self, net: Network, state: WorldState) -> None:
+        """The ATS Controller's generator charge limit: on the gensets, UPS recharging walks
+        in and fills only the headroom the rest of the bus leaves below their rating."""
+        a = state.assets
+        modules: dict[str, list[AssetState]] = {bus.node: [] for bus in net.buses}
+        for u in net.ups:
+            bus = net.supply(state, u)
+            for node in modules:
+                if a[node] is bus:
+                    modules[node].append(a[u])
+        for bus in net.buses:
+            s = a[bus.node]
+            if s["source"] != "genset":
+                s["charge_share"] = 1.0
+                continue
+            if s["fed_by"] != "genset":  # just transferred: the rest of the load comes first
+                s["charge_share"] = 0.0
+                continue
+            online = sum(1 for g in bus.gensets if a[g]["online"])
+            charging = sum(u["charge_kw"] for u in modules[bus.node])
+            wanted = sum(u["charge_want_kw"] for u in modules[bus.node])
+            headroom = CHARGE_HEADROOM * online * GENSET_KW - (s["p_kw"] - charging)
+            target = min(max(headroom, 0.0) / wanted, 1.0) if wanted > 0.0 else 1.0
+            s["charge_share"] = min(target, s["charge_share"] + CHARGE_WALK_IN)
+
     def _ats(self, bus: Bus, a, ctx: StepContext) -> None:
         """The ATS Controller of one main bus."""
         s = a[bus.node]
@@ -670,7 +739,8 @@ class ElectricalDomain:
                     position = "genset"
             elif position == "genset":
                 s["restore_s"] = s["restore_s"] + 1 if utility else 0
-                if s["restore_s"] >= RETRANSFER_S:
+                # Back to the utility once it is stable, or at once if no genset holds the bus.
+                if s["restore_s"] >= RETRANSFER_S or (utility and not ready):
                     position = "utility"
         if position == "utility":
             s["restore_s"] = 0
@@ -764,8 +834,12 @@ def _genset_sequence(s: AssetState) -> None:
             stage, s["overcrank"] = "standby", False  # the fault is cleared: reset
         elif s["fuel_shutdown"] and s["day_l"] >= DAY_START * DAY_TANK_L:
             stage, s["fuel_shutdown"] = "standby", False
+        elif s["overload_trip"] and not start:
+            stage, s["overload_trip"] = "standby", False  # reset once the run command drops
     if stage in ("running", "cooldown") and s["day_l"] <= 0.0:
         stage, s["fuel_shutdown"] = "failed", True
+    if stage == "running" and s["overload_s"] >= OVERLOAD_TRIP_S:
+        stage, s["overload_trip"], s["overload_s"] = "failed", True, 0
     s["stage"] = stage
     running = stage in ("running", "cooldown")
     if stage == "cranking":
@@ -802,8 +876,9 @@ def _engine(s: AssetState, dt: float) -> None:
         burn = GENSET_KW * (0.03 + 0.22 * frac) * dt / 3600.0
         s["day_l"] = max(s["day_l"] - burn, 0.0)
     s["overload"] = s["load_pct"] > 100.0
+    s["overload_s"] = s["overload_s"] + 1 if s["overload"] else 0
     s["prealarm"] = s["overload"] or s["coolant_c"] > 95.0 or s["day_l"] < 0.25 * DAY_TANK_L
-    s["general_alarm"] = s["overcrank"] or s["fuel_shutdown"]
+    s["general_alarm"] = s["overcrank"] or s["fuel_shutdown"] or s["overload_trip"]
     s["has_alarm"] = s["general_alarm"] or s["prealarm"]
 
 

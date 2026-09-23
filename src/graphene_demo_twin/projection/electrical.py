@@ -6,11 +6,13 @@ one pass here: the meter's own loads share out across the phases by its board's 
 and everything below it adds phase by phase, so per phase and in total a board is the sum of
 its sub-meters (a single-phase board sits on phase 1 of the board above it). Voltage falls
 from the bus down each feeder with the current it carries, and current distortion adds up
-from the loads.
+from the loads. Every reading takes the switching the step's power flowed through (`fed`,
+`fed_by`, `fed_v_pu`, …), not the switching the step left for the next one, so V, I, P, Q, S
+and PF always describe the same interval.
 """
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 from graphene_demo_twin.asset_model import AssetModel
@@ -19,7 +21,7 @@ from graphene_demo_twin.projection.projector import Binding, GroupBinding
 from graphene_demo_twin.sim import Scalar, WorldState
 from graphene_demo_twin.sim.electrical import (
     BULK_TANK_L,
-    GENSET_KW,
+    GENSET_KVA,
     HV_LL,
     HZ,
     IT_BRANCH_THD,
@@ -117,16 +119,13 @@ def readings(state: WorldState, design: PlantDesign) -> dict[str, Reading]:
 
     for bus in net.buses:
         s, r = a[bus.node], out[bus.node]
-        if s["live"]:
-            r.v = [V_LN * s["v_pu"] * (1.0 + d) for d in PHASE_V]
-            r.hz = s["hz"]
-            rating = (
-                len([i for i in bus.incomers if a[i]["live"]]) * TX_KVA
-                if s["source"] == "utility"
-                else len([g for g in bus.gensets if a[g]["online"]]) * GENSET_KW / 0.8
-            )
-            base = UTILITY_THDV if s["source"] == "utility" else GENSET_THDV
-            r.thd_v = base + SOURCE_IMPEDANCE[s["source"]] * r.harmonic_kva / max(rating, 1.0)
+        source = s["fed_by"]
+        if s["fed"] and source is not None:
+            r.v = [V_LN * s["fed_v_pu"] * (1.0 + d) for d in PHASE_V]
+            r.hz = s["fed_hz"]
+            rating = s["fed_units"] * (TX_KVA if source == "utility" else GENSET_KVA)
+            base = UTILITY_THDV if source == "utility" else GENSET_THDV
+            r.thd_v = base + SOURCE_IMPEDANCE[source] * r.harmonic_kva / max(rating, 1.0)
         for i in bus.incomers:
             si = a[i]
             share = (si["p_kw"] - si["power_kw"]) / s["p_kw"] if s["p_kw"] else 0.0
@@ -135,9 +134,9 @@ def readings(state: WorldState, design: PlantDesign) -> dict[str, Reading]:
                 [r.q[k] * share + si["q_loss_kvar"] / 3.0 for k in range(3)],
                 r.harmonic_kva * share,
             )
-            if si["live"]:
-                ri.v = [HV_LL / math.sqrt(3.0) * si["v_pu"] * (1.0 + d) for d in PHASE_V]
-                ri.hz = si["hz"]
+            if si["fed"]:
+                ri.v = [HV_LL / math.sqrt(3.0) * si["fed_v_pu"] * (1.0 + d) for d in PHASE_V]
+                ri.hz = si["fed_hz"]
                 ri.thd_v = UTILITY_THDV
             out[i] = ri
 
@@ -145,12 +144,11 @@ def readings(state: WorldState, design: PlantDesign) -> dict[str, Reading]:
         if net.root[m] == m and m not in net.boards:
             continue  # a bus, done above
         s, r = a[m], out[m]
-        feeder = s["source"] if m in net.boards else net.feeder[m]
+        feeder = s["fed_by"] if m in net.boards else net.feeder[m]
         parent = out[feeder]
-        if not s["live"] or parent.v[0] <= 0.0:
+        if not s["fed"] or parent.v[0] <= 0.0:
             continue
-        # A three-phase meter under a single-phase board (DB_22) sees that board's one phase.
-        pv = [parent.v[0]] * 3 if feeder in net.single_phase else parent.v
+        pv = parent.v
         s3 = r.s
         drop = 0.0
         if m in net.single_phase:
@@ -173,14 +171,10 @@ def _line(v: list[float], i: int, j: int) -> float:
     return math.sqrt(v[i] ** 2 + v[j] ** 2 + v[i] * v[j])
 
 
-def _meter_values(
-    r: Reading, s: dict[str, Scalar], three: bool, nominal: float = V_LN
-) -> dict[str, Scalar]:
+def _meter_values(r: Reading, s: dict[str, Scalar], three: bool) -> dict[str, Scalar]:
     phases = range(3) if three else range(1)
     s3 = r.s
-    # The second a breaker opens the meter still shows the power that flowed through it, at
-    # the nominal voltage it had.
-    amps = [s3[k] * 1000.0 / (r.v[k] if r.v[k] > 0.0 else nominal) for k in range(3)]
+    amps = [s3[k] * 1000.0 / r.v[k] if r.v[k] > 0.0 else 0.0 for k in range(3)]
     values: dict[str, Scalar] = {"Hz": r.hz, "Wh_Im": s["energy_kwh"]}
     for k in phases:
         n = k + 1
@@ -219,10 +213,10 @@ def _meter_values(
 
 def _ups_values(net, a, r_feed: Reading, ups: str) -> dict[str, Scalar]:
     s = a[ups]
-    mode = s["mode"]
+    mode = s["fed_mode"]
     feed = a[net.feeder[ups]]
     v_in = [_line(r_feed.v, 0, 1), _line(r_feed.v, 1, 2), _line(r_feed.v, 2, 0)]
-    if not feed["live"]:
+    if not feed["fed"]:
         v_in = [0.0, 0.0, 0.0]
     if mode in ("online", "battery"):
         v_out = [V_LL * (1.0 + d) for d in (0.0005, 0.001, -0.0005)]
@@ -230,7 +224,7 @@ def _ups_values(net, a, r_feed: Reading, ups: str) -> dict[str, Scalar]:
         v_out = list(v_in)
     else:
         v_out = [0.0, 0.0, 0.0]
-    hz_in = r_feed.hz if feed["live"] else 0.0
+    hz_in = r_feed.hz if feed["fed"] else 0.0
     hz = {"online": hz_in if hz_in else HZ, "battery": HZ, "bypass": hz_in}.get(mode, 0.0)
     w = net.weights[net.feeder[ups]]
     values: dict[str, Scalar] = {
@@ -272,7 +266,6 @@ def _genset_values(s: dict[str, Scalar]) -> dict[str, Scalar]:
         "Engine Run Time": s["run_s"] / 60.0,
         "Engine Start": 1.0 if s["stage"] == "cranking" else 0.0,
         "Run Command Active": 1 if s["start_cmd"] else 0,
-        "Auto_Manual": 1,
         "Idling": 1 if running and s["p_kw"] == 0.0 else 0,
     }
 
@@ -291,10 +284,6 @@ GENSET_ALARMS: dict[str, Callable[[dict[str, Scalar]], Scalar]] = {
     "Low Lubricant Oil Pressure Prealarm": lambda s: (
         s["stage"] in ("running", "cooldown") and _oil_bar(s) < 2.0
     ),
-    "Low Lubricant Oil Pressure Shutdown": lambda s: False,
-    "Short Circuit Shutdown": lambda s: False,
-    "Emergency Stop": lambda s: 0,
-    "Low Coolant Level": lambda s: 0,
     "HasAlarm": lambda s: s["has_alarm"],
 }
 """Genset alarm member → the engine controller's logic over its state."""
@@ -325,10 +314,25 @@ TANK_POINTS: dict[str, Callable[[dict[str, Scalar]], Scalar]] = {
     "System Failure_Trip - PLC Panel B": lambda s: not _panel_on(s),
     "General Alarm - PLC Panel A": lambda s: s["pump_failed"] or s["fuel_l"] < 0.2 * BULK_TANK_L,
     "General Alarm - PLC Panel B": lambda s: s["low_day_tank"],
-    "Time-out Alarm - Inlet Valve": lambda s: False,
     "HasAlarm": lambda s: s["has_alarm"] or not _panel_on(s),
 }
 """Diesel tank member → its value from the tank's AssetState (fuel pump, flowmeter, panels)."""
+
+UNMODELLED: Mapping[str, tuple[str, ...]] = {
+    "Genset": (
+        "Auto_Manual",
+        "Low Lubricant Oil Pressure Shutdown",
+        "Short Circuit Shutdown",
+        "Emergency Stop",
+        "Low Coolant Level",
+    ),
+    "Diesel": ("Time-out Alarm - Inlet Valve",),
+    "IPS": ("Insulation Fault",),
+}
+"""Compatibility Fallback debt, by asset type: the genset's control mode and protective
+shutdowns, the diesel inlet valve's travel and the IPS insulation monitor have no physics yet.
+Their points keep their fallback, which the coverage report counts as debt, rather than a
+constant bound as if it were physics."""
 
 
 METER_KEYS_3 = frozenset(
@@ -348,7 +352,7 @@ UPS_KEYS = frozenset(
 BRANCH_KEYS = frozenset({"Active Power", "Current", "Accumulated Energy"})
 GENSET_KEYS = frozenset(
     {"Frequency", "Engine Speed", "Coolant Temperature", "Oil Pressure", "Battery DC Volts"}
-    | {"Engine Run Time", "Engine Start", "Run Command Active", "Auto_Manual", "Idling"}
+    | {"Engine Run Time", "Engine Start", "Run Command Active", "Idling"}
     | {f"AC Voltage: L{k}-N" for k in (1, 2, 3)}
 )
 
@@ -376,8 +380,7 @@ def electrical_bindings(
     for m in (*net.incomers, *net.order):
         three = m not in net.single_phase
         keys = METER_KEYS_3 if three else METER_KEYS_1
-        nominal = HV_LL / math.sqrt(3.0) if m in net.incomers else V_LN
-        group(m, keys, lambda a, r, m=m, t=three, v=nominal: _meter_values(r[m], a[m], t, v))
+        group(m, keys, lambda a, r, m=m, t=three: _meter_values(r[m], a[m], t))
         bindings.append(Binding(f"{m}/HasAlarm", _meter_alarm(net, m)))
     for u in net.ups:
         group(u, UPS_KEYS, lambda a, r, u=u: _ups_values(net, a, r[net.feeder[u]], u))
@@ -393,9 +396,7 @@ def electrical_bindings(
         for member, read in TANK_POINTS.items():
             bindings.append(Binding(f"{t}/{member}", _read(t, read)))
     for placed in design.assets.values():
-        if placed.type_id == "IPS" and placed.room:
-            bindings.append(Binding(f"{placed.path}/Insulation Fault", _insulation(placed.path)))
-        elif placed.type_id == "RCMS" and placed.room:
+        if placed.type_id == "RCMS" and placed.room:
             bindings.append(Binding(f"{placed.path}/Current", _rcms_amps(placed.path)))
 
     frozen = tuple(entries)
@@ -426,10 +427,6 @@ def _meter_alarm(net, meter: str) -> Callable[[WorldState], bool]:
         return not s["live"] or net.supply(state, meter)["v_pu"] < 0.9
 
     return read
-
-
-def _insulation(node: str) -> Callable[[WorldState], bool]:
-    return lambda s: s.assets[node]["insulation_kohm"] < 50.0
 
 
 def _rcms_amps(node: str) -> Callable[[WorldState], float]:
