@@ -13,6 +13,7 @@ from graphene_demo_twin.plant_design.model import (
     PlacedAsset,
     PlantDesign,
     Room,
+    Shaft,
     UnexportedAsset,
 )
 
@@ -145,6 +146,10 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
                 problems.append(f"{where}: {end} is not in the world")
         connections.append(Connection(kind, e["a"], e["b"], e["label"]))
 
+    shafts, shaft_problems = _parse_shafts(raw["shafts"], floor_names, rooms)
+    problems += shaft_problems
+    problems += _check_floor_changes(connections, shafts, rooms, assets)
+
     if problems:
         raise PlantDesignError(problems)
     return PlantDesign(
@@ -154,7 +159,76 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
         assets=assets.values(),
         unexported=unexported.values(),
         connections=connections,
+        shafts=shafts,
     )
+
+
+def _parse_shafts(
+    raw_shafts: list[dict[str, Any]], floor_names: list[str], rooms: dict[str, Room]
+) -> tuple[list[Shaft], list[str]]:
+    problems: list[str] = []
+    shafts: dict[str, Shaft] = {}
+    carriers: dict[ConnectionKind, list[str]] = {}
+    for s in raw_shafts:
+        sid = s["id"]
+        if sid in shafts:
+            problems.append(f"duplicate shaft: {sid}")
+        unknown = [f for f in s["floors"] if f not in floor_names]
+        problems += [f"shaft {sid} is on an unknown floor: {f}" for f in unknown]
+        indices = [floor_names.index(f) for f in s["floors"] if f not in unknown]
+        if not indices or indices != list(range(indices[0], indices[0] + len(indices))):
+            problems.append(f"shaft {sid} does not run through consecutive floors: {s['floors']}")
+        carries: list[ConnectionKind] = []
+        for k in s["carries"]:
+            try:
+                carries.append(ConnectionKind(k))
+            except ValueError:
+                problems.append(f"shaft {sid} carries an unknown connection kind: {k}")
+                continue
+            carriers.setdefault(carries[-1], []).append(sid)
+        for f in s["floors"]:
+            if f not in unknown and not _inside_a_room(s["x"], s["y"], f, rooms):
+                problems.append(f"shaft {sid} is outside every room on {f}")
+        shafts[sid] = Shaft(sid, s["name"], s["x"], s["y"], tuple(s["floors"]), tuple(carries))
+    for kind, ids in carriers.items():
+        if len(ids) > 1:
+            problems.append(f"{kind} is carried by more than one shaft: {', '.join(ids)}")
+    return list(shafts.values()), problems
+
+
+def _inside_a_room(x: Any, y: Any, floor: str, rooms: dict[str, Room]) -> bool:
+    if not (_is_finite_number(x) and _is_finite_number(y)):
+        return False
+    return any(
+        r.floor == floor and r.x <= x <= r.x + r.w and r.y <= y <= r.y + r.h for r in rooms.values()
+    )
+
+
+def _check_floor_changes(
+    connections: list[Connection],
+    shafts: list[Shaft],
+    rooms: dict[str, Room],
+    assets: dict[str, PlacedAsset],
+) -> list[str]:
+    """Every connection that changes floor must have a shaft of its kind reaching both floors."""
+
+    def floor(node: str) -> str | None:
+        room = node if node in rooms else getattr(assets.get(node), "room", None)
+        return rooms[room].floor if room in rooms else None
+
+    shaft_for = {k: s for s in shafts for k in s.carries}
+    problems = []
+    for c in connections:
+        a, b = floor(c.source), floor(c.target)
+        if a is None or b is None or a == b:
+            continue
+        shaft = shaft_for.get(c.kind)
+        if shaft is None or not {a, b} <= set(shaft.floors):
+            problems.append(
+                f"{c.kind} connection {c.source} → {c.target} changes floor from {a} to {b}, "
+                f"but no shaft carries {c.kind} between them"
+            )
+    return problems
 
 
 def _is_finite_number(value: Any) -> bool:

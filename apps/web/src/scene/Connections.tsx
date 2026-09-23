@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef } from 'react';
 import { BoxGeometry, Color, InstancedMesh, Matrix4, MeshBasicMaterial } from 'three';
 import { connectionsAround } from '../lib/graph';
 import { STOREY_M } from '../lib/layout';
-import { LAYERS, RISERS, layerOf, routeConnection, type Layer, type Vec3 } from '../lib/routing';
+import { LAYERS, layerOf, routeConnection, type Layer, type Vec3 } from '../lib/routing';
 import type { World } from '../lib/world';
 import { useConsole } from '../store';
 import {
@@ -120,30 +120,36 @@ function LayerRuns({ world, layer, segments }: { world: World; layer: Layer; seg
   );
 }
 
-/** The vertical shafts each layer changes floor in. */
+/** The Plant Design's service shafts, over the floors they run through. */
 function Risers({ world }: { world: World }) {
   const explode = useConsole((s) => s.explode);
   const layers = useConsole((s) => s.layers);
   const cutaway = useConsole((s) => s.cutaway);
-  const top = cutaway ?? world.layout.floors.length - 1;
-  const height = world.layout.elevation(top, explode) + STOREY_M;
+  const { layout } = world;
   return (
     <group>
-      {LAYERS.filter((l) => layers[l]).map((layer) => (
-        <mesh
-          key={layer}
-          position={[RISERS[layer].x, height / 2, RISERS[layer].z]}
-          raycast={() => null}
-        >
-          <boxGeometry args={[1.1, height, 1.1]} />
-          <meshBasicMaterial
-            color={LAYER_COLOR[layer]}
-            transparent
-            opacity={0.12}
-            depthWrite={false}
-          />
-        </mesh>
-      ))}
+      {layout.shafts.map((shaft) => {
+        const shown = shaft.carries.map(layerOf).filter((l) => layers[l]);
+        const top = Math.min(shaft.top, cutaway ?? shaft.top);
+        if (shown.length === 0 || top < shaft.bottom) return null;
+        const bottom = layout.elevation(shaft.bottom, explode);
+        const height = layout.elevation(top, explode) + STOREY_M - bottom;
+        return (
+          <mesh
+            key={shaft.id}
+            position={[shaft.x, bottom + height / 2, shaft.z]}
+            raycast={() => null}
+          >
+            <boxGeometry args={[1.1, height, 1.1]} />
+            <meshBasicMaterial
+              color={LAYER_COLOR[shown[0]]}
+              transparent
+              opacity={0.12}
+              depthWrite={false}
+            />
+          </mesh>
+        );
+      })}
     </group>
   );
 }

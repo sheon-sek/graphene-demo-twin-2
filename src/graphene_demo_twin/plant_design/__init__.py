@@ -14,6 +14,7 @@ from graphene_demo_twin.plant_design.model import (
     PlacedAsset,
     PlantDesign,
     Room,
+    Shaft,
     UnexportedAsset,
 )
 
@@ -27,6 +28,7 @@ __all__ = [
     "PlantDesign",
     "PlantDesignError",
     "Room",
+    "Shaft",
     "UnexportedAsset",
     "load_plant_design",
     "parse_plant_design",

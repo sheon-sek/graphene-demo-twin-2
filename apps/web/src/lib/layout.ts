@@ -1,4 +1,4 @@
-import type { PlantDesign } from './types';
+import type { ConnectionKind, PlantDesign } from './types';
 
 /**
  * World coordinates: plan x → world x, plan y → world z, height → world y, all in metres.
@@ -7,8 +7,6 @@ import type { PlantDesign } from './types';
 export const STOREY_M = 5;
 export const WALL_M = 4.2;
 export const EXPLODE_GAP_M = 14;
-/** Spacing between assets the Plant Design puts on the same spot. */
-const NUDGE_M = 1.2;
 
 export function floorElevation(index: number, explode: number): number {
   return index * (STOREY_M + explode * EXPLODE_GAP_M);
@@ -38,11 +36,26 @@ export interface AssetSpot {
   unexported: boolean;
 }
 
+/** A Plant Design service shaft: where connections of the kinds it carries change floor. */
+export interface ShaftSpot {
+  id: string;
+  name: string;
+  x: number;
+  z: number;
+  /** Lowest and highest floor index the shaft runs through. */
+  bottom: number;
+  top: number;
+  carries: ConnectionKind[];
+}
+
 export interface Layout {
   floors: { name: string; index: number }[];
   rooms: Map<string, RoomBox>;
   /** Placed assets only; Support Assets are not in the building. */
   assets: Map<string, AssetSpot>;
+  shafts: ShaftSpot[];
+  /** The shaft connections of `kind` change floor in, if the Plant Design authors one. */
+  shaftFor(kind: ConnectionKind): ShaftSpot | undefined;
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   elevation(floorIndex: number, explode: number): number;
   /** Floor index of an asset or room node, or null when it is not in the building. */
@@ -67,28 +80,37 @@ export function buildLayout(design: PlantDesign): Layout {
     });
   }
 
+  // Exactly the authored positions (ADR-0002), even where two assets share a spot: a second
+  // click on the selected asset picks the one behind it.
   const assets = new Map<string, AssetSpot>();
-  const taken = new Set<string>();
   for (const a of design.assets) {
     if (a.room === null || a.x === null || a.y === null) continue;
     const room = rooms.get(a.room)!;
-    let x = a.x;
-    const z = a.y;
-    // Nudge along x, away from the nearer wall, until the spot is free.
-    const step = x + NUDGE_M <= room.x + room.w ? NUDGE_M : -NUDGE_M;
-    while (taken.has(`${room.floorIndex}:${x.toFixed(2)}:${z.toFixed(2)}`)) x += step;
-    taken.add(`${room.floorIndex}:${x.toFixed(2)}:${z.toFixed(2)}`);
     assets.set(a.path, {
       path: a.path,
       typeId: a.typeId,
       room: room.id,
       floor: room.floor,
       floorIndex: room.floorIndex,
-      x,
-      z,
+      x: a.x,
+      z: a.y,
       unexported: a.unexported,
     });
   }
+
+  const shafts = design.shafts.map((s): ShaftSpot => {
+    const floors = s.floors.map((f) => floorIndex.get(f)!);
+    return {
+      id: s.id,
+      name: s.name,
+      x: s.x,
+      z: s.y,
+      bottom: Math.min(...floors),
+      top: Math.max(...floors),
+      carries: s.carries,
+    };
+  });
+  const shaftOf = new Map(shafts.flatMap((s) => s.carries.map((k) => [k, s] as const)));
 
   const boxes = [...rooms.values()];
   const bounds = {
@@ -102,6 +124,8 @@ export function buildLayout(design: PlantDesign): Layout {
     floors: [...design.floors].sort((a, b) => a.index - b.index),
     rooms,
     assets,
+    shafts,
+    shaftFor: (kind) => shaftOf.get(kind),
     bounds,
     elevation: floorElevation,
     floorOf(node) {

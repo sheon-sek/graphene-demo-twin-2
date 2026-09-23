@@ -1,7 +1,9 @@
 import { Canvas } from '@react-three/fiber';
+import type { BenchSettings } from '../lib/bench';
 import type { LiveStore } from '../lib/live';
 import type { World } from '../lib/world';
 import { Assets } from './Assets';
+import { Bench, type BenchState } from './Bench';
 import { Building } from './Building';
 import { CameraRig, ExplodeDriver } from './CameraRig';
 import { Connections } from './Connections';
@@ -11,10 +13,15 @@ export function Scene({
   world,
   live,
   onPerf,
+  bench,
+  onBench,
 }: {
   world: World;
   live: LiveStore;
   onPerf: (perf: Perf) => void;
+  /** Run the frame-rate benchmark (`?bench`) with these settings. */
+  bench?: BenchSettings | null;
+  onBench?: (state: BenchState) => void;
 }) {
   return (
     <Canvas
@@ -31,6 +38,7 @@ export function Scene({
       <ExplodeDriver />
       <CameraRig world={world} />
       <Probe world={world} onPerf={onPerf} />
+      {bench && onBench && <Bench settings={bench} onState={onBench} />}
     </Canvas>
   );
 }

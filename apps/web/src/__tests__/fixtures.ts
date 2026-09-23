@@ -45,6 +45,7 @@ export function plantDesign(): PlantDesign {
       target: e.b,
       label: e.label ?? '',
     })),
+    shafts: raw.shafts,
   };
 }
 

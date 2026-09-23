@@ -63,6 +63,17 @@ room('R-AIR', 'Roof', 'Roof AHU / CRAC / FWU deck', 62, 18, 34, 26, 'airside', '
 room('R-WT', 'Roof', 'Roof water tanks & boosters', 54, 44, 42, 16, 'water', 'Zone 4')
 room('R-CORE', 'Roof', 'Lift motor room', 44, 46, 10, 10, 'core', 'Support Area')
 
+# ---- Service shafts: where connections change floor. Five risers side by side beside the lift
+# core, one per discipline, each running Ground → Roof (in G-CORE, the L1/L2 corridor, R-BT).
+shafts = []
+def shaft(sid, name, x, y, carries):
+    shafts.append(dict(id=sid, name=name, x=x, y=y, floors=list(FLOORS), carries=carries))
+shaft('SH-EL', 'Electrical riser', 45, 34.5, ['power'])
+shaft('SH-HYD', 'Chilled & condenser water riser', 47, 34.5, ['chw', 'cw'])
+shaft('SH-AIR', 'Supply-air duct shaft', 49, 34.5, ['air'])
+shaft('SH-WTR', 'Cold-water riser', 51, 34.5, ['water'])
+shaft('SH-NET', 'Control-network riser', 53, 34.5, ['net'])
+
 # ---- Placement + connections
 place = {}      # path -> dict(room, x, y, role, sys)
 edges = []      # dict(kind, a, b, label)
@@ -360,12 +371,13 @@ reviews = [
  dict(id='A12', area='Support', title='Root Breaker/ and Line/ are support', text='These are treated as the Smart Alarm Logic demo, not the site single-line diagram. If they drive an SLD screen in Ignition, say so and they will be bound to the electrical model.'),
  dict(id='A13', area='Site', title='Room layout', text='Ground: HV intake, UPS rooms, water plant, genset yard and diesel farm outdoors. L1: DH01–04, DB room, BMS control room. L2: DH05–08, MSB A/B rooms (the meter names say MSB is on Level 2). Roof: chillers, 20 tower cells, buffer tanks, water tanks, AHU deck. Lifts 1–3 in a central core.'),
  dict(id='A14', area='Water', title='Water path', text='Municipal supply → G_V1 → ground tanks → transfer pumps (2 + 1) → riser → roof tanks → boosters → makeup headers → one VSD makeup pump per tower cell. AC Makeup Tank pumps top up the closed CHW loop from the ground tank branch.'),
+ dict(id='A15', area='Site', title='Service shafts', text='Rev 0.2. Five risers beside the lift core, Ground to Roof: electrical (power), chilled & condenser water, supply-air duct, cold water, control network. Every connection that changes floor runs up its discipline\'s shaft. Diesel stays on the Ground floor and needs none.'),
 ]
 
-out = dict(version='0.1', date='2026-09-23', floors=FLOORS, rooms=list(rooms.values()),
+out = dict(version='0.2', date='2026-09-23', floors=FLOORS, rooms=list(rooms.values()), shafts=shafts,
            assets=[dict(path=p, type=A[p]['type'], unexported=A[p].get('unexported', False), **place[p]) for p in sorted(A, key=nat)],
            edges=edges, unexported=list(unexported.values()), views=views, fire=fire, leak=LEAK_ZONES,
            gateways=GATEWAY_DOMAINS, basis=basis, reviews=reviews,
-           counts=dict(exported=639, unexported=len(unexported), edges=len(edges)))
+           counts=dict(exported=639, unexported=len(unexported), edges=len(edges), shafts=len(shafts)))
 json.dump(out, open(sys.argv[1], 'w'), ensure_ascii=False, indent=1)
 print('ok', len(out['assets']), 'assets', len(edges), 'edges', collections.Counter(e['kind'] for e in edges))

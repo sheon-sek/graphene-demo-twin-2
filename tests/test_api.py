@@ -122,6 +122,16 @@ def test_plant_design_graph(client, plant_design):
     assert len(body["connections"]) == len(plant_design.connections)
     assert {"kind", "source", "target", "label"} <= body["connections"][0].keys()
     assert {u["id"] for u in body["unexported"]} == set(plant_design.unexported)
+    hydraulic = next(s for s in body["shafts"] if "chw" in s["carries"])
+    shaft = plant_design.shafts[hydraulic["id"]]
+    assert hydraulic == {
+        "id": shaft.id,
+        "name": shaft.name,
+        "x": shaft.x,
+        "y": shaft.y,
+        "floors": list(shaft.floors),
+        "carries": [k.value for k in shaft.carries],
+    }
 
 
 def test_operator_actions_append_to_the_event_log(client, twin):
@@ -225,7 +235,10 @@ def test_coverage_counts_and_report(client, twin):
 
     report = client.get("/api/coverage/points").json()
     assert len(report) == 8741
-    assert {"path", "source", "sourceClass", "support", "debt"} <= report[0].keys()
+    assert {"path", "source", "sourceClass", "alarmBit", "support", "debt"} <= report[0].keys()
+    alarm_bit = {e["path"]: e["alarmBit"] for e in report}
+    assert alarm_bit["DemoRack/Breaker1/Trip"] is True
+    assert alarm_bit["Chiller System Control/Alarms/Active Count"] is False
     fallback = client.get("/api/coverage/points", params={"source": "fallback"}).json()
     assert len(fallback) == body["counts"]["fallback"]
     debt = client.get("/api/coverage/points", params={"debt": True}).json()

@@ -3,7 +3,10 @@ import { expect, test, type Page } from '@playwright/test';
 const FLOORS = ['Ground', 'Level 1', 'Level 2', 'Roof'];
 /** Floor captures land beside the Playwright artifacts, which CI uploads. */
 const CAPTURES = 'test-results/floors';
-/** Draw calls with every asset and layer on screen; the budget that keeps 50 fps reachable. */
+/**
+ * Draw calls with every asset and layer on screen; the budget that keeps 50 fps reachable. The
+ * frame rate itself is measured by hand on a mid-range laptop with `?bench` (see README.md).
+ */
 const DRAW_CALL_BUDGET = 80;
 
 interface PlacedAsset {
@@ -102,17 +105,55 @@ test('every placed asset is pickable in 3D', async ({ page }) => {
       missed.push(`${path}: off screen`);
       continue;
     }
-    // Clicking the selected asset again selects the one behind it.
+    // Clicking the selected asset again selects the one behind it. Assets the Plant Design
+    // puts on the same spot stay there, so reaching one can take a few clicks.
     let picked: string | null = null;
-    for (let click = 0; click < 3 && picked !== path; click++) {
+    for (let click = 0; click < 6 && picked !== path; click++) {
       await page.mouse.click(at.x, at.y);
       picked = await page.locator('.inspector h2').getAttribute('title');
-      if (click === 1 && picked === path) behind.push(path);
+      if (click > 0 && picked === path) behind.push(path);
     }
     if (picked !== path) missed.push(`${path}: picked ${picked}`);
   }
-  console.log(`${behind.length} assets needed a second click: ${behind.join(', ')}`);
+  console.log(`${behind.length} assets needed more than one click: ${behind.join(', ')}`);
   expect(missed).toEqual([]);
+});
+
+test('double-click flies to the asset under the pointer, not the one behind it', async ({
+  page,
+}) => {
+  // Three leak cable sensors share one spot in the Ground water plant room.
+  const spot = 'Water Leak Detection System/Ground/1A';
+  await open(page);
+  await page.evaluate((n) => window.__twin!.locate(n), spot);
+  await page.keyboard.press('Escape');
+  await settle(page);
+  const at = (await page.evaluate((n) => window.__twin!.screenOf(n), spot))!;
+  await page.mouse.click(at.x, at.y);
+  const front = await page.locator('.inspector h2').getAttribute('title');
+  await page.mouse.click(at.x, at.y);
+  const behind = await page.locator('.inspector h2').getAttribute('title');
+  expect(behind, 'the spot holds overlapping assets').not.toBe(front);
+
+  await page.keyboard.press('Escape');
+  await page.mouse.dblclick(at.x, at.y);
+  await settle(page);
+  await expect(page.locator('.inspector h2')).toHaveAttribute('title', front!);
+});
+
+test('benchmark mode reports the sustained frame rate with everything on screen', async ({
+  page,
+}) => {
+  await page.goto('/?e2e&bench&warmup=1&window=2');
+  const report = page.getByTestId('bench');
+  await expect(report).toHaveAttribute('data-phase', 'done', { timeout: 60_000 });
+  console.log(await report.textContent());
+  const median = Number(await report.getAttribute('data-median-fps'));
+  const p5 = Number(await report.getAttribute('data-p5-fps'));
+  expect(p5).toBeGreaterThan(0);
+  expect(median).toBeGreaterThanOrEqual(p5);
+  const perf = await page.evaluate(() => window.__twin!.perf);
+  expect(perf.drawCalls).toBeLessThanOrEqual(DRAW_CALL_BUDGET);
 });
 
 test('search locates an Unexported Asset by its Plant View path', async ({ page }) => {

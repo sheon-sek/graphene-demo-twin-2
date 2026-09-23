@@ -46,6 +46,18 @@ export interface Connection {
   label: string;
 }
 
+export interface Shaft {
+  id: string;
+  name: string;
+  /** Plan position of the shaft's centre, in metres. */
+  x: number;
+  y: number;
+  /** Consecutive floors the shaft runs through, bottom to top. */
+  floors: string[];
+  /** Connection kinds that change floor in this shaft; each kind has at most one. */
+  carries: ConnectionKind[];
+}
+
 export interface PlantDesign {
   version: string;
   floors: { name: string; index: number }[];
@@ -53,6 +65,7 @@ export interface PlantDesign {
   assets: PlacedAsset[];
   unexported: UnexportedAsset[];
   connections: Connection[];
+  shafts: Shaft[];
 }
 
 export type SourceClass =
@@ -69,6 +82,8 @@ export type SourceClass =
 export interface PointInfo {
   path: string;
   sourceClass: SourceClass;
+  /** A fault or alarm bit, active when true or nonzero; counts, codes and texts are not. */
+  alarmBit: boolean;
 }
 
 export type Quality = 'good' | 'uncertain' | 'bad';

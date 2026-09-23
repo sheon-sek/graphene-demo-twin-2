@@ -240,3 +240,46 @@ def test_points_carry_the_value_the_export_configures(asset_model):
     assert asset_model.point("Chiller/R_C1/Auto_Manual").export_value == 1
     # Expression points configure no value.
     assert asset_model.point("Dashboard/Total IT Load").export_value is None
+
+
+# --- Alarm bits -------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "Chiller/R_C1/General Alarm",
+        "DemoRack/Breaker1/Trip",
+        "DemoRack/Breaker1/EF",
+        "Genset/Genset 1/Low Coolant Level",
+        "Genset/Genset 1/Emergency Stop",
+        "Water Leak Detection System/Ground/1A/Status",
+    ],
+)
+def test_boolean_and_integer_fault_bits_are_alarm_bits(asset_model, path):
+    assert asset_model.point(path).alarm_bit
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "Chiller System Control/Alarms/Active Count",
+        "Chiller System Control/Alarms/Warning Count",
+        "Chiller System Control/Buffer Tanks/BT-001/Alarm Status",
+        "Chiller/R_C1/On_Off",
+    ],
+)
+def test_alarm_counts_texts_and_other_points_are_not_alarm_bits(asset_model, path):
+    assert not asset_model.point(path).alarm_bit
+
+
+def test_every_integer_fault_point_is_a_bit_or_a_count(asset_model):
+    integers = [
+        p
+        for p in asset_model.points.values()
+        if p.source_class is SourceClass.FAULT_ALARM and p.data_type.startswith("Int")
+    ]
+    assert len(integers) == 66
+    counts = {p.path for p in integers if not p.alarm_bit}
+    assert all(path.endswith(" Count") for path in counts)
+    assert len(counts) == 4

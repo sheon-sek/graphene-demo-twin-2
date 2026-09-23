@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from graphene_demo_twin.asset_model.classify import SourceClass
+from graphene_demo_twin.asset_model.classify import SourceClass, is_alarm_bit
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +57,11 @@ class Point:
     Raw from the export: a Document is a dict, a DataSet a JSON string, a DateTime epoch
     milliseconds, and a UDT parameter binding a `{"bindType": ...}` dict.
     """
+
+    @property
+    def alarm_bit(self) -> bool:
+        """True for a fault or alarm bit, which is active when true or nonzero."""
+        return is_alarm_bit(self.source_class, self.data_type, self.name)
 
 
 class AssetModel:
