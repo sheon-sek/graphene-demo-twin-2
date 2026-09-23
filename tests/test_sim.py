@@ -143,6 +143,7 @@ def test_initial_state_is_steady_and_starts_at_the_start_time(plant_design):
         assert sim.state.assets[h]["temp_c"] == pytest.approx(before[h], abs=0.5)
 
 
+@pytest.mark.slow
 def test_same_seed_and_event_log_give_bit_identical_trajectories(plant_design):
     runs = []
     for _ in range(2):
@@ -290,6 +291,7 @@ def test_live_world_matches_an_offline_replay_of_its_event_log(plant_design):
     assert replay.state_hash() == live.state_hash()
 
 
+@pytest.mark.slow
 def test_reset_is_indistinguishable_from_a_fresh_process(plant_design):
     clock = FakeClock()
     live = _live(plant_design, 9, clock)

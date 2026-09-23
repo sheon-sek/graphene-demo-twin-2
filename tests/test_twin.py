@@ -319,6 +319,7 @@ def test_operator_commands_are_logged_and_validated(twin, clock):
     assert twin.tick().state.assets[CRAC3]["mode"] == "hand"
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("minutes", [15, 30, 60])
 def test_a_preview_predicts_what_the_live_world_then_shows(
     asset_model, plant_design, clock, minutes
@@ -424,6 +425,7 @@ def test_generic_operator_actions_are_validated_as_their_own_entry_points_do(twi
     }
 
 
+@pytest.mark.slow
 def test_clearing_all_faults_returns_the_live_world_to_the_base_world(
     asset_model, plant_design, twin, clock
 ):

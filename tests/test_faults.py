@@ -335,6 +335,7 @@ def test_clear_recovers_through_dynamics_rather_than_snapping_back(plant_design)
     assert sim.state.assets["DH03"]["temp_c"] > hot - 1
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("spec", list(STANDARD_CATALOG), ids=lambda s: s.id)
 def test_clearing_every_fault_returns_to_the_base_world_within_the_settling_time(
     plant_design, asset_model, projector, spec

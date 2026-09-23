@@ -82,6 +82,7 @@ def _opc_value(path: str, value, data_type: str):
     return value
 
 
+@pytest.mark.slow
 def test_opc_ua_browses_the_export_reads_sim_time_and_rejects_writes(
     asset_model, plant_design, tmp_path
 ):
@@ -126,6 +127,7 @@ def test_opc_ua_browses_the_export_reads_sim_time_and_rejects_writes(
     asyncio.run(exercise())
 
 
+@pytest.mark.slow
 def test_every_surface_observes_the_same_live_world_step(asset_model, plant_design, tmp_path):
     async def exercise():
         async with _stack(asset_model, plant_design, tmp_path) as stack:

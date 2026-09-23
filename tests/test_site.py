@@ -127,6 +127,7 @@ def test_weather_drifts_deterministically_with_the_season():
     assert _year(seed=8, days=2) != _year(seed=7, days=2)
 
 
+@pytest.mark.slow
 def test_rain_accumulates_over_the_local_day(plant_design):
     sim = _sim(plant_design)
     wx = sim.state.assets[WEATHER_STATION]
@@ -192,6 +193,7 @@ def test_high_wet_bulb_raises_the_outdoor_wet_bulb_and_costs_energy(plant_design
     )
 
 
+@pytest.mark.slow
 def test_clearing_high_wet_bulb_lets_the_humid_air_disperse_gradually(plant_design):
     base, sim = _sim(plant_design), _sim(plant_design)
     sim.schedule(_inject(START, WEATHER_STATION, "weather.high_wet_bulb", severity=0.75))
@@ -300,6 +302,7 @@ def test_an_it_load_surge_heats_only_its_hall(plant_design):
             ), hall
 
 
+@pytest.mark.slow
 def test_a_surge_never_draws_more_than_the_hall_design(plant_design):
     sim = _sim(plant_design)
     sim.schedule(_inject(START, IT["DH08"], "it.load_surge", severity=1.0))

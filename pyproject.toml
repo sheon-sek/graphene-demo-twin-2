@@ -25,8 +25,8 @@ packages = ["src/graphene_demo_twin"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
-markers = ["slow: simulates more than about ten minutes of sim time"]
+addopts = "-q -m 'not slow'"
+markers = ["slow: takes more than ~3 s; excluded from the default run, CI runs it"]
 
 [tool.ruff]
 line-length = 100
