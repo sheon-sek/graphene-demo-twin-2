@@ -87,6 +87,7 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+@pytest.mark.slow
 def test_serve_starts_api_console_and_opc_ua_together_and_stops_on_sigint(tmp_path):
     from asyncua.sync import Client
 
