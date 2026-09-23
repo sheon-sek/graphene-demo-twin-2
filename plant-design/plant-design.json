@@ -1,6 +1,6 @@
 {
- "version": "0.3",
- "date": "2026-09-23",
+ "version": "0.4",
+ "date": "2026-09-24",
  "floors": [
   "Ground",
   "Level 1",
@@ -7591,6 +7591,12 @@
    "label": ""
   },
   {
+   "kind": "air",
+   "a": "~CCU-001",
+   "b": "DH01",
+   "label": "serves"
+  },
+  {
    "kind": "chw",
    "a": "Chiller/R_CP9",
    "b": "~CB-002",
@@ -7601,6 +7607,12 @@
    "a": "~CB-002",
    "b": "~CCU-002",
    "label": ""
+  },
+  {
+   "kind": "air",
+   "a": "~CCU-002",
+   "b": "DH02",
+   "label": "serves"
   },
   {
    "kind": "chw",
@@ -7615,6 +7627,12 @@
    "label": ""
   },
   {
+   "kind": "air",
+   "a": "~CCU-003",
+   "b": "DH03",
+   "label": "serves"
+  },
+  {
    "kind": "chw",
    "a": "Chiller/R_CP9",
    "b": "~CB-004",
@@ -7625,6 +7643,12 @@
    "a": "~CB-004",
    "b": "~CCU-004",
    "label": ""
+  },
+  {
+   "kind": "air",
+   "a": "~CCU-004",
+   "b": "DH04",
+   "label": "serves"
   },
   {
    "kind": "chw",
@@ -7639,6 +7663,12 @@
    "label": ""
   },
   {
+   "kind": "air",
+   "a": "~CCU-005",
+   "b": "DH05",
+   "label": "serves"
+  },
+  {
    "kind": "chw",
    "a": "Chiller/R_CP9",
    "b": "~CB-006",
@@ -7649,6 +7679,12 @@
    "a": "~CB-006",
    "b": "~CCU-006",
    "label": ""
+  },
+  {
+   "kind": "air",
+   "a": "~CCU-006",
+   "b": "DH06",
+   "label": "serves"
   },
   {
    "kind": "chw",
@@ -7663,6 +7699,12 @@
    "label": ""
   },
   {
+   "kind": "air",
+   "a": "~CCU-007",
+   "b": "DH07",
+   "label": "serves"
+  },
+  {
    "kind": "chw",
    "a": "Chiller/R_CP9",
    "b": "~CB-008",
@@ -7673,6 +7715,12 @@
    "a": "~CB-008",
    "b": "~CCU-008",
    "label": ""
+  },
+  {
+   "kind": "air",
+   "a": "~CCU-008",
+   "b": "DH08",
+   "label": "serves"
   },
   {
    "kind": "air",
@@ -11065,12 +11113,18 @@
    "area": "Electrical",
    "title": "Load side of the power graph",
    "text": "Rev 0.3. Every consumer hangs off exactly one board or sub-meter, so each meter reads what its authored loads draw. Meter1–4 feed the five cells of Tower Groups CT-001–004, Meter5–7 the chiller pumps, Meter8–9 the makeup pumps of tower plants P1 and P2, Meter10–12 the roof, Level 1 and ground air units (CCU-005–008 on Meter10, CCU-001–004 on Meter11), Meter13 the CDUs, Meter15 the diesel tanks' fuel pumps, Meter18 the transfer, booster and AC makeup pumps. Lighting: MSB A_6 lights the Ground rooms, DB_22 DH01–04, Meter17 the other Level 1 rooms, MSB B_14 Level 2 and the roof plant rooms, and Meter19 the outdoor areas and security. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads; their draw is a stand-in on the meter. The three-phase sub-meters Meter14, 17 and 19 hang off the essential-services board DB_24, not the single-phase lighting board DB_22."
+  },
+  {
+   "id": "A17",
+   "area": "Airside",
+   "title": "Ceiling cooling units serve their hall",
+   "text": "Rev 0.4. Each hall's ceiling cooling units (CCU-001–008) supply air to that hall, so their cooling reaches its heat balance like the other units'. The CDUs' air connection to DH08 carries no air: they remove the liquid-cooled share of its IT Load directly."
   }
  ],
  "counts": {
   "exported": 639,
   "unexported": 27,
-  "edges": 554,
+  "edges": 562,
   "shafts": 5
  }
 }

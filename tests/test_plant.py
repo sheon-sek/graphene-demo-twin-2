@@ -124,7 +124,7 @@ def test_chiller_physics_is_load_dependent(plant_design):
 def test_staging_follows_demand_with_realistic_delays(plant_design, projector):
     sim = _sim(plant_design)
     plant = sim.state.assets[PLANT]
-    plant["load_limit_pct"] = 60.0  # two chillers carry 4.2 MW: the surge needs a third
+    plant["load_limit_pct"] = 55.0  # two chillers carry 3.85 MW: the surge needs a third
     for e in _surge(sim.time):
         sim.schedule(e)
     wait = int(plant["stage_up_wait_s"])

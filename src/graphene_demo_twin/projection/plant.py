@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable
 
 from graphene_demo_twin.asset_model import AssetModel
 from graphene_demo_twin.plant_design import PlantDesign
-from graphene_demo_twin.projection.projector import Binding
+from graphene_demo_twin.projection.projector import Binding, VariableRead
 from graphene_demo_twin.sim import Scalar, WorldState
 from graphene_demo_twin.sim.plant import (
     CELL_PF,
@@ -65,7 +65,7 @@ def plant_bindings(asset_model: AssetModel, design: PlantDesign) -> list[Binding
 
 def _var(node: str, name: str, scale: float = 1.0) -> Read:
     if scale == 1.0:
-        return lambda s: s.assets[node][name]
+        return VariableRead(node, name)
     return lambda s: s.assets[node][name] * scale
 
 

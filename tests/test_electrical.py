@@ -546,7 +546,7 @@ def test_a_dead_air_supplier_delivers_no_cooling(plant_design):
     sim.advance(15)
     a = sim.state.assets
     suppliers = [s for s, _ in air_suppliers(plant_design, "DH01")]
-    assert set(suppliers) == {"CRAC/L1_CRAC1", "PAHU/L1_PAHU1", "FCU/L1_FCU1"}
+    assert set(suppliers) == {"CRAC/L1_CRAC1", "PAHU/L1_PAHU1", "FCU/L1_FCU1", "~CCU-001"}
     for supplier in suppliers:
         assert not powered(sim.state, plant_design, supplier), supplier
         assert supplier_air(sim.state, plant_design, supplier)[0] == 0.0, supplier

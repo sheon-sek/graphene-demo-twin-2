@@ -1025,7 +1025,8 @@ def _plant_initial(ctx: StepContext) -> AssetState:
 
 def _demand(state: WorldState, layout: Layout, p: AssetState) -> tuple[float, float]:
     """(the cooling the chilled-water air units ask of the plant, what their coils take up
-    with full flow of the water the plant supplies now). A unit asks for what its coil
+    with full flow of the water the plant supplies now), as each unit the airside models
+    reports it, one step behind. For a unit it does not model, the unit asks for what its coil
     would take out at design supply air: the heat it would remove from its zone, the heat of
     its own fan, and for a fresh-air handler the heat and moisture of the outdoor air it
     brings in. Warmer water takes less out of the zones, and a unit without supply asks for
@@ -1035,13 +1036,18 @@ def _demand(state: WorldState, layout: Layout, p: AssetState) -> tuple[float, fl
     on = [0.0] * len(zones_)
     fans = 0.0
     handlers = 0
+    demand = taken = 0.0
     for unit, zone, share, fresh_air in layout.demand_plan:
-        kw = a[unit]["power_kw"]
+        s = a[unit]
+        if "chw_demand_kw" in s:  # the airside models the unit's coil (`sim.airside`)
+            demand += s["chw_demand_kw"]
+            taken += s["chw_take_kw"]
+            continue
+        kw = s.get("power_kw", 0.0)
         if kw > 0.0:
             fans += kw
             on[zone] += share
             handlers += fresh_air
-    demand = taken = 0.0
     coil = p["chws_c"] + COIL_APPROACH_K
     for (zone, ua), share in zip(zones_, on, strict=True):
         if share:

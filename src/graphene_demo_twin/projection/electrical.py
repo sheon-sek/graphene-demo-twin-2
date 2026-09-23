@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from graphene_demo_twin.asset_model import AssetModel
 from graphene_demo_twin.plant_design import PlantDesign
-from graphene_demo_twin.projection.projector import Binding, GroupBinding
+from graphene_demo_twin.projection.projector import Binding, GroupBinding, VariableRead
 from graphene_demo_twin.sim import Scalar, WorldState
 from graphene_demo_twin.sim.electrical import (
     BULK_TANK_L,
@@ -435,7 +435,7 @@ def _rcms_amps(node: str) -> Callable[[WorldState], float]:
 
 
 def _var(node: str, name: str) -> Callable[[WorldState], Scalar]:
-    return lambda s: s.assets[node][name]
+    return VariableRead(node, name)
 
 
 def _read(node: str, read: Callable[[dict[str, Scalar]], Scalar]) -> Callable[[WorldState], Scalar]:

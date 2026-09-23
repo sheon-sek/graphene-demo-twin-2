@@ -16,6 +16,7 @@ from graphene_demo_twin.sim import (
 )
 from graphene_demo_twin.sim.it_load import ITLoadDomain
 from graphene_demo_twin.sim.site import SITE
+from graphene_demo_twin.sim.thermal import PLANT
 from graphene_demo_twin.world import default_domains
 
 START = 1_790_000_000
@@ -133,7 +134,7 @@ def test_initial_state_is_steady_and_starts_at_the_start_time(plant_design):
     sim = _sim(plant_design)
     assert sim.time == START
     halls = [r.id for r in plant_design.rooms.values() if r.kind == "hall"]
-    nodes = {*plant_design.assets, *plant_design.rooms, SITE}
+    nodes = {*plant_design.assets, *plant_design.rooms, SITE, PLANT}
     assert set(halls) <= sim.state.assets.keys() <= nodes
     assert sim.state.faults == {}
     before = {h: sim.state.assets[h]["temp_c"] for h in halls}

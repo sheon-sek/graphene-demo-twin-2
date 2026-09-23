@@ -36,6 +36,19 @@ class Binding:
     read: Callable[[WorldState], Scalar]
 
 
+class VariableRead:
+    """A binding's `read` that is one AssetState variable as it stands: `differences` compares
+    it without calling it, which matters when a preview compares every alarm bit every step."""
+
+    __slots__ = ("key", "node")
+
+    def __init__(self, node: str, key: str) -> None:
+        self.node, self.key = node, key
+
+    def __call__(self, state: WorldState) -> Scalar:
+        return state.assets[self.node][self.key]
+
+
 @dataclass(frozen=True, slots=True)
 class GroupBinding:
     """Drives several points from one reading of the world state, for points that share an
@@ -125,6 +138,12 @@ class Projector:
                 self._groups.append((b, frozenset(b.paths)))
             else:
                 self._bindings[b.path] = b
+        self._variables: dict[str, tuple[str, str]] = {
+            path: (b.read.node, b.read.key)
+            for path, b in self._bindings.items()
+            if isinstance(b.read, VariableRead)
+        }
+        """Bound points that are one AssetState variable: (node, variable)."""
         self._quality = tuple(quality)
         for q in self._quality:
             if missing := [p for p in q.paths if p not in asset_model.points]:
@@ -183,9 +202,15 @@ class Projector:
             if x != y and (typed := (self._typed(path, x), self._typed(path, y)))[0] != typed[1]:
                 found[path] = typed
 
-        bindings = self._bindings
+        bindings, variables = self._bindings, self._variables
+        sa, sb = a.assets, b.assets
         for path in paths:
-            if (binding := bindings.get(path)) is not None:
+            if (var := variables.get(path)) is not None:
+                node, key = var
+                x, y = sa[node][key], sb[node][key]
+                if x != y:
+                    compare(path, x, y)
+            elif (binding := bindings.get(path)) is not None:
                 read = binding.read
                 x, y = read(a), read(b)
                 if x != y:  # inline: most points agree, and this runs every preview step

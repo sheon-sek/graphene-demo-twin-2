@@ -133,6 +133,7 @@ for i, h in enumerate(HALLS, 1):
     ghost(f'~CCU-00{i}', f'CCU-00{i}', 'Ceiling Cooling Units', [f'Chiller_System/Ceiling Cooling Units/CCU-00{i}'])
     put(f'~CCU-00{i}', h, rx['x'] + 12, 15, f'Ceiling cooling units, {h}', 'Airside')
     link('chw', f'~CB-00{i}', f'~CCU-00{i}')
+    link('air', f'~CCU-00{i}', h, 'serves')
     ghost(f'~IT-{h}', f'IT-{h}', 'IT Load', [f'Dashboard/Energy/Floors/{rx["floor"]}/Data Halls/{h}', f'Environment Monitoring/{rx["floor"]}/{h}'])
     put(f'~IT-{h}', h, rx['x'] + 18, 8, f'IT equipment in {h}: draws the IT Load, all of it becomes heat in the hall', 'IT')
 ghost('~WX-01', 'WX-01', 'Weather Station', ['Chiller System Control/Weather'])
@@ -403,9 +404,10 @@ reviews = [
  dict(id='A14', area='Water', title='Water path', text='Municipal supply → G_V1 → ground tanks → transfer pumps (2 + 1) → riser → roof tanks → boosters → makeup headers → one VSD makeup pump per tower cell. AC Makeup Tank pumps top up the closed CHW loop from the ground tank branch.'),
  dict(id='A15', area='Site', title='Service shafts', text='Rev 0.2. Five risers beside the lift core, Ground to Roof: electrical (power), chilled & condenser water, supply-air duct, cold water, control network. Every connection that changes floor runs up its discipline\'s shaft. Diesel stays on the Ground floor and needs none.'),
  dict(id='A16', area='Electrical', title='Load side of the power graph', text='Rev 0.3. Every consumer hangs off exactly one board or sub-meter, so each meter reads what its authored loads draw. Meter1–4 feed the five cells of Tower Groups CT-001–004, Meter5–7 the chiller pumps, Meter8–9 the makeup pumps of tower plants P1 and P2, Meter10–12 the roof, Level 1 and ground air units (CCU-005–008 on Meter10, CCU-001–004 on Meter11), Meter13 the CDUs, Meter15 the diesel tanks\' fuel pumps, Meter18 the transfer, booster and AC makeup pumps. Lighting: MSB A_6 lights the Ground rooms, DB_22 DH01–04, Meter17 the other Level 1 rooms, MSB B_14 Level 2 and the roof plant rooms, and Meter19 the outdoor areas and security. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads; their draw is a stand-in on the meter. The three-phase sub-meters Meter14, 17 and 19 hang off the essential-services board DB_24, not the single-phase lighting board DB_22.'),
+ dict(id='A17', area='Airside', title='Ceiling cooling units serve their hall', text='Rev 0.4. Each hall\'s ceiling cooling units (CCU-001–008) supply air to that hall, so their cooling reaches its heat balance like the other units\'. The CDUs\' air connection to DH08 carries no air: they remove the liquid-cooled share of its IT Load directly.'),
 ]
 
-out = dict(version='0.3', date='2026-09-23', floors=FLOORS, rooms=list(rooms.values()), shafts=shafts,
+out = dict(version='0.4', date='2026-09-24', floors=FLOORS, rooms=list(rooms.values()), shafts=shafts,
            assets=[dict(path=p, type=A[p]['type'], unexported=A[p].get('unexported', False), **place[p]) for p in sorted(A, key=nat)],
            edges=edges, unexported=list(unexported.values()), views=views, fire=fire, leak=LEAK_ZONES,
            gateways=GATEWAY_DOMAINS, basis=basis, reviews=reviews,

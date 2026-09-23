@@ -12,6 +12,8 @@ Rev 0.2 (2026-09-23) adds the service shafts (review item A15, not yet reviewed)
 
 Rev 0.3 (2026-09-23) authors the load side of the power graph for #19 (review item A16, not yet reviewed): every electrical consumer, including each room's lighting, hangs off exactly one board or sub-meter, so the meter tree can balance. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads, because the gensets are sources and wiring their auxiliaries back to them would loop the graph; the electrical model gives them a stand-in draw. The air units each sub-meter feeds are listed by path, never selected by name prefix. The three-phase sub-meters Meter14, 17 and 19 hang off the essential-services board DB_24, since the loader rejects a three-phase meter fed from a single-phase one (DB_22 is a GEM230). The hall UPS modules are rated at 0.8 kVA per kW of their hall's design IT load (800 kVA, 960 kVA in DH08), so any two carry it at under 70 %, and the gensets at 3,750 kVA / 3,000 kW, so two carry their side.
 
+Rev 0.4 (2026-09-24) adds the ceiling cooling units' air connections for #22 (review item A17, not yet reviewed). Each hall's CCU supplies air to that hall, so its cooling reaches the hall's heat balance like the other units'. The CDUs' air connection to DH08 carries no air: they remove the liquid-cooled share of its IT Load directly.
+
 Key decisions the design encodes:
 
 - One chiller plant with four chillers. CH-004 is an Unexported Asset (ADR-0004).

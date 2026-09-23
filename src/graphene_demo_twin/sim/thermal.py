@@ -13,11 +13,11 @@ Moisture: the fresh-air handlers serving a zone hold its dew point low, a little
 humid days; without one running it drifts towards the outdoor dew point. Relative humidity
 follows from the dew point at each temperature.
 
-A chilled-water air unit (PAHU, FCU, FWU, CDU) that the airside (#22) does not model yet
-runs at full airflow whenever it has supply, and its coil cools the air towards the water
-the chiller plant (`sim.plant`) supplies: SUPPLY_C at the design supply temperature and full
-flow, warmer as the water warms or the flow falls short. The DX CRAC units are modelled in
-`sim.placeholder`.
+The air units themselves are modelled in `sim.airside`: each reports its `airflow` and the
+temperature it supplies, and a CDU the liquid-cooled heat it carries away directly
+(`removed_kw`). A supplier without a model (in a world that leaves the airside out) runs at
+full airflow whenever it has supply, its coil cooling the air towards the water the chiller
+plant supplies (`chw_coil_air`).
 """
 
 import functools
@@ -48,11 +48,22 @@ SUPPORT_DESIGN_KW = 150.0
 
 CRAC_TYPE = "CRAC"
 FRESH_AIR_TYPE = "PAHU"
-AIR_UNIT_TYPES = frozenset({CRAC_TYPE, "PAHU", "FCU", "FWU", "CDU", "Ceiling Cooling Units"})
+LIQUID_TYPE = "CDU"
+AIR_UNIT_TYPES = frozenset({CRAC_TYPE, "PAHU", "FCU", "FWU", LIQUID_TYPE, "Ceiling Cooling Units"})
 """Cooling equipment: what it draws leaves with the refrigerant or the chilled water, not
 as heat in the room it stands in."""
-AIR_WEIGHT = {CRAC_TYPE: 3.0}
-"""Share of a zone's cooling per air supplier type, relative to 1 for any other supplier."""
+AIR_WEIGHT = {
+    CRAC_TYPE: 3.0,
+    "FWU": 1.0,
+    "FCU": 0.5,
+    "Ceiling Cooling Units": 0.5,
+    FRESH_AIR_TYPE: 0.5,
+    LIQUID_TYPE: 0.0,
+}
+"""Share of a zone's airflow per air supplier type: the hall cooling mix (A6). The DX CRAC
+carries most of it, a fan wall twice what a fan-coil unit moves, the ceiling units and the
+fresh-air handler as much as a fan-coil unit, and a CDU none (its heat leaves through its
+liquid)."""
 
 HOT_AISLE_TYPE = "Temperature and Humidity"
 COLD_AISLE_TYPE = "Environment Monitoring"
@@ -98,7 +109,9 @@ class ThermalZoneDomain:
                 for n, b in it_equipment(ctx.design).items()
                 if ctx.design.asset(n).room == zone
             )
-            temp = SUPPLY_C + it / ua_kw_per_k(ctx.design, zone) if it else HALL_C
+            basis = ctx.design.it_basis.get(zone)
+            air = it * (1.0 - basis.liquid_fraction) if basis is not None else it
+            temp = SUPPLY_C + air / ua_kw_per_k(ctx.design, zone) if it else HALL_C
             states[zone] = {
                 "it_heat_kw": it,
                 "heat_kw": it,
@@ -116,8 +129,9 @@ class ThermalZoneDomain:
             s = state.assets[zone.id]
             heat, it = _heat(state, zone)
             flow, supplied = _supply(state, zone)
+            removed = _removed(state, zone)
             if flow > 0.0:
-                s["temp_c"] = (heat / zone.ua + supplied) / flow
+                s["temp_c"] = ((heat - removed) / zone.ua + supplied) / flow
             self._observe(s, heat, it, heat, flow, supplied)
 
     def handles(self, event: Event, design: PlantDesign) -> bool:
@@ -134,7 +148,7 @@ class ThermalZoneDomain:
             s = state.assets[zone.id]
             heat, it = _heat(state, zone)
             flow, supplied = _supply(state, zone)
-            cooling = zone.ua * (flow * s["temp_c"] - supplied)
+            cooling = zone.ua * (flow * s["temp_c"] - supplied) + _removed(state, zone)
             s["temp_c"] += (heat - cooling) * ctx.dt / zone.capacity
             dew = s["dew_point_c"]
             towards = target if _dehumidified(state, zone) else outdoor
@@ -280,8 +294,7 @@ def chw_coil_air(plant: AssetState | None, return_c: float) -> float:
 
 def dehumidified(state: WorldState, design: PlantDesign, zone: str) -> bool:
     """Whether a fresh-air handler is drying the zone's air; a zone with none is held dry."""
-    units = fresh_air_units(design, zone)
-    return not units or any(powered(state, design, u) for u in units)
+    return _dehumidified(state, next(z for z in _zone_plan(design) if z.id == zone))
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,8 +308,10 @@ class _Zone:
     it: tuple[str, ...]
     supply: tuple[tuple[str, float, str | None], ...]
     """(supplier, its share, the node whose `live` says whether it has supply)."""
-    fresh_air: tuple[str | None, ...]
-    """The supply flags of its fresh-air handlers."""
+    liquid: tuple[str, ...]
+    """The CDUs that carry part of its IT Load away through their liquid."""
+    fresh_air: tuple[tuple[str, str | None], ...]
+    """Its fresh-air handlers and their supply flags."""
 
 
 @functools.cache
@@ -309,8 +324,9 @@ def _zone_plan(design: PlantDesign) -> tuple[_Zone, ...]:
             ThermalZoneDomain.capacity_kj_per_k(design, zone),
             heat_sources(design, zone),
             it_in(design, zone),
-            tuple((n, share, flags.get(n)) for n, share in air_suppliers(design, zone)),
-            tuple(flags.get(n) for n in fresh_air_units(design, zone)),
+            tuple((n, share, flags.get(n)) for n, share in air_suppliers(design, zone) if share),
+            tuple(n for n, _ in air_suppliers(design, zone) if _type_of(design, n) == LIQUID_TYPE),
+            tuple((n, flags.get(n)) for n in fresh_air_units(design, zone)),
         )
         for zone in zones(design)
     )
@@ -336,7 +352,28 @@ def _live(state: WorldState, flag: str | None) -> bool:
 
 
 def _dehumidified(state: WorldState, zone: _Zone) -> bool:
-    return not zone.fresh_air or any(_live(state, f) for f in zone.fresh_air)
+    """Whether a fresh-air handler dries the zone's air: one whose coil has cold water (its
+    `dehumidifying`), or without a model of the unit, one with supply."""
+    if not zone.fresh_air:
+        return True
+    for unit, flag in zone.fresh_air:
+        s = state.assets.get(unit)
+        if s is not None and "dehumidifying" in s:
+            if s["dehumidifying"]:
+                return True
+        elif _live(state, flag):
+            return True
+    return False
+
+
+def _removed(state: WorldState, zone: _Zone) -> float:
+    """Heat the zone's CDUs carry away through their liquid this step."""
+    removed = 0.0
+    for unit in zone.liquid:
+        s = state.assets.get(unit)
+        if s is not None:
+            removed += s.get("removed_kw", 0.0)
+    return removed
 
 
 def _supply(state: WorldState, zone: _Zone) -> tuple[float, float]:
@@ -383,7 +420,7 @@ def zones(design: PlantDesign) -> tuple[str, ...]:
 def air_suppliers(design: PlantDesign, room: str) -> tuple[tuple[str, float], ...]:
     """The units supplying air to `room` and each one's share of its cooling."""
     suppliers = design.upstream(room, ConnectionKind.AIR)
-    weights = [AIR_WEIGHT.get(_type_of(design, n), 1.0) for n in suppliers]
+    weights = [AIR_WEIGHT[_type_of(design, n)] for n in suppliers]
     total = sum(weights)
     return tuple((n, w / total) for n, w in zip(suppliers, weights, strict=True))
 
@@ -425,9 +462,13 @@ def heat_sources(design: PlantDesign, zone: str) -> tuple[tuple[str, str], ...]:
 
 @functools.cache
 def ua_kw_per_k(design: PlantDesign, zone: str) -> float:
-    """Heat a zone's air suppliers remove per kelvin of its air above supply, at full flow."""
+    """Heat a zone's air suppliers remove per kelvin of its air above supply, at full flow:
+    what holds the air-cooled share of its nominal IT Load at HALL_C."""
     basis = design.it_basis.get(zone)
-    nominal = SUPPORT_DESIGN_KW if basis is None else basis.design_kw * NOMINAL_UTILISATION
+    if basis is None:
+        nominal = SUPPORT_DESIGN_KW
+    else:  # the liquid-cooled share of the IT Load never reaches the air
+        nominal = basis.design_kw * (1.0 - basis.liquid_fraction) * NOMINAL_UTILISATION
     return nominal / (HALL_C - SUPPLY_C)
 
 

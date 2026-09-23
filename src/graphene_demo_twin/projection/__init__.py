@@ -1,7 +1,8 @@
 """Projection: the mapping of world state onto point paths, one typed value per point."""
 
+from graphene_demo_twin.projection.airside import airside_bindings
 from graphene_demo_twin.projection.electrical import electrical_bindings
-from graphene_demo_twin.projection.placeholder import placeholder_bindings, placeholder_quality
+from graphene_demo_twin.projection.placeholder import placeholder_quality
 from graphene_demo_twin.projection.plant import plant_bindings
 from graphene_demo_twin.projection.projector import (
     Binding,
@@ -12,6 +13,7 @@ from graphene_demo_twin.projection.projector import (
     Projection,
     Projector,
     QualityBinding,
+    VariableRead,
 )
 from graphene_demo_twin.projection.site import site_bindings
 from graphene_demo_twin.projection.thermal import thermal_bindings
@@ -27,10 +29,11 @@ __all__ = [
     "Projector",
     "Quality",
     "QualityBinding",
+    "VariableRead",
+    "airside_bindings",
     "coerce",
     "electrical_bindings",
     "fallback_value",
-    "placeholder_bindings",
     "placeholder_quality",
     "plant_bindings",
     "site_bindings",

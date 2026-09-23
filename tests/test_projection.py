@@ -193,7 +193,8 @@ def test_a_fault_moves_only_the_points_downstream_of_it(asset_model, plant_desig
     downstream |= {pt.path for pt in asset_model.points_of("CRAC/G_CRAC4")}
     # The hall's chilled-water units take up more of its heat, so the chiller plant sees it,
     # and through the water it supplies every zone, the other halls move by millikelvin:
-    # their sensors, their Plant View temperatures and their DX units.
+    # their sensors, their Plant View temperatures, their DX units and every chilled-water
+    # unit on the loop (#22).
     downstream |= {
         p
         for p in projector.coverage.entries
@@ -207,6 +208,10 @@ def test_a_fault_moves_only_the_points_downstream_of_it(asset_model, plant_desig
                 "Temperature and Humidity/",
                 "Environment Monitoring/",
                 "CRAC/",
+                "PAHU/",
+                "FCU/",
+                "FWU/",
+                "TIW/",
             )
         )
     }

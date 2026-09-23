@@ -5,8 +5,8 @@ from graphene_demo_twin.faults import STANDARD_CATALOG, FaultCatalog, FaultDomai
 from graphene_demo_twin.plant_design import PlantDesign
 from graphene_demo_twin.projection import (
     Projector,
+    airside_bindings,
     electrical_bindings,
-    placeholder_bindings,
     placeholder_quality,
     plant_bindings,
     site_bindings,
@@ -14,11 +14,11 @@ from graphene_demo_twin.projection import (
 )
 from graphene_demo_twin.sim import (
     Domain,
-    PlaceholderCracDomain,
     PlaceholderNetworkDomain,
     ThermalZoneDomain,
     ZoneSensorDomain,
 )
+from graphene_demo_twin.sim.airside import ChilledWaterUnitDomain, CracDomain
 from graphene_demo_twin.sim.electrical import ElectricalDomain
 from graphene_demo_twin.sim.it_load import ITLoadDomain
 from graphene_demo_twin.sim.plant import ChillerPlantDomain
@@ -28,17 +28,19 @@ from graphene_demo_twin.sim.weather import WeatherDomain
 
 def default_domains(catalog: FaultCatalog = STANDARD_CATALOG) -> list[Domain]:
     """Faults first, so every model reads this step's fault levels; then the network, the
-    weather and IT Load that drive the site, the air suppliers, the chiller plant that cools
-    them, the other loads, the
+    weather and IT Load that drive the site, the DX CRAC units, the chiller plant, the
+    chilled-water units and Cooling Blocks on the water it supplied, the other loads, the
     electrical network that supplies all of them, the thermal zones every load dissipates its
-    power into, the sensors that observe the halls, and last the site's power totals."""
+    power into and every unit cools, the sensors that observe the halls, and last the site's
+    power totals."""
     return [
         FaultDomain(catalog),
         PlaceholderNetworkDomain(catalog.asset_types(Mechanism.QUALITY)),
         WeatherDomain(),
         ITLoadDomain(),
-        PlaceholderCracDomain(),
+        CracDomain(),
         ChillerPlantDomain(),
+        ChilledWaterUnitDomain(),
         SiteLoadDomain(),
         ElectricalDomain(),
         ThermalZoneDomain(),
@@ -60,7 +62,7 @@ def default_projector(
     return Projector(
         asset_model,
         [
-            *placeholder_bindings(asset_model, design),
+            *airside_bindings(asset_model, design),
             *site_bindings(asset_model, design),
             *thermal_bindings(asset_model, design),
             *electrical_bindings(asset_model, design),

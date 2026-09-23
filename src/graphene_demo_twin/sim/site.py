@@ -92,7 +92,7 @@ _CLASS_OF_TYPE = {
     "Ceiling Cooling Units": LoadClass.VENTILATION,
 }
 FAN_KW = {"PAHU": 11.0, "FCU": 2.2, "FWU": 3.0, "Ceiling Cooling Units": 7.5}
-"""Nominal fan power of the air units the airside (P2) does not model yet."""
+"""Fan power of the chilled-water air units (`sim.airside`), which run at fixed speed."""
 CRAC_FAN_KW = 15.0
 """CRAC EC fan power at full speed; it follows the cube of speed."""
 CYCLES_OF_CONCENTRATION = 4.0
