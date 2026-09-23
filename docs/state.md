@@ -1,9 +1,0 @@
-# Project State
-
-Current state: **IMPLEMENTED / VERIFYING**.
-
-The runtime now contains the first asset-state + network-balance physical-world slice for Chiller, Cooling Tower, Chiller Pump, PAHU and CRAC equipment plus an authoritative aggregate `Hall-A` thermal state. Physical fault activations are converted into solver constraints before point projection. Cooling-tower unavailability propagates through existing `serves` topology to condenser-water conditions, chiller COP/input power and facility electrical balance. CRAC valve faults affect valve feedback, CHW flow, supply-air temperature and solved airside delivery; the Hall thermal balance then converts delivery shortfall into thermal unmet cooling, Hall temperature and humidity. Real Chiller System Control setpoints drive CHWS state, load-limited Chiller capacity and minimum/maximum staging; aggregate Plant Load, Required Chillers and Running Chillers are projected from the solved control state. The 15 real PAHUs form an authoritative airside-demand aggregate, and the 64 real Temperature and Humidity sensor instances project from the shared Hall-A state with deterministic observation variation.
-
-The Graphene export contract remains unchanged: export paths are immutable and no generated schema points are removed or renamed. Raw overrides still apply only after authoritative physics/fault calculation.
-
-Domains outside the migrated cooling/airside/Hall-A slice still use deterministic compatibility sources and are not yet claimed to have complete physical causality. The current topology does not justify a PAHU/CRAC-to-Datahall allocation or a second authoritative Hall-B zone, so those relationships remain explicitly unmigrated rather than inferred from equipment names. Future migrations should follow the same AssetState / NetworkBalance / ThermalZoneState pattern rather than adding independent point heuristics.
