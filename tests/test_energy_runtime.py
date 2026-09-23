@@ -167,18 +167,26 @@ def test_indirect_pahu_constraint_updates_authoritative_tower_energy_slope():
 
 
 
-def test_energy_constraint_timeline_excludes_unrelated_long_ramp():
+def test_energy_constraint_timeline_filters_by_energy_relevance():
     runtime = RuntimeEngine()
     runtime.set_mode("demo")
     timestamp = parse_utc("2026-08-28T11:30:00Z")
     segments = runtime.scripted_energy_segments(timestamp)
 
     assert segments
+    # Every segment must target an authoritative energy asset (or PAHU).
     assert all(
         segment.targetAsset.lower() in runtime._energy_constraint_targets()
         for segment in segments
     )
+    # Chiller condenser degradation is now energy-relevant (chillers are
+    # authoritative energy assets), so its long ramp is included.
+    assert any(
+        segment.recipeId == "CHILLER_CONDENSER_DEGRADATION"
+        for segment in segments
+    )
+    # A physical fault on a non-energy asset (CRAC) must stay excluded.
     assert all(
-        segment.recipeId != "CHILLER_CONDENSER_DEGRADATION"
+        segment.recipeId != "CRAC_VALVE_STUCK"
         for segment in segments
     )

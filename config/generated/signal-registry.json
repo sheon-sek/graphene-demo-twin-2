@@ -70161,6 +70161,14 @@
       "sourceClass": "PHYSICAL_DERIVED"
     },
     {
+      "signalKey": "sig.chiller_r_c3_energy.4a72e9f0",
+      "owner": "DomainModel",
+      "points": [
+        "Twin Extensions/Chiller/R_C3/Energy"
+      ],
+      "sourceClass": "ENERGY_INTEGRAL"
+    },
+    {
       "signalKey": "sig.chiller_r_cv9_command.df2f7de6",
       "owner": "DomainModel",
       "points": [
@@ -70841,6 +70849,14 @@
       "sourceClass": "PHYSICAL_DERIVED"
     },
     {
+      "signalKey": "sig.chiller_r_c1_energy.c88d2eb9",
+      "owner": "DomainModel",
+      "points": [
+        "Twin Extensions/Chiller/R_C1/Energy"
+      ],
+      "sourceClass": "ENERGY_INTEGRAL"
+    },
+    {
       "signalKey": "sig.chiller_r_cp7_auto_manual.5f5f526f",
       "owner": "DomainModel",
       "points": [
@@ -71271,6 +71287,14 @@
         "Twin Extensions/Chiller/R_C2/Operating Hours"
       ],
       "sourceClass": "PHYSICAL_DERIVED"
+    },
+    {
+      "signalKey": "sig.chiller_r_c2_energy.a2a7cdbb",
+      "owner": "DomainModel",
+      "points": [
+        "Twin Extensions/Chiller/R_C2/Energy"
+      ],
+      "sourceClass": "ENERGY_INTEGRAL"
     },
     {
       "signalKey": "sig.chiller_r_cv2_command.ac420479",

@@ -25,6 +25,7 @@ class FaultEngine:
     PHYSICAL_RECIPES = {
         "COOLING_TOWER_FAILURE",
         "CHILLER_CONDENSER_DEGRADATION",
+        "CHILLER_FAILURE",
         "CRAC_VALVE_STUCK",
         "PAHU_AFTER_HOURS",
     }
@@ -201,6 +202,8 @@ class FaultEngine:
                 row["valve_position"] = min(
                     row.get("valve_position", 1.0), 1.0 - 0.97 * severity
                 )
+            elif fault.recipeId == "CHILLER_FAILURE":
+                row["availability"] = min(row.get("availability", 1.0), 1.0 - severity)
             elif fault.recipeId == "PAHU_AFTER_HOURS":
                 row["after_hours_operation"] = max(
                     row.get("after_hours_operation", 0.0), severity
@@ -243,13 +246,34 @@ class FaultEngine:
             boundaries.add(min(end, self._end(fault) or end))
         ordered = sorted(boundaries)
 
+        # Sweep the time-ordered candidates so each window's active set is
+        # maintained incrementally instead of rescanning every candidate for
+        # every window. Every candidate start/end is a boundary, so a window
+        # midpoint is never exactly on a candidate boundary and the half-open
+        # [start, end) test is exact at the midpoint.
+        by_start = sorted(
+            ((max(start, self._start(f)), f) for f in candidates),
+            key=lambda item: item[0],
+        )
+        by_end = sorted(
+            ((min(end, self._end(f) or end), f) for f in candidates),
+            key=lambda item: item[0],
+        )
+        active: dict[int, FaultActivation] = {}
+        si = ei = 0
         windows: list[ConstraintWindow] = []
         for left, right in zip(ordered, ordered[1:]):
             if right <= left:
                 continue
             midpoint = left + (right - left) / 2
-            active = [fault for fault in candidates if self._active_at(fault, midpoint)]
-            constraints = self.physical_constraints(active, topology)
+            while si < len(by_start) and by_start[si][0] <= midpoint:
+                fault = by_start[si][1]
+                active[id(fault)] = fault
+                si += 1
+            while ei < len(by_end) and by_end[ei][0] <= midpoint:
+                active.pop(id(by_end[ei][1]), None)
+                ei += 1
+            constraints = self.physical_constraints(list(active.values()), topology)
             if not constraints:
                 continue
             if windows and windows[-1].end == left and windows[-1].constraints == constraints:

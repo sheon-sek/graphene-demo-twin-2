@@ -248,52 +248,6 @@ class PhysicalWorldSolver:
 
         cooling_demand_kw = pahu_cooling_demand_kw if pahus else zone_cooling_demand_kw
 
-        cracs = self.by_type.get("CRAC", [])
-        crac_fan_kw = 0.0
-        crac_delivered_fraction = 1.0
-        if cracs:
-            delivered = 0.0
-            per_unit_demand = cooling_demand_kw / len(cracs)
-            crac_design_kw = float(airside_cfg.get("cracDesignCoolingKw", 110.0))
-            for asset in cracs:
-                path = asset["exportPath"]
-                availability = clamp(self._constraint(constraints, path, "availability", 1.0), 0.0, 1.0)
-                valve = clamp(self._constraint(constraints, path, "valve_position", 1.0), 0.0, 1.0)
-                valve_command = clamp(self._constraint(constraints, path, "valve_command", 0.72), 0.0, 1.0)
-                effective = availability * valve
-                unit_delivered = per_unit_demand * effective
-                delivered += unit_delivered
-                fan_speed = 0.42 + 0.42 * clamp(per_unit_demand / crac_design_kw, 0.0, 1.0)
-                fan_power = float(airside_cfg.get("cracFanDesignPowerKw", 4.5)) * fan_speed**3 * availability
-                crac_fan_kw += fan_power
-                chw_flow = unit_delivered / (4.186 * chw_delta_t_c) if unit_delivered > 0 else 0.0
-                sat = 14.2 + (1.0 - effective) * 8.2
-                rat = 24.0 + (1.0 - effective) * 1.8
-                running = availability > 0.05
-                states[path.lower()] = AssetState(
-                    path,
-                    "CRAC",
-                    running=running,
-                    load_fraction=clamp(per_unit_demand / crac_design_kw, 0.0, 1.0),
-                    power_kw=fan_power,
-                    flow_lps=chw_flow,
-                    metrics={
-                        "CHW Valve Command": valve_command * 100.0,
-                        "CHW Valve Feedback": valve * 100.0,
-                        "CHW Flow": chw_flow,
-                        "CHW Supply Temperature": chws_setpoint_c,
-                        "CHW Return Temperature": (
-                            chws_setpoint_c + chw_delta_t_c if effective > 0 else chws_setpoint_c
-                        ),
-                        "Supply Air Temperature": sat,
-                        "Return Air Temperature": rat,
-                        "Fan Electrical Power": fan_power,
-                        "On_Off": 1 if running else 0,
-                        "Status": "RUNNING" if running else "STANDBY",
-                    },
-                )
-            crac_delivered_fraction = clamp(delivered / max(1.0, cooling_demand_kw), 0.0, 1.0)
-
         chillers = self.by_type.get("Chiller", [])
         chiller_capacity_kw = float(cooling_cfg.get("chillerDesignCapacityKw", 1450.0))
         available_chillers = len(chillers)
@@ -435,6 +389,8 @@ class PhysicalWorldSolver:
         condenser_rejection_kw = 0.0
         cooling_delivered_kw = 0.0
         tower_rejection_kw: dict[str, float] = {}
+        chw_supply_flow_sum = 0.0
+        chw_flow_sum = 0.0
         for asset in chillers:
             path = asset["exportPath"]
             path_key = path.lower()
@@ -487,12 +443,16 @@ class PhysicalWorldSolver:
             chw_flow = cooling / max(1.0, 4.186 * max(0.1, chw_return - chw_supply)) if running else 0.0
             if path_key in pump_links_by_chiller:
                 chw_flow = min(chw_flow, pump_flow_by_chiller.get(path_key, 0.0))
+            if running:
+                chw_supply_flow_sum += chw_supply * chw_flow
+                chw_flow_sum += chw_flow
             cwr = (
                 cws + rejection / max(1.0, cw_flow * 4.186)
                 if running and cw_flow > 0
                 else cws + (7.5 if running else 0.0)
             )
             cond_pressure = 720.0 + max(0.0, cws - 27.0) * 28.0 + condenser_degradation * 150.0
+            faulted = availability < 0.95 or condenser_degradation > 0.0
             states[path_key] = AssetState(
                 path,
                 "Chiller",
@@ -520,11 +480,15 @@ class PhysicalWorldSolver:
                     "On_Off": 1 if running else 0,
                     "Status": "RUNNING" if running else "STANDBY",
                     "Enabled": running,
+                    "HasAlarm": faulted,
+                    "General Alarm": faulted,
+                    "System Failure_Trip": faulted,
                 },
             )
             if tower_path:
                 tower_key = tower_path.lower()
                 tower_rejection_kw[tower_key] = tower_rejection_kw.get(tower_key, 0.0) + rejection
+        plant_chw_supply = chw_supply_flow_sum / chw_flow_sum if chw_flow_sum > 0.0 else chws_setpoint_c
 
         for tower_key, rejection in tower_rejection_kw.items():
             tower_state = states[tower_key]
@@ -538,6 +502,52 @@ class PhysicalWorldSolver:
             metrics["CWR Temperature"] = cwr
             metrics["Heat Rejection"] = rejection
             states[tower_key] = replace(tower_state, metrics=metrics)
+
+        cracs = self.by_type.get("CRAC", [])
+        crac_fan_kw = 0.0
+        crac_delivered_fraction = 1.0
+        if cracs:
+            delivered = 0.0
+            per_unit_demand = cooling_demand_kw / len(cracs)
+            crac_design_kw = float(airside_cfg.get("cracDesignCoolingKw", 110.0))
+            for asset in cracs:
+                path = asset["exportPath"]
+                availability = clamp(self._constraint(constraints, path, "availability", 1.0), 0.0, 1.0)
+                valve = clamp(self._constraint(constraints, path, "valve_position", 1.0), 0.0, 1.0)
+                valve_command = clamp(self._constraint(constraints, path, "valve_command", 0.72), 0.0, 1.0)
+                effective = availability * valve
+                unit_delivered = per_unit_demand * effective
+                delivered += unit_delivered
+                fan_speed = 0.42 + 0.42 * clamp(per_unit_demand / crac_design_kw, 0.0, 1.0)
+                fan_power = float(airside_cfg.get("cracFanDesignPowerKw", 4.5)) * fan_speed**3 * availability
+                crac_fan_kw += fan_power
+                chw_flow = unit_delivered / (4.186 * chw_delta_t_c) if unit_delivered > 0 else 0.0
+                sat = 14.2 + (1.0 - effective) * 8.2
+                rat = 24.0 + (1.0 - effective) * 1.8
+                running = availability > 0.05
+                states[path.lower()] = AssetState(
+                    path,
+                    "CRAC",
+                    running=running,
+                    load_fraction=clamp(per_unit_demand / crac_design_kw, 0.0, 1.0),
+                    power_kw=fan_power,
+                    flow_lps=chw_flow,
+                    metrics={
+                        "CHW Valve Command": valve_command * 100.0,
+                        "CHW Valve Feedback": valve * 100.0,
+                        "CHW Flow": chw_flow,
+                        "CHW Supply Temperature": plant_chw_supply,
+                        "CHW Return Temperature": (
+                            plant_chw_supply + chw_delta_t_c if effective > 0 else plant_chw_supply
+                        ),
+                        "Supply Air Temperature": sat,
+                        "Return Air Temperature": rat,
+                        "Fan Electrical Power": fan_power,
+                        "On_Off": 1 if running else 0,
+                        "Status": "RUNNING" if running else "STANDBY",
+                    },
+                )
+            crac_delivered_fraction = clamp(delivered / max(1.0, cooling_demand_kw), 0.0, 1.0)
 
         cooling_delivered_kw *= crac_delivered_fraction
         unmet = max(0.0, cooling_demand_kw - cooling_delivered_kw)
