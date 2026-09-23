@@ -23,6 +23,9 @@ WEATHER_STATION = "~WX-01"
 `Chiller System Control/Weather`."""
 LOCAL_OFFSET_S = 8 * 3600
 """The site keeps UTC+8; daily and weekly cycles follow local time."""
+HUMID_SPELL_TAU_S = 600.0
+"""Time constant of a humid spell's excess wet bulb dispersing once its fault is cleared,
+as drier air moves in."""
 DAY_S = 86_400
 YEAR_S = 365.2425 * DAY_S
 
@@ -190,10 +193,10 @@ def compass(degrees: float) -> str:
 
 
 def with_wet_bulb_rise(air: OutdoorAir, rise_c: float) -> OutdoorAir:
-    """The same air made more humid, so its wet bulb is `rise_c` higher; saturated if that
-    reaches the dry bulb."""
-    target = air.wet_bulb_c + rise_c
-    dry = max(air.dry_bulb_c, target)
+    """The same air made more humid, so its wet bulb is `rise_c` higher; its dry bulb is
+    unchanged, so the wet bulb stops at the dry bulb (saturated air)."""
+    target = min(air.wet_bulb_c + rise_c, air.dry_bulb_c)
+    dry = air.dry_bulb_c
     dew = target if target >= dry else dew_point_for_wet_bulb(dry, target, air.pressure_hpa)
     return OutdoorAir(
         dry_bulb_c=dry,
@@ -210,7 +213,7 @@ def with_wet_bulb_rise(air: OutdoorAir, rise_c: float) -> OutdoorAir:
 class WeatherDomain:
     """The outdoor air at the roof weather station, and the rain it has seen today."""
 
-    settling_s = 0
+    settling_s = int(6 * HUMID_SPELL_TAU_S)
 
     def initial(self, ctx: StepContext) -> dict[str, AssetState]:
         local = ctx.time + LOCAL_OFFSET_S
@@ -235,12 +238,28 @@ class WeatherDomain:
         new_day = (ctx.time + LOCAL_OFFSET_S) % DAY_S == 0
         for node in stations(ctx.design):
             s = state.assets[node]
-            rise = s.get("constraint.wet_bulb_rise_c", 0.0)
+            rise = _humid_spell(s, ctx.dt)
             here = with_wet_bulb_rise(air, rise) if rise > 0.0 else air
             s.update(_air_state(here))
             s["rain_today_mm"] = (0.0 if new_day else s["rain_today_mm"]) + (
                 here.rain_mmph * ctx.dt / 3600.0
             )
+
+
+def _humid_spell(s: AssetState, dt: int) -> float:
+    """The wet-bulb rise the humid spell gives the air now. It follows the fault's
+    constraint up; once that falls (or is cleared) the humid air disperses with
+    `HUMID_SPELL_TAU_S` rather than vanishing."""
+    constraint = s.get("constraint.wet_bulb_rise_c", 0.0)
+    spell = s.get("humid_spell_c", 0.0)
+    if constraint >= spell:
+        spell = constraint
+    else:
+        spell = constraint + (spell - constraint) * math.exp(-dt / HUMID_SPELL_TAU_S)
+        if spell - constraint < 1e-6:
+            spell = constraint
+    s["humid_spell_c"] = spell
+    return spell
 
 
 def _air_state(air: OutdoorAir) -> AssetState:

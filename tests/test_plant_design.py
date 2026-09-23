@@ -1,5 +1,6 @@
 import copy
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -429,3 +430,60 @@ def test_fails_when_a_connection_changes_floor_without_a_shaft(raw, asset_model)
 def test_fails_when_the_shaft_does_not_reach_both_floors(raw, asset_model):
     _shaft(raw, "SH-HYD")["floors"] = ["Ground", "Level 1", "Level 2"]
     assert "chw connection Chiller/R_CP9 → ~CB-001 changes floor" in _errors(raw, asset_model)
+
+
+def test_an_unexported_asset_may_be_observed_through_a_hall_aggregate_folder(raw, asset_model):
+    it = next(u for u in raw["unexported"] if u["id"] == "~IT-DH01")
+    it["observedBy"] = ["Environment Monitoring/Level 1/DH01"]
+    assert parse_plant_design(raw, asset_model).unexported["~IT-DH01"].observed_by == (
+        "Environment Monitoring/Level 1/DH01",
+    )
+
+
+@pytest.mark.parametrize(
+    "folder",
+    [
+        "Environment Monitoring/Level 1/DH01/Environment Monitoring 1",  # a sensor, not a view
+        "Environment Monitoring/Level 1",  # no loose points of its own
+        "Environment Monitoring/Level 1/DH09",
+    ],
+)
+def test_fails_when_an_environment_monitoring_folder_is_not_a_hall_aggregate(
+    raw, asset_model, folder
+):
+    it = next(u for u in raw["unexported"] if u["id"] == "~IT-DH01")
+    it["observedBy"] = [folder]
+    assert folder in _errors(raw, asset_model)
+
+
+def _it_basis(raw: dict, hall: str) -> dict:
+    return next(b for b in raw["basis"]["it"] if b["hall"] == hall)
+
+
+def test_fails_on_a_duplicate_it_basis(raw, asset_model):
+    raw["basis"]["it"].append(copy.deepcopy(_it_basis(raw, "DH03")))
+    assert "duplicate IT basis for DH03" in _errors(raw, asset_model)
+
+
+@pytest.mark.parametrize("value", [0, -500, math.inf, math.nan, "1000", True, None])
+def test_fails_when_it_design_power_is_not_a_finite_positive_number(raw, asset_model, value):
+    _it_basis(raw, "DH02")["design_kW"] = value
+    assert "IT basis for DH02" in _errors(raw, asset_model)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("operating_pct", [55, math.nan]),
+        ("operating_pct", [math.inf, 80]),
+        ("operating_pct", ["55", 80]),
+        ("operating_pct", [55]),
+        ("operating_pct", [80, 55]),
+        ("liquid_fraction", math.nan),
+        ("liquid_fraction", "0.4"),
+        ("liquid_fraction", -0.1),
+    ],
+)
+def test_fails_when_an_it_basis_number_is_invalid(raw, asset_model, field, value):
+    _it_basis(raw, "DH08")[field] = value
+    assert "IT basis for DH08" in _errors(raw, asset_model)

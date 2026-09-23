@@ -7,7 +7,6 @@ from faults (`constraint.*`, `observation.*`, `quality.*`, `controller.*`) stays
 """
 
 import functools
-import hashlib
 from collections.abc import Iterable
 
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
@@ -331,17 +330,18 @@ def hall_sensors(design: PlantDesign) -> dict[str, str]:
 @functools.cache
 def cold_aisle_sensors(design: PlantDesign) -> dict[str, tuple[str, float]]:
     """Environment Monitoring sensor → the Data Hall it sits in and how much warmer its spot
-    in the cold aisle runs than the aisle's mean, fixed by where it hangs."""
+    in the cold aisle runs than the aisle's mean, fixed by where it is placed: supply air
+    enters the aisles from the hall's east wall, where its air units stand, and warms (mixing
+    with recirculated air) towards the far, west end."""
     in_halls = set(halls(design))
-    return {
-        a.path: (a.room, COLD_AISLE_SPREAD_C * (2.0 * _spot(a.path) - 1.0))
-        for a in design.assets.values()
-        if a.type_id == COLD_AISLE_SENSOR_TYPE and a.room in in_halls
-    }
-
-
-def _spot(path: str) -> float:
-    return int.from_bytes(hashlib.blake2b(path.encode(), digest_size=4).digest()) / 2**32
+    sensors = {}
+    for a in design.assets.values():
+        if a.type_id != COLD_AISLE_SENSOR_TYPE or a.room not in in_halls:
+            continue
+        room = design.room(a.room)
+        from_supply = min(max((room.x + room.w - a.x) / room.w, 0.0), 1.0)
+        sensors[a.path] = (a.room, COLD_AISLE_SPREAD_C * (2.0 * from_supply - 1.0))
+    return sensors
 
 
 @functools.cache
