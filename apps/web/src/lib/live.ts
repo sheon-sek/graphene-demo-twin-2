@@ -2,7 +2,7 @@ import type { ActiveFault, Frame, Reading, Value } from './types';
 
 /**
  * The Live World as the console sees it over `/api/stream`: the latest reading of every point
- * and a short per-point history for sparklines, one sample per frame. A snapshot (the first
+ * and a short per-point history for sparklines, one sample per sim second. A snapshot (the first
  * event, and the first after a Reset) replaces everything.
  */
 export class LiveStore {
@@ -34,6 +34,20 @@ export class LiveStore {
     } else {
       for (const [path, reading] of Object.entries(frame.points)) this.readings.set(path, reading);
     }
+    // A frame at the same sim second only carries a longer Event Log: no new sample.
+    if (kind === 'snapshot' || frame.time !== this.time) this.record();
+    this.seq = frame.seq;
+    this.epoch = frame.epoch;
+    this.time = frame.time;
+    this.timestamp = frame.timestamp;
+    this.eventCount = frame.events;
+    this.faults = frame.faults ?? [];
+    this.faultTargets = [...new Set(this.faults.map((f) => f.target))].join('\n');
+    this.version++;
+    for (const listener of this.listeners) listener();
+  }
+
+  private record(): void {
     const slot = this.frames % this.capacity;
     for (const [path, reading] of this.readings) {
       let ring = this.rings.get(path);
@@ -44,15 +58,6 @@ export class LiveStore {
       ring[slot] = numeric(reading.value);
     }
     this.frames++;
-    this.seq = frame.seq;
-    this.epoch = frame.epoch;
-    this.time = frame.time;
-    this.timestamp = frame.timestamp;
-    this.eventCount = frame.events;
-    this.faults = frame.faults ?? [];
-    this.faultTargets = [...new Set(this.faults.map((f) => f.target))].join('\n');
-    this.version++;
-    for (const listener of this.listeners) listener();
   }
 
   reading(path: string): Reading | undefined {

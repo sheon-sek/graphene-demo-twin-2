@@ -147,9 +147,7 @@ def test_operator_actions_append_to_the_event_log(client, twin):
 
 def test_the_event_log_is_read_from_the_published_frame(client, twin, clock):
     clock.now += 3  # the clock moves on before the operator acts
-    client.post(
-        "/api/events", json={"kind": "fault.inject", "target": "DH03", "params": COOLING_LOSS}
-    )
+    client.post("/api/events", json={"kind": "fault.inject", "target": CRAC3, "params": TRIP})
     status = client.get("/api/status").json()
     log = client.get("/api/events").json()
     points = client.get("/api/points", params={"path": HOT_AISLE_DH03}).json()
@@ -157,7 +155,7 @@ def test_the_event_log_is_read_from_the_published_frame(client, twin, clock):
     assert status["events"] == len(log["events"]) == 1
 
     # A change the twin has not published yet is not shown.
-    twin.live.submit("fault.clear", "DH03", {"fault": "placeholder.cooling_loss"})
+    twin.live.submit("command", CRAC3, {"command": "mode", "value": "hand"})
     assert len(client.get("/api/events").json()["events"]) == 1
 
 

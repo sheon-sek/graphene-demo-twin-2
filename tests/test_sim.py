@@ -319,12 +319,15 @@ def test_reset_is_indistinguishable_from_a_fresh_process(plant_design):
 
 def test_live_world_state_is_a_snapshot_that_cannot_bypass_the_event_log(plant_design):
     clock = FakeClock()
-    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=9, clock=clock)
+    live = _live(plant_design, 9, clock)
     before = live.state_hash()
     snapshot = live.state
-    snapshot.assets["DH01"]["cooling_loss"] = 0.75
+    temp = snapshot.assets["DH01"]["temp_c"]
+    snapshot.assets["DH01"]["temp_c"] = temp + 10.0
+    snapshot.faults["crac.fan_failure@" + CRAC["DH01"]] = {"level": 1.0}
     snapshot.time += 100
-    assert live.state.assets["DH01"]["cooling_loss"] == 0.0
+    assert live.state.assets["DH01"]["temp_c"] == temp
+    assert live.state.faults == {}
     assert live.time == START
     assert live.state_hash() == before
     assert live.events == ()
@@ -332,8 +335,9 @@ def test_live_world_state_is_a_snapshot_that_cannot_bypass_the_event_log(plant_d
 
 def test_reset_never_rewinds_sim_time_when_the_wall_clock_moved_back(plant_design):
     clock = FakeClock(START + 110.5)
-    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=9, clock=clock)
-    live.submit("fault.inject", "DH02", {"fault": "placeholder.cooling_loss"})
+    live = _live(plant_design, 9, clock)
+    inject = _inject(START + 110, "DH02")
+    live.submit(inject.kind, inject.target, inject.params)
     clock.now = START + 90.5  # e.g. an NTP correction
     live.reset()
     assert live.events == ()
@@ -423,7 +427,7 @@ def test_live_world_run_steps_once_per_wall_clock_second(plant_design):
 
 def test_live_world_run_publishes_every_second_after_a_delayed_wakeup(plant_design):
     clock = FakeClock(START + 0.5)
-    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=1, clock=clock)
+    live = _live(plant_design, 1, clock)
     ticks: list[tuple[int, str]] = []
     stop = asyncio.Event()
 

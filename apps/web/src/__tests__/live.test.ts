@@ -49,6 +49,16 @@ describe('live store over SSE', () => {
     expect(live.history('a')).toEqual([9]);
   });
 
+  it('records no sample for a frame that only logs an event at the same second', () => {
+    const live = new LiveStore(4);
+    live.apply('snapshot', frame(1, { a: good(1) }));
+    live.apply('delta', { ...frame(2, {}), time: live.time, events: 1 });
+    expect(live.eventCount).toBe(1);
+    expect(live.history('a')).toEqual([1]);
+    live.apply('delta', { ...frame(3, { a: good(4) }), events: 1 });
+    expect(live.history('a')).toEqual([1, 4]);
+  });
+
   it('tells subscribers once per frame', () => {
     const live = new LiveStore(4);
     const listener = vi.fn();
