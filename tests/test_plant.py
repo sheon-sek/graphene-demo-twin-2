@@ -42,6 +42,12 @@ def _command(at: int, target: str, command: str, value) -> Event:
     return Event(at, "command", target, {"command": command, "value": value})
 
 
+def _set(sim: Simulation, command: str, value) -> None:
+    """An Operator Command to the plant Controller, logged now."""
+    sim.schedule(_command(sim.time, PLANT, command, value))
+    sim.step()
+
+
 @pytest.fixture(scope="module")
 def projector(asset_model, plant_design) -> Projector:
     return default_projector(asset_model, plant_design)
@@ -124,7 +130,7 @@ def test_chiller_physics_is_load_dependent(plant_design):
 def test_staging_follows_demand_with_realistic_delays(plant_design, projector):
     sim = _sim(plant_design)
     plant = sim.state.assets[PLANT]
-    plant["load_limit_pct"] = 55.0  # two chillers carry 3.85 MW: the surge needs a third
+    _set(sim, "load_limit", 55.0)  # two chillers carry 3.85 MW: the surge needs a third
     for e in _surge(sim.time):
         sim.schedule(e)
     wait = int(plant["stage_up_wait_s"])
@@ -160,10 +166,10 @@ def test_staging_follows_demand_with_realistic_delays(plant_design, projector):
 def test_staging_down_waits_for_the_demand_to_stay_low(plant_design):
     sim = _sim(plant_design)
     plant = sim.state.assets[PLANT]
-    plant["load_limit_pct"] = 50.0  # two chillers no longer carry the demand
+    _set(sim, "load_limit", 50.0)  # two chillers no longer carry the demand
     sim.advance(900)
     assert _running(sim) == ["CH-001", "CH-002", "CH-003"]
-    plant["load_limit_pct"] = 85.0  # now they do again
+    _set(sim, "load_limit", 85.0)  # now they do again
     sim.advance(int(plant["stage_down_wait_s"]) - 10)
     assert len(_running(sim)) == 3
     sim.advance(400)
@@ -173,11 +179,11 @@ def test_staging_down_waits_for_the_demand_to_stay_low(plant_design):
 
 def test_min_and_max_chillers_bound_staging(plant_design):
     sim = _sim(plant_design)
-    sim.state.assets[PLANT]["min_chillers"] = 3
+    _set(sim, "min_chillers", 3)
     sim.advance(int(sim.state.assets[PLANT]["stage_up_wait_s"]) + 400)
     assert len(_running(sim)) == 3
     sim = _sim(plant_design)
-    sim.state.assets[PLANT]["max_chillers"] = 2
+    _set(sim, "max_chillers", 2)
     for e in _surge(sim.time):
         sim.schedule(e)
     sim.advance(600)
@@ -187,7 +193,7 @@ def test_min_and_max_chillers_bound_staging(plant_design):
 
 def test_the_load_limit_caps_each_chiller_and_stages_more(plant_design):
     sim = _sim(plant_design)
-    sim.state.assets[PLANT]["load_limit_pct"] = 50.0
+    _set(sim, "load_limit", 50.0)
     sim.advance(60)
     for leg in plant_layout(plant_design).legs[:2]:
         assert sim.state.assets[leg.chiller]["cooling_kw"] <= 0.5 * CHILLER_KWR + 1.0
@@ -217,6 +223,7 @@ def test_hand_mode_follows_the_operator_not_the_sequencer(plant_design, projecto
     p = projector.project(sim.state)
     assert p.values[f"{CSC}/Chillers/CH-004/Mode"] == "HAND"
     assert p.values[f"{CSC}/Chillers/CH-004/Status"] == "RUNNING"
+    assert_commands_agree_with_feedback(p.values)
     sim.schedule(_command(sim.time, "Chiller/R_C2", "enable", False))
     sim.advance(400)
     assert "CH-002" not in _running(sim)
@@ -240,6 +247,49 @@ def test_the_rotation_schedule_hands_the_lead_on_make_before_break(plant_design,
     assert len(_running(sim)) == 2  # the outgoing chiller runs until the lead is up
     sim.advance(600)
     assert _running(sim) == ["CH-001", "CH-004"]
+
+
+@pytest.mark.parametrize(
+    ("node", "constraint"),
+    [
+        ("Chiller/R_CP1", "constraint.trip"),  # primary CHW pump
+        ("Chiller/R_CP5", "constraint.trip"),  # condenser-water pump
+    ],
+)
+def test_a_leg_that_cannot_run_is_replaced_by_the_next_to_start(plant_design, node, constraint):
+    sim = _sim(plant_design)
+    sim.state.assets[node][constraint] = 1.0
+    sim.advance(5)
+    assert sim.state.assets["Chiller/R_C3"]["run_cmd"]
+    assert not sim.state.assets["Chiller/R_C1"]["run_cmd"]
+    sim.advance(400)
+    assert _running(sim) == ["CH-002", "CH-003"]
+
+
+def test_a_valve_stuck_closed_makes_its_leg_unavailable(plant_design):
+    sim = _sim(plant_design)
+    valve = plant_layout(plant_design).legs[2].evap_valve  # CH-003, standing closed
+    sim.state.assets[valve]["constraint.stuck"] = 1.0
+    sim.state.assets["Chiller/R_CP1"]["constraint.trip"] = 1.0
+    sim.advance(400)
+    assert not sim.state.assets["Chiller/R_C3"]["run_cmd"]
+    assert _running(sim) == ["CH-002", "CH-004"]
+
+
+def test_supervisory_settings_are_operator_commands_on_the_plant_controller(plant_design):
+    sim = _sim(plant_design)
+    _set(sim, "chws_sp", 12.0)
+    _set(sim, "dp_mode", "MANUAL")
+    _set(sim, "dp_manual", 70.0)
+    plant = sim.state.assets[PLANT]
+    assert (plant["chws_sp_c"], plant["dp_mode"], plant["dp_manual_pct"]) == (12.0, "MANUAL", 70.0)
+    assert [e.params["command"] for e in sim.events if e.kind == "command"] == [
+        "chws_sp",
+        "dp_mode",
+        "dp_manual",
+    ]
+    sim.advance(60)
+    assert sim.state.assets["Chiller/R_CP9"]["cv_pct"] == 70.0
 
 
 # ---- Safety trips

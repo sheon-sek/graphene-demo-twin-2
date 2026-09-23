@@ -34,9 +34,10 @@ from graphene_demo_twin.sim.weather import outdoor_air, saturation_kpa, site_air
 
 SUPPLY_C = 18.0
 """Supply air temperature every air supplier delivers at steady state."""
-PLANT = "plant"
+PLANT = "~PLC-01"
 """World-state key of the chiller plant (`sim.plant`) as a whole: its headers, its
-Controllers and its totals. Not a Plant Design node."""
+Controllers and its totals. It is the plant Controller's Unexported Asset, which takes the
+supervisory Operator Commands."""
 COIL_APPROACH_K = 4.0
 """How far a chilled-water coil's leaving air sits above the water supplied to it."""
 HALL_C = 24.0
