@@ -6960,7 +6960,7 @@
    "unexported": true,
    "room": "DH01",
    "x": 12,
-   "y": 15,
+   "y": 13,
    "role": "Ceiling cooling units, DH01",
    "sys": "Airside"
   },
@@ -6970,7 +6970,7 @@
    "unexported": true,
    "room": "DH02",
    "x": 36,
-   "y": 15,
+   "y": 13,
    "role": "Ceiling cooling units, DH02",
    "sys": "Airside"
   },
@@ -6980,7 +6980,7 @@
    "unexported": true,
    "room": "DH03",
    "x": 60,
-   "y": 15,
+   "y": 13,
    "role": "Ceiling cooling units, DH03",
    "sys": "Airside"
   },
@@ -6990,7 +6990,7 @@
    "unexported": true,
    "room": "DH04",
    "x": 84,
-   "y": 15,
+   "y": 13,
    "role": "Ceiling cooling units, DH04",
    "sys": "Airside"
   },
@@ -7000,7 +7000,7 @@
    "unexported": true,
    "room": "DH05",
    "x": 12,
-   "y": 15,
+   "y": 13,
    "role": "Ceiling cooling units, DH05",
    "sys": "Airside"
   },
@@ -7010,7 +7010,7 @@
    "unexported": true,
    "room": "DH06",
    "x": 36,
-   "y": 15,
+   "y": 13,
    "role": "Ceiling cooling units, DH06",
    "sys": "Airside"
   },
@@ -7020,7 +7020,7 @@
    "unexported": true,
    "room": "DH07",
    "x": 60,
-   "y": 15,
+   "y": 13,
    "role": "Ceiling cooling units, DH07",
    "sys": "Airside"
   },
@@ -7030,7 +7030,7 @@
    "unexported": true,
    "room": "DH08",
    "x": 84,
-   "y": 15,
+   "y": 13,
    "role": "Ceiling cooling units, DH08",
    "sys": "Airside"
   },

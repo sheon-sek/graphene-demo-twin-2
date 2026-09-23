@@ -39,7 +39,7 @@ const RULES: [RegExp, Family][] = [
   [/^Ceiling Cooling Units$/, 'ceilingUnit'],
   [/^Cooling Block$/, 'coolingBlock'],
   [/^UPS$/, 'ups'],
-  [/^(IPS|RCMS)$/, 'panel'],
+  [/^(IPS|RCMS|Chiller Plant Controller)$/, 'panel'],
   [/^Breaker$/, 'breaker'],
   [/^Genset$/, 'genset'],
   [/^(Temperature and Humidity|Environment Monitoring)$/, 'sensor'],

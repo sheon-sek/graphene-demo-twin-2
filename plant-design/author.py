@@ -131,7 +131,7 @@ for i, h in enumerate(HALLS, 1):
     put(f'~CB-00{i}', h, rx['x'] + 2, 27, f'CHW branch for {h}', 'Cooling')
     link('chw', 'Chiller/R_CP9', f'~CB-00{i}', 'riser')
     ghost(f'~CCU-00{i}', f'CCU-00{i}', 'Ceiling Cooling Units', [f'Chiller_System/Ceiling Cooling Units/CCU-00{i}'])
-    put(f'~CCU-00{i}', h, rx['x'] + 12, 15, f'Ceiling cooling units, {h}', 'Airside')
+    put(f'~CCU-00{i}', h, rx['x'] + 12, 13, f'Ceiling cooling units, {h}', 'Airside')
     link('chw', f'~CB-00{i}', f'~CCU-00{i}')
     link('air', f'~CCU-00{i}', h, 'serves')
     ghost(f'~IT-{h}', f'IT-{h}', 'IT Load', [f'Dashboard/Energy/Floors/{rx["floor"]}/Data Halls/{h}', f'Environment Monitoring/{rx["floor"]}/{h}'])
