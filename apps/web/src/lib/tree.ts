@@ -1,3 +1,4 @@
+import { ownerResolver } from './ownership';
 import type { UnexportedAsset } from './types';
 
 /**
@@ -54,17 +55,11 @@ export function buildTree(
     if (isAsset) tree.nodeFor.set(path, path);
   };
 
-  const ownerAsset = (path: string): string | null => {
-    for (let cut = path.lastIndexOf('/'); cut > 0; cut = path.lastIndexOf('/', cut - 1)) {
-      const prefix = path.slice(0, cut);
-      if (assets.has(prefix)) return prefix;
-    }
-    return null;
-  };
-
+  // An Asset's points, however deep, stay inside it; other points show their own folder.
+  const ownerOf = ownerResolver(assets, unexported);
   for (const point of pointPaths) {
-    const owner = ownerAsset(point);
-    if (owner !== null) add(owner);
+    const owner = ownerOf(point);
+    if (owner !== null && assets.has(owner.node)) add(owner.at);
     else {
       const cut = point.lastIndexOf('/');
       if (cut > 0) add(point.slice(0, cut));

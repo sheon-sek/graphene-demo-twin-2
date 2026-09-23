@@ -1,4 +1,5 @@
 import { buildLayout, type Layout } from './layout';
+import { ownerResolver } from './ownership';
 import { buildSceneModel, type SceneModel } from './scene-model';
 import { buildSearchIndex, type SearchIndex } from './search';
 import { buildTree, type Tree } from './tree';
@@ -29,24 +30,16 @@ export function buildWorld(
   points: PointInfo[],
   catalog: FaultSpec[] = [],
 ): World {
-  const assets = new Set(assetPaths);
+  const ownerOf = ownerResolver(assetPaths, design.unexported);
   const owned = new Map<string, PointInfo[]>();
-  const observers = new Map<string, string>();
   const owners = new Map<string, string>();
-  for (const u of design.unexported) for (const folder of u.observedBy) observers.set(folder, u.id);
-
   for (const point of points) {
-    for (let cut = point.path.lastIndexOf('/'); cut > 0; cut = point.path.lastIndexOf('/', cut - 1)) {
-      const prefix = point.path.slice(0, cut);
-      const owner = assets.has(prefix) ? prefix : observers.get(prefix);
-      if (owner !== undefined) {
-        let list = owned.get(owner);
-        if (!list) owned.set(owner, (list = []));
-        list.push(point);
-        owners.set(point.path, owner);
-        break;
-      }
-    }
+    const owner = ownerOf(point.path);
+    if (owner === null) continue;
+    let list = owned.get(owner.node);
+    if (!list) owned.set(owner.node, (list = []));
+    list.push(point);
+    owners.set(point.path, owner.node);
   }
 
   return {

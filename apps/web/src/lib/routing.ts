@@ -30,18 +30,6 @@ const TRAY_M: Record<Layer, number> = {
   Airside: 3.0,
 };
 
-/**
- * Where each layer changes floor: one vertical shaft per layer, side by side in the corridor
- * next to the lift core. The Plant Design places no risers, so this is a drawing convention.
- */
-export const RISERS: Record<Layer, { x: number; z: number }> = {
-  Electrical: { x: 45, z: 34.5 },
-  Hydraulic: { x: 47, z: 34.5 },
-  Airside: { x: 49, z: 34.5 },
-  Water: { x: 51, z: 34.5 },
-  Network: { x: 53, z: 34.5 },
-};
-
 /** Height above the floor at which a connection leaves or enters an asset or room. */
 const ANCHOR_M = 1.0;
 
@@ -62,7 +50,7 @@ export function anchorOf(node: string, layout: Layout, explode: number): Vec3 {
 
 /**
  * An orthogonal polyline from source to target: up to the layer's tray, along x then z, and
- * down again. Between floors the run goes via the layer's riser.
+ * down again. Between floors the run goes via the Plant Design shaft that carries its kind.
  */
 export function routeConnection(c: Connection, layout: Layout, explode: number): Vec3[] {
   const layer = layerOf(c.kind);
@@ -77,7 +65,10 @@ export function routeConnection(c: Connection, layout: Layout, explode: number):
   if (fromFloor === toFloor) {
     points.push([to[0], trayFrom, from[2]], [to[0], trayFrom, to[2]]);
   } else {
-    const riser = RISERS[layer];
+    const riser = layout.shaftFor(c.kind);
+    if (!riser) {
+      throw new Error(`no shaft carries ${c.kind}: ${c.source} → ${c.target} changes floor`);
+    }
     points.push(
       [riser.x, trayFrom, from[2]],
       [riser.x, trayFrom, riser.z],

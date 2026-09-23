@@ -40,7 +40,7 @@ Every read comes from the latest published frame, which is one Live World step. 
 | `GET` | `/api/points/{path}` | One point reading plus its Asset Model metadata and coverage. |
 | `GET` | `/api/state` | AssetState for every Plant Design node in the frame, and the active faults. |
 | `GET` | `/api/state/{node}` | AssetState for one node: an asset path, `~<name>` or a room id. |
-| `GET` | `/api/plant-design` | The Plant Design graph: floors, rooms, placed assets, Unexported Assets and connections. |
+| `GET` | `/api/plant-design` | The Plant Design graph: floors, rooms, service shafts, placed assets, Unexported Assets and connections. |
 | `GET` | `/api/events` | The Event Log. |
 | `POST` | `/api/events` | Log an operator action `{kind, target, params}` at the current sim time. Returns 201, or 422 if no domain accepts it. |
 | `GET` | `/api/faults/catalog` | The fault catalog: id, name, asset type, category, mechanism, driven variable, span, unit, description and default severity. Filter with `type=`. |
@@ -52,7 +52,7 @@ Every read comes from the latest published frame, which is one Live World step. 
 | `POST` | `/api/commands` | Give an Operator Command `{target, command, value}`. Logs `command` and returns 201, or 422 if the asset cannot take it. |
 | `POST` | `/api/reset` | Reset. Requires `{"confirm": true}`. It discards the Event Log and every fork, and starts a new epoch. |
 | `GET` | `/api/coverage` | Coverage counts: `total`, `counts` by source (`physics`, `plant_view`, `fallback`) and `debt` (fallbacks outside Support Assets and static metadata). |
-| `GET` | `/api/coverage/points` | The coverage report, one entry per point. Filter with `source=` or `debt=`. |
+| `GET` | `/api/coverage/points` | The coverage report, one entry per point, with its source class and whether it is an alarm bit (`alarmBit`). Filter with `source=` or `debt=`. |
 | `GET` | `/api/forks` | The What-if Forks held, oldest first (at most 8; creating a ninth drops the oldest). |
 | `POST` | `/api/forks` | Fork the Live World as it is now. Returns 201. |
 | `GET` | `/api/forks/{fork_id}` | A fork's sim time, fork time and Event Log. |

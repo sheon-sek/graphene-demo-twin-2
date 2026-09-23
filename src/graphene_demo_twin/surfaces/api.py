@@ -261,6 +261,17 @@ def create_app(twin: Twin, console_dir: Path | None = CONSOLE_DIR) -> FastAPI:
                 {"kind": c.kind.value, "source": c.source, "target": c.target, "label": c.label}
                 for c in design.connections
             ],
+            "shafts": [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "x": s.x,
+                    "y": s.y,
+                    "floors": list(s.floors),
+                    "carries": [k.value for k in s.carries],
+                }
+                for s in design.shafts.values()
+            ],
         }
 
     @app.get("/api/events")
@@ -347,6 +358,7 @@ def create_app(twin: Twin, console_dir: Path | None = CONSOLE_DIR) -> FastAPI:
                 "path": e.path,
                 "source": e.source.value,
                 "sourceClass": e.source_class.value,
+                "alarmBit": asset_model.point(e.path).alarm_bit,
                 "support": e.support,
                 "debt": e.debt,
             }

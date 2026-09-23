@@ -12,11 +12,21 @@ import { plantDesign } from './fixtures';
 const design = plantDesign();
 const assetPaths = design.assets.filter((a) => !a.unexported).map((a) => a.path);
 const points: PointInfo[] = [
-  ...assetPaths.map((p): PointInfo => ({ path: `${p}/Status`, sourceClass: 'equipment_state' })),
-  { path: 'Chiller/R_C1/On_Off', sourceClass: 'feedback' },
-  { path: 'Chiller/R_C1/General Alarm', sourceClass: 'fault_alarm' },
-  { path: 'Chiller/R_C1/Chilled Water Supply Temperature', sourceClass: 'process_value' },
-  { path: 'Chiller_System/Chillers/CH-004/Supply Temperature', sourceClass: 'process_value' },
+  ...assetPaths.map(
+    (p): PointInfo => ({ path: `${p}/Status`, sourceClass: 'equipment_state', alarmBit: false }),
+  ),
+  { path: 'Chiller/R_C1/On_Off', sourceClass: 'feedback', alarmBit: false },
+  { path: 'Chiller/R_C1/General Alarm', sourceClass: 'fault_alarm', alarmBit: true },
+  {
+    path: 'Chiller/R_C1/Chilled Water Supply Temperature',
+    sourceClass: 'process_value',
+    alarmBit: false,
+  },
+  {
+    path: 'Chiller_System/Chillers/CH-004/Supply Temperature',
+    sourceClass: 'process_value',
+    alarmBit: false,
+  },
 ];
 const world = buildWorld(design, assetPaths, points);
 

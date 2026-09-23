@@ -139,9 +139,9 @@ function AssetBatch({ world, live, batch }: { world: World; live: LiveStore; bat
         }}
         onDoubleClick={(e) => {
           e.stopPropagation();
-          const hits = hitsOf(e);
-          const selected = useConsole.getState().selected;
-          const path = selected !== null && hits.includes(selected) ? selected : hits[0];
+          // Fly to the asset directly under the pointer: the double-click's own two clicks
+          // have already cycled the selection to whatever is behind it.
+          const path = hitsOf(e)[0];
           if (path) locate(world, path);
         }}
         onPointerMove={(e) => {

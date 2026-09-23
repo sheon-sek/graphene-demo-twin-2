@@ -128,6 +128,11 @@ export function Building({ world }: { world: World }) {
         args={[unitBox, materials.tile, rooms.length]}
         onDoubleClick={(e) => {
           if (e.instanceId === undefined) return;
+          // An asset standing on the tile ties with it for nearest hit: the asset takes it.
+          const onTile = e.intersections.some(
+            (i) => i.object.userData.paths && i.distance <= e.distance + 1e-3,
+          );
+          if (onTile) return;
           e.stopPropagation();
           showRoom(world, rooms[e.instanceId].id);
         }}

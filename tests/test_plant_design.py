@@ -13,6 +13,7 @@ from graphene_demo_twin.plant_design import (
     ConnectionKind,
     PlantDesign,
     PlantDesignError,
+    Shaft,
     parse_plant_design,
 )
 
@@ -106,7 +107,7 @@ def test_unexported_assets_are_the_ones_the_prd_fixes(plant_design):
 
 
 def test_plant_design_is_read_only(plant_design):
-    for name in ("version", "floors", "rooms", "assets", "unexported", "connections"):
+    for name in ("version", "floors", "rooms", "assets", "unexported", "connections", "shafts"):
         with pytest.raises(AttributeError):
             setattr(plant_design, name, ())
 
@@ -134,6 +135,30 @@ def test_connections_are_typed(plant_design):
         "Chiller/R_C1",
         "primary CHW",
     )
+
+
+def test_shafts_are_authored_with_the_connection_kinds_they_carry(plant_design):
+    assert set(plant_design.shafts) == {"SH-EL", "SH-HYD", "SH-AIR", "SH-WTR", "SH-NET"}
+    hydraulic = plant_design.shafts["SH-HYD"]
+    assert isinstance(hydraulic, Shaft)
+    assert hydraulic.carries == (ConnectionKind.CHW, ConnectionKind.CW)
+    assert hydraulic.floors == ("Ground", "Level 1", "Level 2", "Roof")
+    assert (hydraulic.x, hydraulic.y) == (47, 34.5)
+    assert plant_design.shaft_for(ConnectionKind.CW) is hydraulic
+    assert plant_design.shaft_for("power").id == "SH-EL"
+    assert plant_design.shaft_for(ConnectionKind.FUEL) is None
+
+
+def test_every_connection_that_changes_floor_has_a_shaft_spanning_both_floors(plant_design):
+    def floor(node: str) -> str:
+        room = node if plant_design.is_room(node) else plant_design.asset(node).room
+        return plant_design.room(room).floor
+
+    crossing = [c for c in plant_design.connections if floor(c.source) != floor(c.target)]
+    assert crossing
+    for c in crossing:
+        shaft = plant_design.shaft_for(c.kind)
+        assert {floor(c.source), floor(c.target)} <= set(shaft.floors), c
 
 
 def test_plant_views_are_the_three_observation_folders():
@@ -241,7 +266,7 @@ def test_room_and_floor_of_an_asset(plant_design):
 
 
 def test_committed_design_is_valid(plant_design):
-    assert plant_design.version == "0.1"
+    assert plant_design.version == "0.2"
 
 
 def test_fails_when_an_exported_asset_is_unplaced(raw, asset_model):
@@ -353,3 +378,54 @@ def test_reports_every_problem_at_once(raw, asset_model):
     message = _errors(raw, asset_model)
     assert "Chiller/R_C1" in message
     assert "DH99" in message
+
+
+def _shaft(raw: dict, shaft_id: str) -> dict:
+    return next(s for s in raw["shafts"] if s["id"] == shaft_id)
+
+
+def test_fails_on_duplicate_shaft(raw, asset_model):
+    raw["shafts"].append(copy.deepcopy(_shaft(raw, "SH-NET")))
+    assert "duplicate shaft: SH-NET" in _errors(raw, asset_model)
+
+
+def test_fails_when_a_shaft_is_on_an_unknown_floor(raw, asset_model):
+    _shaft(raw, "SH-NET")["floors"].append("Penthouse")
+    assert "shaft SH-NET is on an unknown floor: Penthouse" in _errors(raw, asset_model)
+
+
+def test_fails_when_a_shaft_skips_a_floor(raw, asset_model):
+    _shaft(raw, "SH-NET")["floors"] = ["Ground", "Level 2"]
+    assert "shaft SH-NET does not run through consecutive floors" in _errors(raw, asset_model)
+
+
+def test_fails_when_a_shaft_carries_an_unknown_kind(raw, asset_model):
+    _shaft(raw, "SH-NET")["carries"].append("steam")
+    assert "shaft SH-NET carries an unknown connection kind: steam" in _errors(raw, asset_model)
+
+
+def test_fails_when_two_shafts_carry_the_same_kind(raw, asset_model):
+    _shaft(raw, "SH-NET")["carries"].append("power")
+    assert "power is carried by more than one shaft: SH-EL, SH-NET" in _errors(raw, asset_model)
+
+
+@pytest.mark.parametrize(("x", "y"), [(200, 34.5), (47, float("nan")), (None, 34.5)])
+def test_fails_when_a_shaft_is_outside_the_building(raw, asset_model, x, y):
+    shaft = _shaft(raw, "SH-HYD")
+    shaft["x"], shaft["y"] = x, y
+    assert "shaft SH-HYD is outside every room on Ground" in _errors(raw, asset_model)
+
+
+def test_fails_when_a_connection_changes_floor_without_a_shaft(raw, asset_model):
+    raw["shafts"] = [s for s in raw["shafts"] if s["id"] != "SH-WTR"]
+    message = _errors(raw, asset_model)
+    assert (
+        "water connection Cold Water and Sanitary System/G_V9 → "
+        "Cold Water and Sanitary System/R_V1 changes floor from Ground to Roof, "
+        "but no shaft carries water between them"
+    ) in message
+
+
+def test_fails_when_the_shaft_does_not_reach_both_floors(raw, asset_model):
+    _shaft(raw, "SH-HYD")["floors"] = ["Ground", "Level 1", "Level 2"]
+    assert "chw connection Chiller/R_CP9 → ~CB-001 changes floor" in _errors(raw, asset_model)

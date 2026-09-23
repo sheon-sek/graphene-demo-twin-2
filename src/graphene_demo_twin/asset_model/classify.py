@@ -167,3 +167,21 @@ def classify(
     if _EQUIPMENT_STATE.search(name):
         return SourceClass.EQUIPMENT_STATE
     return SourceClass.PROCESS_VALUE
+
+
+_INTEGER_TYPES = frozenset({"Int1", "Int2", "Int4", "Int8"})
+_ALARM_TALLY = _names(r" Count$", r" Code$")
+
+
+def is_alarm_bit(source_class: SourceClass, data_type: str, name: str) -> bool:
+    """A fault or alarm bit: active when true or nonzero.
+
+    Boolean fault points, and integer ones that carry a 0/1 bit (`Trip`, `EF`, `Low Coolant
+    Level`, a leak cable's `Status`). Counts and codes are integers too, but they tally or
+    enumerate alarms rather than being one, and text summaries duplicate the bits.
+    """
+    if source_class is not SourceClass.FAULT_ALARM:
+        return False
+    if data_type == "Boolean":
+        return True
+    return data_type in _INTEGER_TYPES and not _ALARM_TALLY.search(name)

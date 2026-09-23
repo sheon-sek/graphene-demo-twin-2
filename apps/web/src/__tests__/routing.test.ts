@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildLayout } from '../lib/layout';
-import { anchorOf, LAYERS, layerOf, RISERS, routeConnection, type Vec3 } from '../lib/routing';
+import { anchorOf, LAYERS, layerOf, routeConnection, type Vec3 } from '../lib/routing';
 import type { ConnectionKind } from '../lib/types';
 import { plantDesign } from './fixtures';
 
@@ -10,6 +10,16 @@ const EPS = 1e-9;
 
 function axesChanged(a: Vec3, b: Vec3): number {
   return [0, 1, 2].filter((i) => Math.abs(a[i] - b[i]) > EPS).length;
+}
+
+/** Plan position of every run that climbs more than a storey. */
+function risesAt(route: Vec3[]): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 1; i < route.length; i++) {
+    const [a, b] = [route[i - 1], route[i]];
+    if (Math.abs(a[1] - b[1]) > 6) out.push([a[0], a[2]]);
+  }
+  return out;
 }
 
 describe('layers', () => {
@@ -39,26 +49,38 @@ describe('orthogonal routing', () => {
     });
   }
 
-  it('changes floor only inside the layer riser', () => {
+  it('changes floor only inside the shaft that carries its kind', () => {
     const between = design.connections.filter(
       (c) => layout.floorOf(c.source) !== layout.floorOf(c.target),
     );
     expect(between.length).toBeGreaterThan(0);
     for (const c of between) {
-      const route = routeConnection(c, layout, 1);
-      const riser = RISERS[layerOf(c.kind)];
-      const floors = new Set<number>();
-      for (let i = 1; i < route.length; i++) {
-        const [a, b] = [route[i - 1], route[i]];
-        const vertical = Math.abs(a[1] - b[1]) > EPS;
-        const long = Math.abs(a[1] - b[1]) > 6;
-        if (vertical && long) {
-          expect([a[0], a[2]], `${c.source} → ${c.target}`).toEqual([riser.x, riser.z]);
-          floors.add(i);
-        }
-      }
-      expect(floors.size, `${c.source} → ${c.target}`).toBe(1);
+      const shaft = layout.shaftFor(c.kind)!;
+      expect(shaft, c.kind).toBeDefined();
+      expect(risesAt(routeConnection(c, layout, 1)), `${c.source} → ${c.target}`).toEqual([
+        [shaft.x, shaft.z],
+      ]);
     }
+  });
+
+  it('follows the shafts the Plant Design authors, wherever they are', () => {
+    const moved = buildLayout({
+      ...design,
+      shafts: design.shafts.map((s) => (s.carries.includes('chw') ? { ...s, x: 10, y: 33 } : s)),
+    });
+    const c = design.connections.find((c) => c.source === 'Chiller/R_CP9' && c.target === '~CB-001')!;
+    expect(risesAt(routeConnection(c, moved, 1))).toEqual([[10, 33]]);
+  });
+
+  it('refuses to route a floor change that no shaft carries', () => {
+    const noWater = buildLayout({
+      ...design,
+      shafts: design.shafts.filter((s) => !s.carries.includes('water')),
+    });
+    const c = design.connections.find(
+      (c) => c.kind === 'water' && noWater.floorOf(c.source) !== noWater.floorOf(c.target),
+    )!;
+    expect(() => routeConnection(c, noWater, 1)).toThrow(/no shaft carries water/);
   });
 
   it('keeps same-floor runs on that floor', () => {

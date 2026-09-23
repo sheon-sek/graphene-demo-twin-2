@@ -40,14 +40,28 @@ describe('layout', () => {
     }
   });
 
-  it('never stacks two assets on the same spot', () => {
+  it('keeps every asset exactly where the Plant Design places it', () => {
+    let shared = 0;
     const spots = new Set<string>();
-    for (const path of placedPaths(design)) {
-      const p = layout.assets.get(path)!;
-      const key = `${p.floorIndex}:${p.x.toFixed(2)}:${p.z.toFixed(2)}`;
-      expect(spots.has(key), path).toBe(false);
+    for (const a of design.assets) {
+      if (a.room === null || a.x === null || a.y === null) continue;
+      const p = layout.assets.get(a.path)!;
+      expect([p.x, p.z], a.path).toEqual([a.x, a.y]);
+      const key = `${p.floorIndex}:${p.x}:${p.z}`;
+      if (spots.has(key)) shared++;
       spots.add(key);
     }
+    // Collocated assets stay collocated; click-through picking reaches the one behind.
+    expect(shared).toBeGreaterThan(0);
+  });
+
+  it('places each authored shaft through the floors it spans', () => {
+    const hydraulic = layout.shaftFor('chw')!;
+    expect(hydraulic.id).toBe('SH-HYD');
+    expect(layout.shaftFor('cw')).toBe(hydraulic);
+    expect([hydraulic.x, hydraulic.z]).toEqual([47, 34.5]);
+    expect([hydraulic.bottom, hydraulic.top]).toEqual([0, 3]);
+    expect(layout.shaftFor('fuel')).toBeUndefined();
   });
 
   it('leaves Support Assets out of the building', () => {

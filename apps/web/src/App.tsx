@@ -6,20 +6,24 @@ import { Layers, Legend } from './components/Legend';
 import { SearchBox } from './components/SearchBox';
 import { Toolbar } from './components/Toolbar';
 import { api } from './lib/api';
+import { benchSettings } from './lib/bench';
 import { LiveStore } from './lib/live';
 import { connectStream, type StreamState } from './lib/stream';
 import { buildWorld, type World } from './lib/world';
+import type { BenchState } from './scene/Bench';
 import { Scene } from './scene/Scene';
 import type { Perf } from './scene/Probe';
 import { useConsole } from './store';
 
 const live = new LiveStore(120);
+const bench = benchSettings(window.location.search);
 
 export function App() {
   const [world, setWorld] = useState<World | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<StreamState>('connecting');
   const [perf, setPerf] = useState<Perf | null>(null);
+  const [benchState, setBenchState] = useState<BenchState | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,13 +72,36 @@ export function App() {
         <AssetTree world={world} />
       </aside>
       <main className="stage" data-testid="stage">
-        <Scene world={world} live={live} onPerf={setPerf} />
+        <Scene world={world} live={live} onPerf={setPerf} bench={bench} onBench={setBenchState} />
         <Legend />
         <Hovered />
+        {benchState && <BenchReport state={benchState} />}
       </main>
       <Inspector world={world} live={live} />
       <BottomBar world={world} live={live} />
       <StatusBar stream={stream} perf={perf} />
+    </div>
+  );
+}
+
+function BenchReport({ state }: { state: BenchState }) {
+  const { warmupS, windowS } = state.settings;
+  let text = `Benchmark: warming up for ${warmupS} s…`;
+  if (state.phase === 'measuring') text = `Benchmark: measuring for ${windowS} s…`;
+  if (state.phase === 'done') {
+    const { medianFps, p5Fps, frames, seconds } = state.summary;
+    text = `Benchmark: median ${medianFps.toFixed(1)} fps · p5 ${p5Fps.toFixed(1)} fps · ${frames} frames in ${seconds.toFixed(1)} s`;
+  }
+  const done = state.phase === 'done' ? state.summary : null;
+  return (
+    <div
+      className="bench"
+      data-testid="bench"
+      data-phase={state.phase}
+      data-median-fps={done?.medianFps}
+      data-p5-fps={done?.p5Fps}
+    >
+      {text}
     </div>
   );
 }

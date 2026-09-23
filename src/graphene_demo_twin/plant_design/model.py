@@ -50,6 +50,21 @@ class Floor:
 
 
 @dataclass(frozen=True, slots=True)
+class Shaft:
+    """A vertical service shaft (riser): the one place connections of its kinds change floor."""
+
+    id: str
+    name: str
+    x: float
+    y: float
+    """Plan position of the shaft's centre, in metres."""
+    floors: tuple[str, ...]
+    """Consecutive floors the shaft runs through, bottom to top."""
+    carries: tuple[ConnectionKind, ...]
+    """Connection kinds routed up this shaft; each kind has at most one shaft."""
+
+
+@dataclass(frozen=True, slots=True)
 class PlacedAsset:
     path: str
     """Export path of an Asset, or `~<name>` for an Unexported Asset."""
@@ -112,6 +127,7 @@ class PlantDesign:
         unexported: Iterable[UnexportedAsset],
         connections: Iterable[Connection],
         it_basis: Iterable[ITBasis] = (),
+        shafts: Iterable[Shaft] = (),
     ) -> None:
         self._version = version
         self._floors: tuple[Floor, ...] = tuple(floors)
@@ -122,6 +138,8 @@ class PlantDesign:
         )
         self._connections: tuple[Connection, ...] = tuple(connections)
         self._it_basis: Mapping[str, ITBasis] = MappingProxyType({b.hall: b for b in it_basis})
+        self._shafts: Mapping[str, Shaft] = MappingProxyType({s.id: s for s in shafts})
+        self._shaft_for = {k: s for s in self.shafts.values() for k in s.carries}
 
         self._floors_by_name = {f.name: f for f in self.floors}
         by_room: dict[str, list[PlacedAsset]] = {rid: [] for rid in self.rooms}
@@ -166,6 +184,14 @@ class PlantDesign:
     def it_basis(self) -> Mapping[str, ITBasis]:
         """IT Load design basis by Data Hall."""
         return self._it_basis
+
+    @property
+    def shafts(self) -> Mapping[str, Shaft]:
+        return self._shafts
+
+    def shaft_for(self, kind: ConnectionKind | str) -> Shaft | None:
+        """The shaft connections of `kind` change floor in, or None if none carries it."""
+        return self._shaft_for.get(ConnectionKind(kind))
 
     def floor(self, name: str) -> Floor:
         return self._floors_by_name[name]
