@@ -4,6 +4,7 @@ import hashlib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import Any
 
 from graphene_demo_twin.asset_model.classify import SourceClass
 
@@ -50,6 +51,12 @@ class Point:
     """Export path of the Asset (root UDT instance) the point belongs to."""
     source_class: SourceClass
     support: bool
+    export_value: Any = None
+    """The `value` the export configures, resolved like every other property; None if unset.
+
+    Raw from the export: a Document is a dict, a DataSet a JSON string, a DateTime epoch
+    milliseconds, and a UDT parameter binding a `{"bindType": ...}` dict.
+    """
 
 
 class AssetModel:

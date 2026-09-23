@@ -226,3 +226,17 @@ def test_source_class(asset_model, path, expected):
 def test_every_source_class_is_used(asset_model):
     used = {p.source_class for p in asset_model.points.values()}
     assert used == set(SourceClass)
+
+
+def test_points_carry_the_value_the_export_configures(asset_model):
+    # Set on the exported instance itself.
+    assert asset_model.point("BCPM/2L1/Rack ID").export_value == "Bender"
+    assert (
+        asset_model.point("Lift Monitoring System/Lift 1/Moving Until").export_value
+        == 1788322462657
+    )
+    # Inherited from the UDT type's member definition.
+    assert asset_model.point("CRAC/L1_CRAC3/Return Air Temperature").export_value == 20.0
+    assert asset_model.point("Chiller/R_C1/Auto_Manual").export_value == 1
+    # Expression points configure no value.
+    assert asset_model.point("Dashboard/Total IT Load").export_value is None

@@ -202,4 +202,5 @@ class _InstanceWalker:
                 support=support,
             ),
             support=support,
+            export_value=_resolve(chain, "value"),
         )
