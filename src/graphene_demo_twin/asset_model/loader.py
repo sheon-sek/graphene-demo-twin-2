@@ -81,7 +81,7 @@ class _TypeLibrary:
         return [
             UdtType(
                 type_id=type_id,
-                parent=raw.get("typeId"),
+                parent=raw.get("typeId") or None,
                 members=tuple(sorted(self.flat(type_id).members)),
             )
             for type_id, raw in self._raw.items()

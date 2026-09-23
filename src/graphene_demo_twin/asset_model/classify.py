@@ -88,8 +88,9 @@ _FAULT_ALARM = _names(
     r"^(No CT|Short CT|PE Connection|Transformer Temp)$",
 )
 _FAULT_ALARM_SCOPES = ("Fire Protection System/", "Chiller System Control/Alarms/")
-_EQUIPMENT_STATE_FIRST = _names(r"Auto_Manual", r"^Staging Command Pending$", r"Mode Status$")
+_EQUIPMENT_STATE_FIRST = _names(r"^Staging Command Pending$", r"Mode Status$")
 _COMMAND = _names(
+    r"Auto_Manual",
     r"Command",
     r"Setpoint|\(SP\)| SP$",
     r"^(Enabled|Loop Enable)$",
