@@ -1,0 +1,15 @@
+# Plant Design
+
+The site's hand-authored physical design (ADR-0002): rooms and floors, where every asset sits, and how assets connect electrically, hydraulically, on the airside, over the network and through the water system. The simulation propagates only along these connections, and the 3D Operator Console draws only these positions.
+
+- `author.py`: the authored source. Edit this file, never the JSON.
+- `plant-design.json`: generated output, which the engine loads. Regenerate it with `python plant-design/author.py plant-design/plant-design.json`.
+
+Rev 0.1 was approved on 2026-09-23 with review items A1–A14 accepted as drafted. The review page is https://claude.ai/artifact/FdHDsz3THQMf2Hj8iAYqwn.
+
+Key decisions the design encodes:
+
+- One chiller plant with four chillers. CH-004 is an Unexported Asset (ADR-0004).
+- CRAC units are DX and do not depend on chilled water.
+- The electrical system is 2N at the MSBs. Each Data Hall has three UPS modules in a distributed-redundant arrangement, and BCPM nL1–3 meter their outputs.
+- Root `Breaker/`, `Line/` and `Smart Alarm Logic/` are Support Assets, not the site single-line diagram.
