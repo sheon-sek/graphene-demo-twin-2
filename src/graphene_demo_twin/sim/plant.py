@@ -26,10 +26,13 @@ lead on, starting the new set before stopping the old. Command variables (`run_c
 `cmd_pct`, `cv_pct`) are Controller outputs; `running`, `pos_pct`, `hz` and `speed_pct`
 are how the equipment responded.
 
-Physical Constraints the plant reads (#23 adds the catalog entries): on a chiller
+Physical Constraints the plant reads (the `faults` catalog): on a chiller
 `constraint.trip`, `constraint.compressor_degradation` and `constraint.condenser_fouling`;
 on a pump `constraint.trip` and `constraint.bearing_wear`; on a tower cell
-`constraint.fan_loss` and `constraint.fill_fouling`; on a valve `constraint.stuck`.
+`constraint.fan_loss` and `constraint.fill_fouling`; on a valve `constraint.stuck`. Controller
+faults: `controller.hand_mode` on a chiller (its selector left in hand and on) and
+`controller.gain_factor` on the secondary pump (a mistuned DP PID). A chiller's
+`observation.drift_c_per_h` corrupts only its leaving-water sensor (`chws_read_c`).
 """
 
 import functools
@@ -149,6 +152,8 @@ STAGE_DOWN_MARGIN = 0.9
 CHWS_HIGH_K = 1.0
 """Supply this far above setpoint calls for another chiller, whatever the demand says."""
 TIMER_CAP_S = 3600
+DRIFT_LIMIT_C = 8.0
+"""How far a drifting chilled-water sensor can read high before it saturates."""
 """Timers stop counting here, so worlds that took different paths converge."""
 
 FRESH_AIR_KG_S = 2.0
@@ -426,6 +431,8 @@ class ChillerPlantDomain:
                 "trip": "",
                 "trip_s": 0,
                 "cooling_kw": 0.0,
+                "drift_c": 0.0,
+                "chws_read_c": CHWS_SP_C,
                 "run_s": 0.0,
                 "run_h0": INITIAL_RUN_HOURS.get(leg.name, 0.0),
                 "starts": 0,
@@ -611,6 +618,7 @@ class ChillerPlantDomain:
         if not settle:
             if p["dp_mode"] == "AUTO":
                 e = (p["dp_sp_kpa"] - p["dp_kpa"]) / p["dp_sp_kpa"]
+                e *= 1.0 + sec.get("controller.gain_factor", 0.0)  # a mistuned loop
                 lo = p["pump_min_pct"]
                 p["dp_i"] = min(max(p["dp_i"] + DP_KI * e * dt, lo), 100.0)
                 sec["cv_pct"] = min(max(DP_KP * e + p["dp_i"], lo), 100.0)
@@ -826,7 +834,7 @@ class ChillerPlantDomain:
                 fan_kw += s["power_kw"]
                 spinning = spinning or fan > 0.0
                 if flowing:
-                    air = NATURAL_DRAFT + (1.0 - NATURAL_DRAFT) * fan / 100.0
+                    air = NATURAL_DRAFT + (1.0 - NATURAL_DRAFT) * fan / 100.0 * (1.0 - loss)
                     fouling = s.get("constraint.fill_fouling", 0.0)
                     ua += CELL_UA * air**0.8 * (1.0 - 0.5 * fouling)
             if not flowing:
@@ -891,6 +899,11 @@ class ChillerPlantDomain:
                 if c["reset"] or c["trip_s"] >= TRIP_RESET_S:
                     c["trip"], c["trip_s"] = "", 0
             c["reset"] = False
+            rate = c.get("observation.drift_c_per_h", 0.0)
+            if rate or c["drift_c"]:  # the leaving-water sensor drifts; Clear recalibrates
+                drifted = c["drift_c"] + rate * dt / 3600.0 if rate > 0.0 else 0.0
+                c["drift_c"] = min(drifted, DRIFT_LIMIT_C)
+            c["chws_read_c"] = c["chws_c"] + c["drift_c"]
             if c["running"] and not settle:
                 c["run_s"] += dt
             if not settle and local % DAY_S == 0:
@@ -948,6 +961,7 @@ def _tower_ua(a: dict, leg: Leg, fan_pct: float | None) -> float:
     for cell in leg.cells:
         s = a[cell]
         speed = (s["fan_pct"] if fan_pct is None else fan_pct) / 100.0
+        speed *= 1.0 - s.get("constraint.fan_loss", 0.0)
         air = NATURAL_DRAFT + (1.0 - NATURAL_DRAFT) * speed
         ua += CELL_UA * air**0.8 * (1.0 - 0.5 * s.get("constraint.fill_fouling", 0.0))
     return ua
@@ -1112,7 +1126,7 @@ def _available(state: WorldState, design: PlantDesign, leg: Leg) -> bool:
     valves stuck short of open."""
     a = state.assets
     c = a[leg.chiller]
-    if c["mode"] != "auto" or not c["enabled"] or c["trip"]:
+    if hand(c) or not c["enabled"] or c["trip"]:
         return False
     flags = _supply_flags(design)
     for node in (leg.chiller, leg.chw_pump, leg.cw_pump):
@@ -1133,9 +1147,7 @@ def _stage(state: WorldState, design: PlantDesign, layout: Layout, p: AssetState
     legs = {leg.name: leg for leg in layout.legs}
     order = _priority(layout, p["lead"])
     ready = [n for n in order if _available(state, design, legs[n])]
-    hand = sum(
-        1 for leg in layout.legs if a[leg.chiller]["mode"] == "hand" and a[leg.chiller]["running"]
-    )
+    hands = sum(1 for leg in layout.legs if hand(a[leg.chiller]) and a[leg.chiller]["running"])
     cap = CHILLER_KWR * p["load_limit_pct"] / 100.0
     demand = p["demand_kw"]
     n = _bounded(int(p["required"]), p)
@@ -1154,7 +1166,7 @@ def _stage(state: WorldState, design: PlantDesign, layout: Layout, p: AssetState
     low = demand < (n - 1) * cap * STAGE_DOWN_MARGIN and p["chws_c"] <= p["chws_sp_c"] + 0.5
     if low and n > p["min_chillers"]:
         p["down_s"] = min(p["down_s"] + dt, TIMER_CAP_S)
-        outgoing = ready[: max(n - hand, 0)][-1:]
+        outgoing = ready[: max(n - hands, 0)][-1:]
         stoppable = all(_ready_to_stop(a[legs[x].chiller]) for x in outgoing)
         if p["down_s"] >= p["stage_down_wait_s"] and stoppable:
             n -= 1
@@ -1163,7 +1175,7 @@ def _stage(state: WorldState, design: PlantDesign, layout: Layout, p: AssetState
     else:
         p["down_s"] = 0.0
     p["required"] = n
-    desired = ready[: max(n - hand, 0)]
+    desired = ready[: max(n - hands, 0)]
     starting = any(a[legs[x].chiller]["seq"] != RUNNING for x in desired)
     for name in order:
         c = a[legs[name].chiller]
@@ -1179,7 +1191,20 @@ def _stage(state: WorldState, design: PlantDesign, layout: Layout, p: AssetState
     spare = [x for x in ready if x not in desired]
     p["next_start"] = spare[0] if spare else "NONE"
     p["next_stop"] = desired[-1] if desired and n > p["min_chillers"] else "NONE"
-    p["available_count"] = len(ready) + hand
+    p["available_count"] = len(ready) + hands
+
+
+def hand(c: AssetState) -> bool:
+    """Whether a chiller runs in hand: set so by the operator, or its selector left there."""
+    return c["mode"] == "hand" or c.get("controller.hand_mode", 0.0) >= 0.5
+
+
+def run_request(c: AssetState) -> bool:
+    """Whether a chiller is asked to run: by the sequencer in auto, by its selector in hand
+    (one left in hand is left on)."""
+    if not hand(c):
+        return c["run_cmd"]
+    return (c["hand_run"] or c.get("controller.hand_mode", 0.0) >= 0.5) and c["enabled"]
 
 
 def _ready_to_stop(c: AssetState) -> bool:
@@ -1192,8 +1217,7 @@ def _sequence(state: WorldState, design: PlantDesign, leg: Leg, p: AssetState, d
     c = a[leg.chiller]
     flag = _supply_flags(design)[leg.chiller]
     live = flag is None or a.get(flag, _LIVE).get("live", True)
-    wants = c["run_cmd"] if c["mode"] == "auto" else c["hand_run"] and c["enabled"]
-    wants = wants and not c["trip"]
+    wants = run_request(c) and not c["trip"]
     seq = c["seq"]
     t = min(c["seq_s"] + dt, TIMER_CAP_S)
     chw_ok = a[leg.chw_pump]["flow_lps"] >= 0.9 * LEG_CHW_LPS

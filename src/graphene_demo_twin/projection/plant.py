@@ -27,7 +27,9 @@ from graphene_demo_twin.sim.plant import (
     RUNNING,
     RUNON,
     Leg,
+    hand,
     plant_layout,
+    run_request,
 )
 
 CSC = "Chiller System Control"
@@ -102,7 +104,7 @@ def _status(c: dict[str, Scalar]) -> str:
 
 def _current_state(c: dict[str, Scalar]) -> str:
     status = _status(c)
-    return f"{status} (HAND)" if c["mode"] == "hand" else status
+    return f"{status} (HAND)" if hand(c) else status
 
 
 def _alarm_status(c: dict[str, Scalar]) -> str:
@@ -274,8 +276,8 @@ def _supervisor(layout) -> Iterable[Binding]:
 
 def _run_request(c: dict[str, Scalar]) -> bool:
     """The run request the chiller's sequence follows: the sequencer's in auto, the
-    operator's in hand."""
-    return c["run_cmd"] if c["mode"] == "auto" else c["hand_run"] and c["enabled"]
+    selector's in hand."""
+    return run_request(c)
 
 
 def _mean_running_hz(s: WorldState, pumps: list[str]) -> float:
@@ -288,13 +290,13 @@ def _leg(leg: Leg, i: int) -> Iterable[Binding]:
     c, name = leg.chiller, leg.name
     csc, cs = f"{CSC}/Chillers/{name}", f"{CS}/Chillers/{name}"
     run_h = _fn(c, lambda x: x["run_h0"] + x["run_s"] / 3600.0)
-    mode = _fn(c, lambda x: x["mode"].upper())
+    mode = _fn(c, lambda x: "HAND" if hand(x) else "AUTO")
     supervisor = {
         "Alarm Status": _fn(c, _alarm_status),
         "Buffer Tank Status": lambda s: _tank_summary(s, leg),
-        "CHWS Temp": _var(c, "chws_c"),
+        "CHWS Temp": _var(c, "chws_read_c"),
         "CHWR Temp": _var(c, "chwr_c"),
-        "Chilled Water Supply Temp": _var(c, "chws_c"),
+        "Chilled Water Supply Temp": _var(c, "chws_read_c"),
         "Chilled Water Return Temp": _var(c, "chwr_c"),
         "COP": _var(c, "cop"),
         "Chilled Water Flow Rate": _var(c, "chw_lps"),
@@ -312,7 +314,7 @@ def _leg(leg: Leg, i: int) -> Iterable[Binding]:
         "Load": _var(c, "load_pct"),
         "Mode": mode,
         "Ready To Start": _fn(
-            c, lambda x: x["enabled"] and x["mode"] == "auto" and not x["trip"] and x["seq"] == OFF
+            c, lambda x: x["enabled"] and not hand(x) and not x["trip"] and x["seq"] == OFF
         ),
         "Ready To Stop": _fn(c, lambda x: x["seq"] == RUNNING and x["seq_s"] >= 300),
         "Run Hours": run_h,
@@ -328,7 +330,7 @@ def _leg(leg: Leg, i: int) -> Iterable[Binding]:
         "FM-02/Flow Rate": _var(c, "cw_lps", M3H),
         "MV-01/Position": _var(leg.evap_valve, "pos_pct"),
         "MV-02/Position": _var(leg.cond_valve, "pos_pct"),
-        "TS-01/Temperature": _var(c, "chws_c"),
+        "TS-01/Temperature": _var(c, "chws_read_c"),
         "TS-02/Temperature": _var(c, "chwr_c"),
         "TS-03/Temperature": _var(c, "cw_in_c"),
         "TS-04/Temperature": _var(c, "cw_out_c"),
@@ -340,7 +342,7 @@ def _leg(leg: Leg, i: int) -> Iterable[Binding]:
         yield Binding(f"{cs}/{member}", read)
     if not c.startswith("~"):
         udt = {
-            "Auto_Manual": _fn(c, lambda x: 1 if x["mode"] == "auto" else 0),
+            "Auto_Manual": _fn(c, lambda x: 0 if hand(x) else 1),
             "Compressor Motor Current": _var(c, "current_pct"),
             "Condenser - High Pressure": _var(c, "cond_hp_kpa"),
             "Condenser Pressure": _var(c, "cond_kpa"),

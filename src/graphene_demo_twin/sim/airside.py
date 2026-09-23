@@ -206,7 +206,9 @@ class CracDomain:
         s = a[crac]
         if _CRAC_INPUTS.isdisjoint(s):  # healthy, as nearly every unit is
             fan_loss = blockage = trip = derate = offset = 0.0
+            lead_lost = False
         else:
+            lead_lost = s.get("constraint.compressor_loss", 0.0) >= 0.5
             fan_loss = s.get("constraint.fan_loss", 0.0)
             blockage = s.get("constraint.filter_blockage", 0.0)
             trip = s.get("constraint.compressor_trip", 0.0)
@@ -228,6 +230,8 @@ class CracDomain:
         condensing = crac_condensing_c(dry, demand if running else 0.0, derate)
         head = min(max(1.0 - (condensing - HEAD_LIMIT_C) / (2.0 * HEAD_UNLOAD_K), 0.5), 1.0)
         compressor = min(demand, (1.0 - derate) * head) if running else 0.0
+        if lead_lost:  # only the lag compressor is left
+            compressor = min(compressor, 1.0 - COMPRESSOR1_SHARE)
         leaving = return_c - compressor * coil_dt
         s["run_cmd"] = run_cmd
         s["running"] = running
@@ -236,10 +240,14 @@ class CracDomain:
         airflow = fan / NOMINAL_FAN_PCT * (1.0 - fan_loss) * (1.0 - blockage) if running else 0.0
         s["airflow"] = airflow
         s["compressor_pct"] = 100.0 * compressor
-        s["compressor1_pct"] = 100.0 * min(compressor / COMPRESSOR1_SHARE, 1.0)
-        s["compressor2_pct"] = 100.0 * max(
-            (compressor - COMPRESSOR1_SHARE) / (1.0 - COMPRESSOR1_SHARE), 0.0
-        )
+        if lead_lost:
+            s["compressor1_pct"] = 0.0
+            s["compressor2_pct"] = 100.0 * compressor / (1.0 - COMPRESSOR1_SHARE)
+        else:
+            s["compressor1_pct"] = 100.0 * min(compressor / COMPRESSOR1_SHARE, 1.0)
+            s["compressor2_pct"] = 100.0 * max(
+                (compressor - COMPRESSOR1_SHARE) / (1.0 - COMPRESSOR1_SHARE), 0.0
+            )
         s["condensing_c"] = condensing
         s["return_c"] = return_c
         supply = s["supply_c"] + (leaving - s["supply_c"]) * settle
@@ -249,8 +257,10 @@ class CracDomain:
 
         # Device alarm logic, reading the unit's own state
         s["alarm_filter"] = running and blockage >= 0.25
-        s["alarm_high_pressure"] = trip >= 0.5 or (
-            compressor > 0.0 and (derate >= 0.4 or condensing >= HP_ALARM_C)
+        s["alarm_high_pressure"] = (
+            trip >= 0.5
+            or lead_lost
+            or (compressor > 0.0 and (derate >= 0.4 or condensing >= HP_ALARM_C))
         )
         s["alarm_trip"] = tripped
         s["alarm_loss_of_signal"] = s.get("comm", "good") == "bad"
@@ -501,6 +511,7 @@ _CRAC_INPUTS = frozenset(
         "constraint.fan_loss",
         "constraint.filter_blockage",
         "constraint.compressor_trip",
+        "constraint.compressor_loss",
         "constraint.condenser_derate",
         "controller.setpoint_offset_c",
     }

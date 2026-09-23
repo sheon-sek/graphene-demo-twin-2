@@ -9,6 +9,7 @@ from typing import Any
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
 from graphene_demo_twin.sim import Event, EventError
 from graphene_demo_twin.sim.electrical import METER_TYPES, incomers
+from graphene_demo_twin.sim.plant import plant_layout
 
 INJECT = "fault.inject"
 CLEAR = "fault.clear"
@@ -279,6 +280,199 @@ def _sensor_faults(prefix: str, asset_type: str, aisle: str) -> tuple[FaultSpec,
     )
 
 
+_CHW_UNITS = {"PAHU": "pahu", "FCU": "fcu", "FWU": "fwu", "Ceiling Cooling Units": "ccu"}
+"""The air units on chilled water, and the prefix of their fault ids."""
+
+
+def _secondary_pump(design: PlantDesign) -> tuple[str, ...]:
+    return (plant_layout(design).secondary,)
+
+
+def _cooling_faults() -> tuple[FaultSpec, ...]:
+    """The chiller plant's faults, and those of the air units on its chilled water (#23)."""
+    return (
+        FaultSpec(
+            "chiller.trip",
+            "Chiller trip",
+            "Chiller",
+            FaultCategory.EQUIPMENT,
+            "constraint.trip",
+            1.0,
+            "trip",
+            "A compressor fault trips the chiller on its safety chain (once the level passes "
+            "half). The trip latches until Reset or 15 minutes after Clear; the sequencer starts "
+            "the next chiller at once, and with none left the chilled water warms.",
+        ),
+        FaultSpec(
+            "chiller.compressor_degradation",
+            "Compressor degradation",
+            "Chiller",
+            FaultCategory.EQUIPMENT,
+            "constraint.compressor_degradation",
+            1.0,
+            "fraction worn",
+            "Worn impeller and leaking guide vanes: the compressor loses up to half its "
+            "capacity and a third of its efficiency, so it draws more power per kW of cooling "
+            "and, loaded up, cannot hold the chilled-water setpoint.",
+            default_severity=0.6,
+        ),
+        FaultSpec(
+            "chiller.condenser_fouling",
+            "Condenser fouling",
+            "Chiller",
+            FaultCategory.EQUIPMENT,
+            "constraint.condenser_fouling",
+            1.0,
+            "fraction fouled",
+            "Scale on the condenser tubes widens the condensing approach: condenser pressure, "
+            "discharge temperature and power rise at the same load, and past 1,200 kPa the "
+            "chiller unloads.",
+            default_severity=0.5,
+        ),
+        FaultSpec(
+            "chiller.chws_sensor_drift",
+            "CHW sensor drift",
+            "Chiller",
+            FaultCategory.SENSOR,
+            "observation.drift_c_per_h",
+            4.0,
+            "°C per hour",
+            "The chiller's leaving chilled-water sensor drifts high the longer the fault acts, "
+            "until it saturates; Clear recalibrates it. The water itself, the header sensors "
+            "and the units downstream are unchanged, so the reading disagrees with them.",
+            default_severity=0.5,
+        ),
+        FaultSpec(
+            "chiller.hand_mode",
+            "Left in hand mode",
+            "Chiller",
+            FaultCategory.CONTROL,
+            "controller.hand_mode",
+            1.0,
+            "hand",
+            "The chiller's selector is left in hand and on (once the level passes half): it "
+            "runs whatever the demand, outside the sequencer, which stops an auto chiller to "
+            "make room. Surplus primary flow goes round the bypass and the plant draws more "
+            "power. The equipment is healthy and raises no alarm.",
+        ),
+        FaultSpec(
+            "tower.fan_failure",
+            "Tower fan failure",
+            "Cooling Tower",
+            FaultCategory.EQUIPMENT,
+            "constraint.fan_loss",
+            1.0,
+            "fraction of airflow",
+            "The cell's fan loses airflow (a slipping belt, then a failed gearbox) and trips "
+            "past 90 %. The other cells in its Tower Group speed up; if they cannot make up "
+            "for it, condenser water warms, and with it condenser pressure and chiller power.",
+        ),
+        FaultSpec(
+            "tower.fill_fouling",
+            "Fill fouling",
+            "Cooling Tower",
+            FaultCategory.EQUIPMENT,
+            "constraint.fill_fouling",
+            1.0,
+            "fraction fouled",
+            "Scale and biofilm on the fill halve its heat transfer at full severity: the cell "
+            "rejects less heat, so its group's fans run faster to hold condenser water.",
+            default_severity=0.6,
+        ),
+        FaultSpec(
+            "pump.trip",
+            "Pump trip",
+            "Chiller Pump",
+            FaultCategory.EQUIPMENT,
+            "constraint.trip",
+            1.0,
+            "trip",
+            "The pump's motor overload trips (once the level passes half). A leg pump takes "
+            "its chiller out of service and the sequencer starts the next; the secondary pump "
+            "stops the chilled water to every air unit.",
+        ),
+        FaultSpec(
+            "pump.bearing_wear",
+            "Bearing wear",
+            "Chiller Pump",
+            FaultCategory.EQUIPMENT,
+            "constraint.bearing_wear",
+            1.0,
+            "fraction worn",
+            "Worn bearings add friction: the pump draws up to 30 % more power for the same "
+            "speed and flow.",
+            default_severity=0.6,
+        ),
+        FaultSpec(
+            "pump.dp_pid_oscillation",
+            "DP PID oscillation",
+            "Chiller Pump",
+            FaultCategory.CONTROL,
+            "controller.gain_factor",
+            4.0,
+            "gain increase",
+            "The DP PID driving the secondary pump is mistuned to up to five times its gains: "
+            "the pump speed hunts and the header differential pressure swings round its "
+            "setpoint, while the equipment is healthy and raises no alarm.",
+            where=_secondary_pump,
+        ),
+        FaultSpec(
+            "valve.stuck",
+            "Valve stuck",
+            "Chiller Valve",
+            FaultCategory.EQUIPMENT,
+            "constraint.stuck",
+            1.0,
+            "stuck",
+            "The actuator seizes (once the level passes half) and the valve stays at the % "
+            "open it was: its position no longer follows its command. A leg valve stuck "
+            "short of open takes its chiller out of service; a stuck bypass valve leaves the "
+            "others to carry the bypass PID.",
+        ),
+        FaultSpec(
+            "cdu.pump_failure",
+            "CDU pump failure",
+            "CDU",
+            FaultCategory.EQUIPMENT,
+            "constraint.trip",
+            1.0,
+            "fail",
+            "The CDU's pump set fails (once the level passes half): it stops carrying DH08's "
+            "liquid-cooled share of IT Load to the chilled water, and that heat ends up in "
+            "the hall air.",
+        ),
+        *(
+            spec
+            for type_id, prefix in _CHW_UNITS.items()
+            for spec in (
+                FaultSpec(
+                    f"{prefix}.fan_failure",
+                    "Fan failure",
+                    type_id,
+                    FaultCategory.EQUIPMENT,
+                    "constraint.fan_loss",
+                    1.0,
+                    "fraction of airflow",
+                    "The supply fan loses airflow: the unit delivers less cooling to its "
+                    "zone, and below half airflow its differential-pressure switch alarms.",
+                ),
+                FaultSpec(
+                    f"{prefix}.filter_choke",
+                    "Filter choke",
+                    type_id,
+                    FaultCategory.EQUIPMENT,
+                    "constraint.filter_blockage",
+                    0.6,
+                    "fraction of airflow",
+                    "Air filters clog and throttle airflow; the filter switch alarms past "
+                    "25 % blockage.",
+                    default_severity=0.6,
+                ),
+            )
+        ),
+    )
+
+
 STANDARD_CATALOG = FaultCatalog(
     [
         FaultSpec(
@@ -337,6 +531,18 @@ STANDARD_CATALOG = FaultCatalog(
             "°C",
             "The unit controller's supply-air setpoint drifts upwards, so it unloads the "
             "compressor while the equipment is healthy and raises no alarm.",
+        ),
+        FaultSpec(
+            "crac.compressor_failure",
+            "Compressor failure",
+            "CRAC",
+            FaultCategory.EQUIPMENT,
+            "constraint.compressor_loss",
+            1.0,
+            "loss",
+            "The lead compressor's circuit locks out on its high-pressure switch (once the "
+            "level passes half): the unit keeps running on its lag compressor, which carries "
+            "under a third of its capacity, so the hall warms.",
         ),
         FaultSpec(
             "crac.comm_loss",
@@ -481,6 +687,7 @@ STANDARD_CATALOG = FaultCatalog(
             )
             for type_id in (*sorted(METER_TYPES), "BCPM")
         ),
+        *_cooling_faults(),
         FaultSpec(
             "diesel.fuel_pump_failure",
             "Fuel pump failure",

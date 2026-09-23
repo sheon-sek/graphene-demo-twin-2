@@ -51,6 +51,15 @@ TARGET = {
     "UPS": "UPS/UPS 1",
     "Genset": "Genset/Genset 1",
     "Diesel": "Diesel/Tank 1",
+    "Chiller": "Chiller/R_C1",  # the lead, running
+    "Chiller Pump": "Chiller/R_CP9",  # the secondary pump, under the DP PID
+    "Chiller Valve": "Chiller/R_CV13",  # bypass valve BV-001
+    "Cooling Tower": "Cooling Towers Plant/R_P1_CT1",  # a cell of the lead's CT-001
+    "PAHU": "PAHU/G_PAHU1",
+    "FCU": "FCU/L1_FCU1",
+    "FWU": "FWU/G_FWU1",
+    "Ceiling Cooling Units": "~CCU-001",
+    "CDU": "TIW/CDU-01",
 }
 
 
@@ -116,7 +125,7 @@ def test_the_catalog_lists_faults_per_asset_type():
     crac = STANDARD_CATALOG.for_type("CRAC")
     assert {s.category for s in crac} == set(FaultCategory) - {FaultCategory.SENSOR}
     assert all(s.asset_type == "CRAC" for s in crac)
-    assert STANDARD_CATALOG.for_type("Chiller") == ()
+    assert STANDARD_CATALOG.for_type("Buffer Tank") == ()
     assert STANDARD_CATALOG.get("crac.compressor_trip").category is FaultCategory.EQUIPMENT
     with pytest.raises(FaultError, match="unknown fault"):
         STANDARD_CATALOG.get("nope")

@@ -66,7 +66,7 @@ _AIR: dict[str, Point] = {
 
 PAHU_POINTS: dict[str, Point] = {
     **_AIR,
-    "Fan On_Off": "running",
+    "Fan On_Off": lambda s: s["running"] and s["airflow"] > 0.0,
     "Filter Sensor Alarm": "alarm_filter",
     "Main Fire Alarm": "fire_alarm",
     "Supply Air Temperature Setpoint": "setpoint_c",
@@ -77,7 +77,7 @@ PAHU_POINTS: dict[str, Point] = {
 
 FAN_COIL_POINTS: dict[str, Point] = {
     **_AIR,
-    "EC Fan Run Status": "running",
+    "EC Fan Run Status": lambda s: s["running"] and s["airflow"] > 0.0,
     "Chilled Water Supply Temperature": "chws_c",
     "Chilled Water Return Temperature": "chwr_c",
     "Flowrate": lambda s: s["flow_lps"] * 60.0,
