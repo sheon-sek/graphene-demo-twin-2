@@ -22,6 +22,14 @@ _Avoid_: tag, signal, datapoint
 A point the twin adds under `Twin Extensions/` because physics or diagnosis needs it; it is not part of the Asset Model and carries no compatibility promise.
 _Avoid_: extra tag, diagnostic extension
 
+**Plant View**:
+An export folder that observes physical assets already modelled elsewhere rather than adding equipment of its own (`Chiller System Control` is the supervisory view, `Chiller_System` the instrument view, `Dashboard` the KPI view). Its points are projections of those assets.
+_Avoid_: duplicate plant, second chiller system
+
+**Unexported Asset**:
+A physical asset in the Plant Design that has no UDT instance in the Asset Model and is observed only through Plant View points (for example the fourth chiller, CH-004).
+_Avoid_: phantom asset, virtual chiller
+
 **Support Asset**:
 An asset in support scope (Smart Alarm Logic, Dashboard, PredictionCache, MQTT Tags, Testing) whose points are projected but which is not a physical thing in the world.
 _Avoid_: virtual asset, helper tag
@@ -31,6 +39,14 @@ _Avoid_: virtual asset, helper tag
 **Data Hall**:
 One of the eight IT rooms DH01–DH08 (DH01–04 on Level 1, DH05–08 on Level 2); each is its own thermal zone.
 _Avoid_: Hall-A, Hall-B, datahall, room
+
+**Cooling Block**:
+The chilled-water branch serving one Data Hall (CB-001…CB-008), with its own valves, flow meter and supply/return temperatures.
+_Avoid_: hall loop, CHW zone
+
+**Tower Group**:
+Five cooling-tower cells that together reject heat for one chiller's condenser (CT-001…CT-004).
+_Avoid_: tower bank, cell set
 
 **IT Load**:
 The electrical power drawn by IT equipment in one Data Hall; all of it becomes heat in that hall.
