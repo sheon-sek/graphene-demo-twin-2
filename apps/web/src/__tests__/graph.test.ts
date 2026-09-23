@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { causalPath, connectionsAround, neighbours } from '../lib/graph';
+import type { ConnectionKind } from '../lib/types';
 import { plantDesign } from './fixtures';
 
 const design = plantDesign();
@@ -47,14 +48,29 @@ describe('upstream and downstream of a selection', () => {
 });
 
 describe('the causal path of injected faults', () => {
+  const CRAC3 = 'CRAC/L1_CRAC3';
+  const SWITCH = 'Network Topology/SERVER DISTRIBUTION SWITCH A';
+  const physical: ConnectionKind[] = ['power', 'chw', 'cw', 'air', 'water', 'fuel'];
+  const pairs = (path: number[]) => path.map((i) => [edge(i).source, edge(i).target]);
+
   it('follows Plant Design connections downstream of each faulted asset', () => {
-    const crac = causalPath(design, ['CRAC/L1_CRAC3']);
-    expect(crac.map((i) => [edge(i).source, edge(i).target])).toEqual([
-      ['CRAC/L1_CRAC3', 'DH03'],
+    const trip = causalPath(design, [{ target: CRAC3, spreadsAlong: physical }]);
+    expect(pairs(trip)).toEqual([[CRAC3, 'DH03']]);
+    const both = causalPath(design, [
+      { target: CRAC3, spreadsAlong: physical },
+      { target: SWITCH, spreadsAlong: ['net'] },
     ]);
-    const both = causalPath(design, ['CRAC/L1_CRAC3', 'Network Topology/SERVER DISTRIBUTION SWITCH A']);
-    expect(both).toContain(crac[0]);
+    expect(both).toContain(trip[0]);
     expect(both.map((i) => edge(i).kind).filter((k) => k === 'net').length).toBe(7);
     expect(causalPath(design, [])).toEqual([]);
+  });
+
+  it("follows only the connection kinds the fault's mechanism spreads along", () => {
+    // A comm loss changes the CRAC's point quality only: the hall it cools is unchanged.
+    expect(causalPath(design, [{ target: CRAC3, spreadsAlong: ['net'] }])).toEqual([]);
+    // A corrupted sensor reading goes nowhere.
+    expect(causalPath(design, [{ target: CRAC3, spreadsAlong: [] }])).toEqual([]);
+    // A physical fault never lights the control network.
+    expect(causalPath(design, [{ target: SWITCH, spreadsAlong: physical }])).toEqual([]);
   });
 });

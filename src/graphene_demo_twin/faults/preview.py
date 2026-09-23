@@ -4,22 +4,22 @@ import math
 from collections import deque
 from dataclasses import dataclass
 
-from graphene_demo_twin.asset_model import AssetModel, SourceClass
+from graphene_demo_twin.asset_model import AssetModel
 from graphene_demo_twin.faults.catalog import (
     INJECT,
     STANDARD_CATALOG,
     FaultCatalog,
+    FaultConflict,
     FaultError,
     FaultParams,
 )
+from graphene_demo_twin.faults.domain import fault_active
 from graphene_demo_twin.plant_design import PlantDesign
 from graphene_demo_twin.projection import Projection, Projector, Quality
 from graphene_demo_twin.sim import Event, Scalar, Simulation
 
 PREVIEW_MINUTES = (15, 30, 60)
 """The preview windows the Operator Console offers."""
-ALARM_SAMPLE_S = 10
-"""How often alarm bits are compared during the run, in sim seconds."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,9 +53,11 @@ class AlarmChange:
     path: str
     node: str | None
     base: Scalar
+    """Value without the fault at `first_at`."""
     predicted: Scalar
+    """Value with the fault at `first_at`; a transient fault may have set it back since."""
     first_at: int
-    """First sampled sim time at which the bit differed from the world without the fault."""
+    """First sim time at which the bit differed from the world without the fault."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +73,7 @@ class FaultPreview:
     diffs: tuple[PointDiff, ...]
     """Every point whose value or quality differs at the end, in propagation order."""
     alarms: tuple[AlarmChange, ...]
-    """Alarm bits that differ at any sample, in the order they first changed."""
+    """Alarm bits that differ at any step, in the order they first changed."""
 
 
 def preview_fault(
@@ -88,36 +90,35 @@ def preview_fault(
     and compare it step by step with a second fork that runs without it.
 
     Both forks carry every event already in `source`'s log and draw the same noise, so the
-    prediction is what `source` will show at `end` if the same fault is injected now.
+    prediction is what `source` will show at `end` if the same fault is injected now. Raises
+    FaultError where injecting it into `source` would be rejected: FaultConflict if the fault
+    is already active on `target` or logged to start.
     """
     event = Event(source.time, INJECT, target, {"fault": fault, **params.as_params()})
     if (reason := catalog.check(event, source.design)) is not None:
         raise FaultError(reason)
+    if fault_active(source.state, source.events, target, fault):
+        raise FaultConflict(f"{fault} is already active on {target}")
     base, faulted = source.fork(), source.fork()
     faulted.schedule(event)
 
-    alarms = [
-        p.path
-        for p in asset_model.points.values()
-        if p.source_class is SourceClass.FAULT_ALARM and p.data_type == "Boolean"
-    ]
-    alarm_set = frozenset(alarms)
+    # A bit the world does not drive keeps its fallback in both forks, so never changes.
+    bits = set(projector.bound(p.path for p in asset_model.points.values() if p.alarm_bit))
     pending = {*base.state.assets, target}
     first: dict[str, int] = {}
-    alarm_first: dict[str, int] = {}
-    for i in range(1, seconds + 1):
+    alarm_first: dict[str, tuple[int, Scalar, Scalar]] = {}
+    for _ in range(seconds):
         base.step()
         faulted.step()
         b, f = base.state.assets, faulted.state.assets
         for node in [n for n in pending if b.get(n) != f.get(n)]:
             first[node] = faulted.time
             pending.discard(node)
-        if i % ALARM_SAMPLE_S == 0 or i == seconds:
-            before = projector.project(base.state, only=alarm_set)
-            after = projector.project(faulted.state, only=alarm_set)
-            for path in alarms:
-                if path not in alarm_first and before.values[path] != after.values[path]:
-                    alarm_first[path] = faulted.time
+        if first and bits:  # until some state differs, so does no alarm bit
+            changed = projector.differences(base.state, faulted.state, bits)
+            for path, (clean, hit) in changed.items():
+                alarm_first[path] = (faulted.time, clean, hit)
+                bits.discard(path)
 
     hops = _hops(source.design, target)
     affected = sorted(
@@ -141,8 +142,8 @@ def preview_fault(
     diffs.sort(key=lambda d: order.get(d.node, len(order)))  # stable: export order within
     changes = sorted(
         (
-            AlarmChange(p, asset_model.point(p).asset, before.values[p], after.values[p], t)
-            for p, t in alarm_first.items()
+            AlarmChange(p, asset_model.point(p).asset, base_value, value, t)
+            for p, (t, base_value, value) in alarm_first.items()
         ),
         key=lambda a: (a.first_at, order.get(a.node, len(order)), a.path),
     )
@@ -159,12 +160,11 @@ def preview_fault(
 
 
 def _differs(before: Projection, after: Projection, path: str) -> bool:
-    if before.quality(path) is not after.quality(path):
-        return True
-    a, b = before.values[path], after.values[path]
-    if isinstance(a, float) and isinstance(b, float):
-        return abs(a - b) > 1e-6 * max(1.0, abs(a), abs(b))
-    return a != b
+    """Exactly: both forks compute the same way from the same inputs, so a point the fault
+    does not reach is identical, and any difference, however small, is the fault's."""
+    return before.values[path] != after.values[path] or (
+        before.quality(path) is not after.quality(path)
+    )
 
 
 def _hops(design: PlantDesign, origin: str) -> dict[str, int]:

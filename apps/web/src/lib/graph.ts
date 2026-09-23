@@ -53,13 +53,19 @@ export function connectionsAround(
 }
 
 /**
- * The causal path of the active faults: every connection downstream of a faulted asset, as
- * indices into `design.connections`. Faults propagate only along Plant Design connections.
+ * The causal path of the active faults: the connections downstream of each faulted asset of
+ * the kinds its mechanism spreads along (a comm loss follows the control network only, a
+ * corrupted reading goes nowhere), as indices into `design.connections`.
  */
-export function causalPath(design: PlantDesign, targets: Iterable<string>): number[] {
+export function causalPath(
+  design: PlantDesign,
+  faults: Iterable<{ target: string; spreadsAlong: readonly ConnectionKind[] }>,
+): number[] {
   const found = new Set<number>();
-  for (const target of targets) {
-    for (const i of connectionsAround(design, target).downstream) found.add(i);
+  for (const { target, spreadsAlong } of faults) {
+    for (const i of connectionsAround(design, target).downstream) {
+      if (spreadsAlong.includes(design.connections[i].kind)) found.add(i);
+    }
   }
   return [...found].sort((a, b) => a - b);
 }

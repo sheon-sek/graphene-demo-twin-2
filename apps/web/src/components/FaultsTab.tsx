@@ -22,7 +22,8 @@ export function FaultsTab({ world, live, node }: { world: World; live: LiveStore
   const [severity, setSeverity] = useState(1);
   const [ramp, setRamp] = useState<number | null>(null);
   const [autoClear, setAutoClear] = useState<number | null>(null);
-  const [preview, setPreview] = useState<FaultPreview | null>(null);
+  /** The last preview and the fault and parameters it was run with. */
+  const [preview, setPreview] = useState<{ asked: string; result: FaultPreview } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
 
@@ -31,6 +32,9 @@ export function FaultsTab({ world, live, node }: { world: World; live: LiveStore
     ramp_min: ramp ?? 0,
     auto_clear_min: autoClear,
   });
+  // A preview stands only for what it was run with: any other fault or parameters hide it.
+  const asked = JSON.stringify([chosen?.id, params()]);
+  const current = preview?.asked === asked ? preview.result : null;
   const choose = (spec: FaultSpec) => {
     setChosen(spec);
     setSeverity(spec.defaultSeverity);
@@ -146,7 +150,10 @@ export function FaultsTab({ world, live, node }: { world: World; live: LiveStore
                 disabled={busy !== null}
                 onClick={() =>
                   run(`preview ${m}`, async () =>
-                    setPreview(await api.previewFault(node, chosen.id, params(), m)),
+                    setPreview({
+                      asked,
+                      result: await api.previewFault(node, chosen.id, params(), m),
+                    }),
                   )
                 }
               >
@@ -174,7 +181,10 @@ export function FaultsTab({ world, live, node }: { world: World; live: LiveStore
           {message.text}
         </p>
       )}
-      {preview && preview.target === node && <PreviewResult world={world} preview={preview} />}
+      {preview && !current && (
+        <p className="hint">The parameters changed since the last preview: preview again.</p>
+      )}
+      {current && current.target === node && <PreviewResult world={world} preview={current} />}
     </div>
   );
 }

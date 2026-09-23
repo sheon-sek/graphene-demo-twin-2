@@ -10,6 +10,7 @@ from graphene_demo_twin.faults import (
     STANDARD_CATALOG,
     FaultCatalog,
     FaultCategory,
+    FaultConflict,
     FaultDomain,
     FaultError,
     FaultParams,
@@ -17,6 +18,7 @@ from graphene_demo_twin.faults import (
     Mechanism,
     preview_fault,
 )
+from graphene_demo_twin.plant_design import ConnectionKind
 from graphene_demo_twin.projection import Projector, Quality
 from graphene_demo_twin.sim import Event, EventError, Simulation, WorldState
 from graphene_demo_twin.sim.electrical import network
@@ -84,6 +86,27 @@ def test_the_catalog_covers_every_category_with_its_mechanism(plant_design):
         FaultCategory.COMMUNICATION: Mechanism.QUALITY,
         FaultCategory.CONTROL: Mechanism.CONTROLLER,
     }
+
+
+def test_each_mechanism_spreads_along_its_own_connection_kinds(
+    plant_design, asset_model, projector
+):
+    physical = set(ConnectionKind) - {ConnectionKind.NET}
+    assert Mechanism.PHYSICAL_CONSTRAINT.spreads_along == physical
+    assert Mechanism.CONTROLLER.spreads_along == physical
+    assert Mechanism.QUALITY.spreads_along == {ConnectionKind.NET}
+    assert Mechanism.OBSERVATION.spreads_along == set()
+
+    # The physics agrees: a CRAC's comm loss changes only its quality, never the hall it
+    # cools, while a compressor trip reaches the hall along the air connection.
+    def affected(fault: str) -> set[str]:
+        preview = preview_fault(
+            _sim(plant_design), projector, asset_model, CRAC3, fault, FaultParams(), 300
+        )
+        return {a.node for a in preview.affected}
+
+    assert affected("crac.comm_loss") == {CRAC3}
+    assert "DH03" in affected("crac.compressor_trip")
 
 
 def test_the_catalog_lists_faults_per_asset_type():
@@ -483,3 +506,44 @@ def test_a_60_minute_preview_completes_in_under_3_s(plant_design, asset_model, p
     started = time.perf_counter()
     preview_fault(sim, projector, asset_model, CRAC3, "crac.fan_failure", FaultParams(), 3600)
     assert time.perf_counter() - started < 3.0
+
+
+@pytest.mark.parametrize("auto_clear_s", [60, 6])
+def test_a_preview_reports_alarm_bits_a_transient_fault_raises_then_clears(
+    plant_design, asset_model, projector, auto_clear_s
+):
+    """A trip that clears itself long before the preview ends still changed the alarm bits,
+    at the step it happened: the change is reported as it first differed."""
+    preview = preview_fault(
+        _sim(plant_design),
+        projector,
+        asset_model,
+        CRAC3,
+        "crac.compressor_trip",
+        FaultParams(auto_clear_s=auto_clear_s),
+        900,
+    )
+    alarms = {a.path: a for a in preview.alarms}
+    assert set(alarms) == {
+        f"{CRAC3}/System Failure_Trip",
+        f"{CRAC3}/High Pressure Alarm",
+        f"{CRAC3}/HasAlarm",
+    }
+    for a in alarms.values():
+        assert (a.base, a.predicted, a.first_at) == (False, True, START + 1), a.path
+
+
+def test_a_preview_rejects_a_fault_already_active_or_logged_to_start(
+    plant_design, asset_model, projector
+):
+    sim = _sim(plant_design)
+    sim.schedule(_inject(START, CRAC3, "crac.compressor_trip"))
+    args = (projector, asset_model, CRAC3, "crac.compressor_trip", FaultParams(), 900)
+    with pytest.raises(FaultConflict, match="already active"):  # logged, not yet stepped
+        preview_fault(sim, *args)
+    sim.advance(5)
+    with pytest.raises(FaultConflict, match="already active"):
+        preview_fault(sim, *args)
+    preview_fault(sim, projector, asset_model, CRAC3, "crac.fan_failure", FaultParams(), 60)
+    sim.schedule(_clear(sim.time, CRAC3, "crac.compressor_trip"))
+    preview_fault(sim, *args)  # cleared on the next step: previewing it again is fine

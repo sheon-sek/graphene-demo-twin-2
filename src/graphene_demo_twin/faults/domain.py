@@ -1,8 +1,31 @@
 """The fault domain: active faults as world state, and the variables they drive."""
 
-from graphene_demo_twin.faults.catalog import INJECT, FaultCatalog, FaultParams, fault_key
+from collections.abc import Iterable
+
+from graphene_demo_twin.faults.catalog import (
+    CLEAR,
+    INJECT,
+    FaultCatalog,
+    FaultParams,
+    fault_key,
+)
 from graphene_demo_twin.plant_design import PlantDesign
 from graphene_demo_twin.sim import AssetState, Event, StepContext, WorldState
+
+
+def fault_active(state: WorldState, events: Iterable[Event], target: str, fault: str) -> bool:
+    """Whether `fault` is active on `target` once every event in `events` not yet applied to
+    `state` (those at or after its time, which take effect on the next step) has been."""
+    active = fault_key(target, fault) in state.faults
+    for event in events:
+        if (
+            event.at >= state.time
+            and event.kind in (INJECT, CLEAR)
+            and event.target == target
+            and event.params.get("fault") == fault
+        ):
+            active = event.kind == INJECT
+    return active
 
 
 class FaultDomain:

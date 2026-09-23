@@ -3,23 +3,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BottomBar } from '../components/BottomBar';
 import { Inspector } from '../components/Inspector';
 import { LiveStore } from '../lib/live';
-import type { ActiveFault, FaultPreview, FaultSpec, Frame, PointInfo } from '../lib/types';
+import type {
+  ActiveFault,
+  FaultPreview,
+  FaultSpec,
+  Frame,
+  PointInfo,
+  PointSource,
+  SourceClass,
+} from '../lib/types';
 import { buildWorld } from '../lib/world';
 import { initialConsoleState, useConsole } from '../store';
 import { plantDesign } from './fixtures';
 
 const CRAC3 = 'CRAC/L1_CRAC3';
 const SENSOR = 'Temperature and Humidity/Datahall 3/Sensor 17';
+const FALLBACK_BIT = 'Fire Protection System/Level 1/Zone 1/HD1';
 
 const design = plantDesign();
 const assetPaths = design.assets.filter((a) => !a.unexported).map((a) => a.path);
+const point = (
+  path: string,
+  sourceClass: SourceClass,
+  alarmBit = false,
+  source: PointSource = 'physics',
+): PointInfo => ({ path, sourceClass, alarmBit, source });
 const points: PointInfo[] = [
-  { path: `${CRAC3}/Supply Air Temperature`, sourceClass: 'process_value', alarmBit: false },
-  { path: `${CRAC3}/System Failure_Trip`, sourceClass: 'fault_alarm', alarmBit: true },
-  { path: 'CRAC/L1_CRAC1/System Failure_Trip', sourceClass: 'fault_alarm', alarmBit: true },
-  { path: 'Breaker/CB-01/Trip', sourceClass: 'fault_alarm', alarmBit: true },
-  { path: 'Breaker/CB-01/Alarm Code', sourceClass: 'fault_alarm', alarmBit: false },
-  { path: `${SENSOR}/Temp`, sourceClass: 'process_value', alarmBit: false },
+  point(`${CRAC3}/Supply Air Temperature`, 'process_value'),
+  point(`${CRAC3}/System Failure_Trip`, 'fault_alarm', true),
+  point('CRAC/L1_CRAC1/System Failure_Trip', 'fault_alarm', true),
+  point('Breaker/CB-01/Trip', 'fault_alarm', true),
+  point('Breaker/CB-01/Alarm Code', 'fault_alarm'),
+  point(`${SENSOR}/Temp`, 'process_value'),
+  // Set by its Compatibility Fallback in the real Asset Model, with no physics behind it.
+  point(FALLBACK_BIT, 'fault_alarm', true, 'fallback'),
 ];
 const spec = (id: string, name: string, assetType: string, category: FaultSpec['category']) => ({
   id,
@@ -27,6 +44,7 @@ const spec = (id: string, name: string, assetType: string, category: FaultSpec['
   assetType,
   category,
   mechanism: 'physical_constraint',
+  spreadsAlong: ['air' as const],
   variable: 'constraint.x',
   span: 1,
   unit: '',
@@ -47,6 +65,7 @@ const trip: ActiveFault = {
   fault: 'crac.compressor_trip',
   name: 'Compressor trip',
   category: 'equipment',
+  spreadsAlong: ['air'],
   target: CRAC3,
   severity: 1,
   level: 0.5,
@@ -67,6 +86,7 @@ function frame(seq: number, faults: ActiveFault[], alarm = false, events = 0): F
       'CRAC/L1_CRAC1/System Failure_Trip': { value: false, quality: 'good' },
       'Breaker/CB-01/Trip': { value: alarm ? 1 : 0, quality: 'good' },
       'Breaker/CB-01/Alarm Code': { value: 7, quality: 'good' },
+      [FALLBACK_BIT]: { value: true, quality: 'good' },
     },
     faults,
   };
@@ -124,7 +144,7 @@ function mockFetch(routes: Record<string, (body: unknown) => unknown>): Call[] {
       calls.push({ method, url, body });
       const route = routes[`${method} ${url}`];
       if (!route) return new Response(JSON.stringify({ detail: 'not found' }), { status: 404 });
-      const out = route(body);
+      const out = await route(body);
       return out instanceof Response ? out : new Response(JSON.stringify(out), { status: 200 });
     }),
   );
@@ -200,6 +220,43 @@ describe('inspector, Faults tab', () => {
     expect(useConsole.getState().selected).toBe(CRAC3); // rooms are not selectable
     fireEvent.click(within(affected).getByRole('button', { name: /Sensor 17/ }));
     expect(useConsole.getState().selected).toBe(SENSOR);
+  });
+
+  it('drops a preview once its parameters change, so it never stands for other ones', async () => {
+    mockFetch({ 'POST /api/faults/preview': () => preview });
+    open();
+    fireEvent.click(screen.getByRole('radio', { name: /Compressor trip/ }));
+    const change = (role: 'slider' | 'spinbutton', name: string, value: string) => () =>
+      fireEvent.change(screen.getByRole(role, { name }), { target: { value } });
+    const pick = (name: string) => () => fireEvent.click(screen.getByRole('radio', { name }));
+    const edits: [string, () => void][] = [
+      ['severity', change('slider', 'Severity', '0.05')],
+      ['onset', pick('Ramp')],
+      ['ramp', change('spinbutton', 'Ramp minutes', '9')],
+      ['duration', pick('Auto-clear')],
+      ['auto-clear', change('spinbutton', 'Auto-clear minutes', '45')],
+    ];
+    for (const [what, edit] of edits) {
+      fireEvent.click(screen.getByRole('button', { name: 'Preview 15 min' }));
+      await screen.findByRole('region', { name: 'Fault Preview' });
+      edit();
+      expect(screen.queryByRole('region', { name: 'Fault Preview' }), what).toBeNull();
+    }
+  });
+
+  it('ignores a preview that returns after its parameters changed', async () => {
+    let answer: (value: unknown) => void = () => {};
+    mockFetch({
+      'POST /api/faults/preview': () => new Promise((resolve) => (answer = resolve)),
+    });
+    open();
+    fireEvent.click(screen.getByRole('radio', { name: /Compressor trip/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview 15 min' }));
+    fireEvent.change(screen.getByRole('slider', { name: 'Severity' }), {
+      target: { value: '0.05' },
+    });
+    await act(async () => answer(new Response(JSON.stringify(preview), { status: 200 })));
+    expect(screen.queryByRole('region', { name: 'Fault Preview' })).toBeNull();
   });
 
   it('injects on exactly the selected asset (never the first of its type)', async () => {
@@ -351,6 +408,7 @@ describe('bottom bar', () => {
       expect.stringContaining('Trip'),
     ]);
     expect(alarms.textContent).not.toContain('Alarm Code');
+    expect(alarms.textContent).not.toContain('HD1'); // a constant fallback, not a raised alarm
     fireEvent.click(within(alarms).getAllByRole('button')[0]);
     expect(useConsole.getState().selected).toBe(CRAC3);
 

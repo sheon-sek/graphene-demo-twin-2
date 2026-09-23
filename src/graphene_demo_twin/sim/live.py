@@ -79,10 +79,13 @@ class LiveWorld:
         with self._lock:
             self._sim = self._fresh(not_before=self._sim.time)
 
-    def fork(self) -> WhatIfFork:
-        """A What-if Fork of the world as it is now; nothing done to it reaches the Live World."""
+    def fork(self, *, catch_up: bool = True) -> WhatIfFork:
+        """A What-if Fork of the world as it is now; nothing done to it reaches the Live World.
+        With `catch_up=False` it is the step already reached, for a caller that publishes every
+        step itself and has just caught up."""
         with self._lock:
-            self.catch_up()
+            if catch_up:
+                self.catch_up()
             return self._sim.fork()
 
     async def run(

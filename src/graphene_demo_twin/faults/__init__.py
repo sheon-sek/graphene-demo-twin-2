@@ -14,7 +14,7 @@ from graphene_demo_twin.faults.catalog import (
     Mechanism,
     fault_key,
 )
-from graphene_demo_twin.faults.domain import FaultDomain
+from graphene_demo_twin.faults.domain import FaultDomain, fault_active
 from graphene_demo_twin.faults.preview import (
     PREVIEW_MINUTES,
     AffectedNode,
@@ -42,6 +42,7 @@ __all__ = [
     "FaultSpec",
     "Mechanism",
     "PointDiff",
+    "fault_active",
     "fault_key",
     "preview_fault",
 ]

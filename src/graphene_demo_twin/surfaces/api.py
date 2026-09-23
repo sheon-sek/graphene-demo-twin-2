@@ -279,15 +279,15 @@ def create_app(twin: Twin, console_dir: Path | None = CONSOLE_DIR) -> FastAPI:
         frame = twin.frame
         return {"time": frame.time, "events": [event_json(e) for e in frame.events]}
 
+    def rejected(e: EventError) -> HTTPException:
+        return HTTPException(409 if isinstance(e, FaultConflict) else 422, str(e))
+
     @app.post("/api/events", status_code=status.HTTP_201_CREATED)
     async def submit_event(body: EventIn) -> dict[str, Any]:
         try:
             return event_json(twin.submit(body.kind, body.target, body.params))
         except EventError as e:
-            raise HTTPException(422, str(e)) from None
-
-    def rejected(e: EventError) -> HTTPException:
-        return HTTPException(409 if isinstance(e, FaultConflict) else 422, str(e))
+            raise rejected(e) from None
 
     @app.get("/api/faults/catalog")
     def fault_catalog(type: str | None = None) -> list[dict[str, Any]]:
@@ -491,12 +491,18 @@ def spec_json(spec: FaultSpec, design: PlantDesign) -> dict[str, Any]:
         "targets": None if spec.where is None else list(spec.targets(design)),
         "category": spec.category.value,
         "mechanism": spec.mechanism.value,
+        "spreadsAlong": spreads_json(spec),
         "variable": spec.variable,
         "span": spec.span,
         "unit": spec.unit,
         "description": spec.description,
         "defaultSeverity": spec.default_severity,
     }
+
+
+def spreads_json(spec: FaultSpec) -> list[str]:
+    """The connection kinds the fault's causal path follows, in declaration order."""
+    return [k.value for k in ConnectionKind if k in spec.mechanism.spreads_along]
 
 
 def faults_json(state: WorldState, catalog: FaultCatalog) -> list[dict[str, Any]]:
@@ -510,6 +516,7 @@ def faults_json(state: WorldState, catalog: FaultCatalog) -> list[dict[str, Any]
                 "fault": f["fault"],
                 "name": spec.name,
                 "category": spec.category.value,
+                "spreadsAlong": spreads_json(spec),
                 "target": f["target"],
                 "severity": f["severity"],
                 "level": f["level"],

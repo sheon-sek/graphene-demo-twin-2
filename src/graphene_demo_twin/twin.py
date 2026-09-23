@@ -26,7 +26,7 @@ from graphene_demo_twin.faults import (
     FaultError,
     FaultParams,
     FaultPreview,
-    fault_key,
+    fault_active,
     preview_fault,
 )
 from graphene_demo_twin.plant_design import PlantDesign
@@ -179,38 +179,46 @@ class Twin:
 
     def submit(self, kind: str, target: str, params: Mapping[str, Any] | None = None) -> Event:
         """Log an Operator Command or fault action in the Live World and publish the longer Event
-        Log; it takes effect on the next step. Raises EventError if no domain accepts it."""
-        with self._lock:
-            self._catch_up()
-            event = self.live.submit(kind, target, params)
-            if self._catch_up() is None:
-                # No step, so the state is the published one: republish it with the new event.
-                self._publish(replace(self._frame, seq=next(self._seq), events=self.live.events))
-            return event
+        Log; it takes effect on the next step. Fault actions and Operator Commands are checked
+        as `inject_fault`, `clear_fault` and `command` check them. Raises EventError if no
+        domain accepts it."""
+        params = dict(params or {})
+        if kind == INJECT:
+            return self.inject_fault(target, params.get("fault"), params)
+        if kind == CLEAR:
+            _only(params, "fault")
+            return self.clear_fault(target, params.get("fault"))
+        if kind == COMMAND:
+            _only(params, "command", "value")
+            return self.command(target, params.get("command"), params.get("value"))
+        return self._log(kind, target, params)
 
-    def inject_fault(self, target: str, fault: str, params: Mapping[str, Any]) -> Event:
+    def inject_fault(self, target: str, fault: Any, params: Mapping[str, Any]) -> Event:
         """Log a fault injection on exactly `target`. Raises FaultError if the fault does not
         apply to that asset or its parameters are bad, FaultConflict if it is already active
         or already logged to start."""
         normal = {"fault": fault, **FaultParams.parse(params).as_params()}
         with self._lock:
             self._check_fault(INJECT, target, normal)
+            self._catch_up()
             if self._fault_live(target, fault):
                 raise FaultConflict(f"{fault} is already active on {target}")
-            return self.submit(INJECT, target, normal)
+            return self._log(INJECT, target, normal)
 
-    def clear_fault(self, target: str, fault: str) -> Event:
+    def clear_fault(self, target: str, fault: Any) -> Event:
         """Log a Clear of one active fault; raises FaultConflict if it is not active."""
         with self._lock:
             self._check_fault(CLEAR, target, {"fault": fault})
+            self._catch_up()
             if not self._fault_live(target, fault):
                 raise FaultConflict(f"{fault} is not active on {target}")
-            return self.submit(CLEAR, target, {"fault": fault})
+            return self._log(CLEAR, target, {"fault": fault})
 
     def preview_fault(
         self, target: str, fault: str, params: Mapping[str, Any], seconds: int
     ) -> FaultPreview:
-        """Fault Preview from the Live World as it is now; the Live World is untouched."""
+        """Fault Preview from the Live World as last published; the Live World is untouched.
+        Rejected as injecting the fault now would be (FaultError, FaultConflict)."""
         return preview_fault(
             self._fork(),
             self.projector,
@@ -222,7 +230,7 @@ class Twin:
             self.catalog,
         )
 
-    def command(self, target: str, command: str, value: Any) -> Event:
+    def command(self, target: str, command: Any, value: Any) -> Event:
         """Log an Operator Command on `target`; raises EventError if it cannot take it."""
         placed = self.design.assets.get(target)
         specs = self.commands.get(placed.type_id, ()) if placed else ()
@@ -231,7 +239,7 @@ class Twin:
         params = {"command": command, "value": value}
         if (reason := command_problem(specs, params)) is not None:
             raise EventError(reason)
-        return self.submit(COMMAND, target, params)
+        return self._log(COMMAND, target, params)
 
     def reset(self) -> Frame:
         """Rebuild the Live World from its initial state, drop every fork, and publish."""
@@ -285,13 +293,17 @@ class Twin:
     def _fault_live(self, target: str, fault: str) -> bool:
         """Whether the fault is active in the Live World after every logged event so far,
         including those that take effect on the next step."""
-        self._catch_up()
-        active = fault_key(target, fault) in self.live.state.faults
-        for event in self.live.events:
-            if event.at >= self.live.time and event.target == target:
-                if event.params.get("fault") == fault:
-                    active = event.kind == INJECT
-        return active
+        return fault_active(self.live.state, self.live.events, target, fault)
+
+    def _log(self, kind: str, target: str, params: Mapping[str, Any]) -> Event:
+        """Log an event already checked, and publish the longer Event Log."""
+        with self._lock:
+            self._catch_up()
+            event = self.live.submit(kind, target, params)
+            if self._catch_up() is None:
+                # No step, so the state is the published one: republish it with the new event.
+                self._publish(replace(self._frame, seq=next(self._seq), events=self.live.events))
+            return event
 
     def _catch_up(self) -> Frame | None:
         """Publish every Live World step not yet published, stepping one second at a time up to
@@ -304,9 +316,11 @@ class Twin:
         return frame
 
     def _fork(self) -> WhatIfFork:
+        """A fork of the step just published: the wall clock may have moved on since the
+        catch-up, and the fork must not step past what the surfaces were shown."""
         with self._lock:
             self._catch_up()
-            return self.live.fork()
+            return self.live.fork(catch_up=False)
 
     def _publish(self, frame: Frame) -> Frame:
         with self._frames_lock:
@@ -334,6 +348,11 @@ class Twin:
                 loop.call_soon_threadsafe(_resolve, future)
             except RuntimeError:  # that waiter's loop has closed
                 pass
+
+
+def _only(params: Mapping[str, Any], *keys: str) -> None:
+    if unknown := sorted(params.keys() - set(keys)):
+        raise EventError(f"unknown parameters: {unknown}")
 
 
 def _resolve(future: asyncio.Future[None]) -> None:

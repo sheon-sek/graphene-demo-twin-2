@@ -92,6 +92,7 @@ describe('active faults over SSE', () => {
       fault: 'crac.compressor_trip',
       name: 'Compressor trip',
       category: 'equipment' as const,
+      spreadsAlong: ['air' as const],
       target: 'CRAC/L1_CRAC3',
       severity: 1,
       level: 1,
@@ -102,8 +103,10 @@ describe('active faults over SSE', () => {
     live.apply('snapshot', { ...frame(1, {}), faults: [fault] });
     expect(live.faults).toEqual([fault]);
     expect(live.faultTargets).toBe('CRAC/L1_CRAC3');
+    expect(live.faultSpread).toBe('CRAC/L1_CRAC3\tair');
     live.apply('delta', { ...frame(2, {}), faults: [] });
     expect(live.faults).toEqual([]);
     expect(live.faultTargets).toBe('');
+    expect(live.faultSpread).toBe('');
   });
 });

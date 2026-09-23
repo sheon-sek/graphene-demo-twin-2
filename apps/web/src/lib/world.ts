@@ -18,7 +18,10 @@ export interface World {
   pointsOf(node: string): PointInfo[];
   /** The node a point observes, if any. */
   ownerOf(path: string): string | undefined;
-  /** Every alarm bit (per the point metadata), in export order. */
+  /**
+   * Every alarm bit (per the point metadata) the world drives, in export order. A bit on its
+   * Compatibility Fallback is a constant from the export, never an alarm the world raised.
+   */
   alarmPoints: PointInfo[];
   /** The fault catalog. */
   catalog: FaultSpec[];
@@ -55,7 +58,7 @@ export function buildWorld(
     nodes: new Map(design.assets.map((a) => [a.path, a])),
     pointsOf: (node) => owned.get(node) ?? [],
     ownerOf: (path) => owners.get(path),
-    alarmPoints: points.filter((p) => p.alarmBit),
+    alarmPoints: points.filter((p) => p.alarmBit && p.source !== 'fallback'),
     catalog,
   };
 }

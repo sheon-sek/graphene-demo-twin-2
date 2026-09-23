@@ -143,7 +143,7 @@ def test_operator_actions_append_to_the_event_log(client, twin):
     assert created.json()["at"] == START
     log = client.get("/api/events").json()
     assert [(e["kind"], e["target"], e["params"]) for e in log["events"]] == [
-        ("fault.inject", CRAC3, TRIP)
+        ("fault.inject", CRAC3, {**TRIP, "severity": 1.0, "ramp_min": 0, "auto_clear_min": None})
     ]
     assert len(twin.live.events) == 1
 
@@ -153,6 +153,20 @@ def test_operator_actions_append_to_the_event_log(client, twin):
     )
     assert rejected.status_code == 422
     assert "L1_CRAC9" in rejected.json()["detail"]
+
+
+def test_the_generic_event_endpoint_cannot_bypass_the_fault_checks(client, twin):
+    """`/api/events` takes fault actions and Operator Commands only as their own endpoints do."""
+    inject = {"kind": "fault.inject", "target": CRAC3, "params": TRIP}
+    assert client.post("/api/events", json=inject).status_code == 201
+    again = client.post("/api/events", json=inject)
+    assert again.status_code == 409
+    assert "already active" in again.json()["detail"]
+    clear = {"kind": "fault.clear", "target": "CRAC/L1_CRAC1", "params": TRIP}
+    assert client.post("/api/events", json=clear).status_code == 409
+    command = {"kind": "command", "target": CRAC3, "params": {"command": "setpoint", "value": 99}}
+    assert client.post("/api/events", json=command).status_code == 422
+    assert [e.kind for e in twin.live.events] == ["fault.inject"]
 
 
 def test_the_event_log_is_read_from_the_published_frame(client, twin, clock):
@@ -275,6 +289,9 @@ def test_the_fault_catalog_is_served_per_asset_type(client):
     trip = next(f for f in crac if f["id"] == "crac.compressor_trip")
     assert trip["mechanism"] == "physical_constraint"
     assert {"name", "description", "variable", "span", "unit", "defaultSeverity"} <= trip.keys()
+    assert trip["spreadsAlong"] == ["power", "chw", "cw", "air", "water", "fuel"]
+    comm = next(f for f in crac if f["id"] == "crac.comm_loss")
+    assert comm["spreadsAlong"] == ["net"]
 
 
 def test_faults_are_injected_listed_and_cleared_on_the_chosen_asset(client, twin, clock):
@@ -293,6 +310,7 @@ def test_faults_are_injected_listed_and_cleared_on_the_chosen_asset(client, twin
     ]
     assert active[0]["key"] == f"crac.compressor_trip@{CRAC3}"
     assert active[0]["category"] == "equipment"
+    assert active[0]["spreadsAlong"] == ["power", "chw", "cw", "air", "water", "fuel"]
     assert client.get("/api/state").json()["faults"].keys() == {active[0]["key"]}
 
     clear = {"target": CRAC3, "fault": "crac.compressor_trip"}
@@ -327,8 +345,23 @@ def test_a_fault_preview_runs_in_a_fork(client, twin):
     assert twin.live.events == ()
 
     assert client.post("/api/faults/preview", json={**body, "minutes": 20}).status_code == 422
+    client.post("/api/faults", json=body)
+    active = client.post("/api/faults/preview", json=body)
+    assert active.status_code == 409  # as injecting it again would be
+    assert "already active" in active.json()["detail"]
     wrong = {**body, "target": "Temperature and Humidity/Datahall 3/Sensor 17"}
     assert client.post("/api/faults/preview", json=wrong).status_code == 422
+
+
+def test_in_a_fault_free_world_the_only_alarm_bits_set_are_fallbacks(client):
+    """The console lists the alarm bits the world drives: with the real Asset Model and no
+    fault, none of them is set, while some Compatibility Fallbacks from the export are."""
+    values = {p["path"]: p["value"] for p in client.get("/api/points").json()["points"]}
+    bits = [p for p in client.get("/api/coverage/points").json() if p["alarmBit"]]
+    set_bits = [p for p in bits if values[p["path"]] not in (False, 0)]
+    assert set_bits
+    assert {p["source"] for p in set_bits} == {"fallback"}
+    assert any(p["source"] != "fallback" for p in bits)
 
 
 def test_operator_commands_are_listed_and_logged(client, twin, clock):
