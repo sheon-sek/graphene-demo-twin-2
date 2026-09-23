@@ -99,16 +99,16 @@ class PlantDesign:
         unexported: Iterable[UnexportedAsset],
         connections: Iterable[Connection],
     ) -> None:
-        self.version = version
-        self.floors: tuple[Floor, ...] = tuple(floors)
-        self.rooms: Mapping[str, Room] = MappingProxyType({r.id: r for r in rooms})
-        self.assets: Mapping[str, PlacedAsset] = MappingProxyType({a.path: a for a in assets})
-        self.unexported: Mapping[str, UnexportedAsset] = MappingProxyType(
+        self._version = version
+        self._floors: tuple[Floor, ...] = tuple(floors)
+        self._rooms: Mapping[str, Room] = MappingProxyType({r.id: r for r in rooms})
+        self._assets: Mapping[str, PlacedAsset] = MappingProxyType({a.path: a for a in assets})
+        self._unexported: Mapping[str, UnexportedAsset] = MappingProxyType(
             {u.id: u for u in unexported}
         )
-        self.connections: tuple[Connection, ...] = tuple(connections)
+        self._connections: tuple[Connection, ...] = tuple(connections)
 
-        self._floors = {f.name: f for f in self.floors}
+        self._floors_by_name = {f.name: f for f in self.floors}
         by_room: dict[str, list[PlacedAsset]] = {rid: [] for rid in self.rooms}
         for asset in self.assets.values():
             if asset.room is not None:
@@ -123,8 +123,32 @@ class PlantDesign:
             self._down[c.source].append(c)
             self._up[c.target].append(c)
 
+    @property
+    def version(self) -> str:
+        return self._version
+
+    @property
+    def floors(self) -> tuple[Floor, ...]:
+        return self._floors
+
+    @property
+    def rooms(self) -> Mapping[str, Room]:
+        return self._rooms
+
+    @property
+    def assets(self) -> Mapping[str, PlacedAsset]:
+        return self._assets
+
+    @property
+    def unexported(self) -> Mapping[str, UnexportedAsset]:
+        return self._unexported
+
+    @property
+    def connections(self) -> tuple[Connection, ...]:
+        return self._connections
+
     def floor(self, name: str) -> Floor:
-        return self._floors[name]
+        return self._floors_by_name[name]
 
     def room(self, room_id: str) -> Room:
         return self.rooms[room_id]
@@ -144,7 +168,7 @@ class PlantDesign:
 
     def floor_of(self, asset_path: str) -> Floor | None:
         room = self.room_of(asset_path)
-        return None if room is None else self._floors[room.floor]
+        return None if room is None else self._floors_by_name[room.floor]
 
     def upstream(
         self, node: str, kind: ConnectionKind | str | None = None, *, transitive: bool = False

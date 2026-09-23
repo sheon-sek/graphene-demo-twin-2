@@ -94,6 +94,21 @@ def test_support_assets_are_unplaced(plant_design, asset_model):
     assert plant_design.asset("Dashboard/1A").support
 
 
+def test_unexported_assets_are_the_ones_the_prd_fixes(plant_design):
+    assert set(plant_design.unexported) == {
+        "~CH-004",
+        *(f"~CB-00{i}" for i in range(1, 9)),
+        *(f"~CCU-00{i}" for i in range(1, 9)),
+        "~P-CWS-01",
+    }
+
+
+def test_plant_design_is_read_only(plant_design):
+    for name in ("version", "floors", "rooms", "assets", "unexported", "connections"):
+        with pytest.raises(AttributeError):
+            setattr(plant_design, name, ())
+
+
 def test_unexported_asset_is_placed_and_observed_through_plant_views(plant_design):
     ch4 = plant_design.unexported["~CH-004"]
     assert ch4.name == "CH-004"
@@ -252,6 +267,15 @@ def test_fails_when_a_placed_type_disagrees_with_the_asset_model(raw, asset_mode
     chiller = next(a for a in raw["assets"] if a["path"] == "Chiller/R_C1")
     chiller["type"] = "Pump"
     assert "Chiller/R_C1" in _errors(raw, asset_model)
+
+
+@pytest.mark.parametrize("path", ["Chiller/R_C1", "~CH-004"])
+@pytest.mark.parametrize("coord", ["x", "y"])
+@pytest.mark.parametrize("value", [None, "4", True, float("nan"), float("inf")])
+def test_fails_when_a_placed_asset_lacks_a_finite_position(raw, asset_model, path, coord, value):
+    placed = next(a for a in raw["assets"] if a["path"] == path)
+    placed[coord] = value
+    assert f"asset {path} has no finite {coord} position" in _errors(raw, asset_model)
 
 
 def test_fails_when_a_placed_asset_is_in_an_unknown_room(raw, asset_model):

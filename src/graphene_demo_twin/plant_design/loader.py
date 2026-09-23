@@ -1,6 +1,7 @@
 """Load `plant-design/plant-design.json` and validate it against the Asset Model."""
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -99,6 +100,10 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
             problems.append(f"asset {path} is in an unknown room: {a['room']}")
         if support and a["room"] is not None:
             problems.append(f"Support Asset is placed in a room: {path}")
+        if not support:
+            for coord in ("x", "y"):
+                if not _is_finite_number(a[coord]):
+                    problems.append(f"asset {path} has no finite {coord} position: {a[coord]!r}")
         assets[path] = PlacedAsset(
             path=path,
             type_id=a["type"],
@@ -150,6 +155,10 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
         unexported=unexported.values(),
         connections=connections,
     )
+
+
+def _is_finite_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _check_observed_by(asset: UnexportedAsset, asset_model: AssetModel) -> list[str]:
