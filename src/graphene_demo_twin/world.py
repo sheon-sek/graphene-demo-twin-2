@@ -43,8 +43,11 @@ def default_domains(catalog: FaultCatalog = STANDARD_CATALOG) -> list[Domain]:
     ]
 
 
-SETTLING_S = max(d.settling_s for d in default_domains())
-"""Longest time any domain takes to settle after a disturbance, such as a Clear."""
+SETTLING_S = ElectricalDomain.settling_s + max(d.settling_s for d in default_domains())
+"""Longest time the world takes to settle after a disturbance, such as a Clear. The UPS
+batteries recharge for up to ElectricalDomain.settling_s after power returns, and their
+charger losses keep heating the UPS rooms all that time. Only after that can the rooms
+begin to settle, which takes up to the longest settling time of any domain."""
 
 
 def default_projector(

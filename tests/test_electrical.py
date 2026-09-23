@@ -17,8 +17,8 @@ from graphene_demo_twin.sim.electrical import (
     network,
     powered,
 )
-from graphene_demo_twin.sim.placeholder import air_suppliers, supplier_air
 from graphene_demo_twin.sim.site import SITE, consumers
+from graphene_demo_twin.sim.thermal import air_suppliers, supplier_air
 from graphene_demo_twin.world import default_domains, default_projector
 
 START = 1_790_000_000

@@ -204,4 +204,3 @@ def _transformer_efficiency(s: WorldState) -> float:
     site = s.assets[SITE]
     utility = site["utility_kw"]
     return 100.0 * (1.0 - site["transformer_loss_kw"] / utility) if utility > 0.0 else float("nan")
-
