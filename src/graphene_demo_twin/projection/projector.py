@@ -172,6 +172,37 @@ class Projector:
                         degraded[path] = quality
         return Projection(state.time, MappingProxyType(values), MappingProxyType(degraded))
 
+    def differences(
+        self, a: WorldState, b: WorldState, paths: Collection[str]
+    ) -> dict[str, tuple[Scalar, Scalar]]:
+        """Those of `paths` whose value, as `project` gives it, differs between two states,
+        with both values: the cheap way to compare two worlds on some points every step."""
+        found: dict[str, tuple[Scalar, Scalar]] = {}
+
+        def compare(path: str, x: Scalar, y: Scalar) -> None:
+            if x != y and (typed := (self._typed(path, x), self._typed(path, y)))[0] != typed[1]:
+                found[path] = typed
+
+        for path in paths:
+            if (binding := self._bindings.get(path)) is not None:
+                compare(path, binding.read(a), binding.read(b))
+        for group, members in self._groups:
+            if not members.isdisjoint(paths):
+                for path, x, y in zip(group.paths, group.read(a), group.read(b), strict=True):
+                    if path in paths:
+                        compare(path, x, y)
+        return found
+
+    def bound(self, paths: Iterable[str]) -> tuple[str, ...]:
+        """Those of `paths` the world drives; every other keeps its Compatibility Fallback."""
+        return tuple(p for p in paths if p in self._bound)
+
+    def _typed(self, path: str, raw: Scalar) -> Scalar:
+        try:
+            return coerce(raw, self._data_types[path])
+        except ValueError:
+            return type_default(self._data_types[path])
+
     def _source(self, path: str) -> PointSource:
         if path not in self._bound:
             return PointSource.FALLBACK

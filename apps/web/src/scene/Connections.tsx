@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { BoxGeometry, Color, InstancedMesh, Matrix4, MeshBasicMaterial } from 'three';
 import { causalPath, connectionsAround } from '../lib/graph';
 import type { LiveStore } from '../lib/live';
+import type { ConnectionKind } from '../lib/types';
 import { STOREY_M } from '../lib/layout';
 import { LAYERS, layerOf, routeConnection, type Layer, type Vec3 } from '../lib/routing';
 import type { World } from '../lib/world';
@@ -41,14 +42,17 @@ const dim = new Color(DIMMED_COLOR);
  */
 export function Connections({ world, live }: { world: World; live: LiveStore }) {
   const explode = useConsole((s) => s.explode);
-  const targets = useSyncExternalStore(
+  const spread = useSyncExternalStore(
     (l) => live.subscribe(l),
-    () => live.faultTargets,
+    () => live.faultSpread,
   );
-  const faulted = useMemo(
-    () => new Set(causalPath(world.design, targets ? targets.split('\n') : [])),
-    [world, targets],
-  );
+  const faulted = useMemo(() => {
+    const faults = (spread ? spread.split('\n') : []).map((line) => {
+      const [target, kinds] = line.split('\t');
+      return { target, spreadsAlong: (kinds ? kinds.split(',') : []) as ConnectionKind[] };
+    });
+    return new Set(causalPath(world.design, faults));
+  }, [world, spread]);
   const byLayer = useMemo(() => {
     const out = Object.fromEntries(LAYERS.map((l) => [l, [] as Segment[]])) as Record<
       Layer,

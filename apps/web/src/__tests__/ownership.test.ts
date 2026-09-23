@@ -17,7 +17,7 @@ const pointPaths = [
   'Other/Gateway 1 Status',
 ];
 const points = pointPaths.map(
-  (path): PointInfo => ({ path, sourceClass: 'process_value', alarmBit: false }),
+  (path): PointInfo => ({ path, sourceClass: 'process_value', alarmBit: false, source: 'physics' }),
 );
 const ownerOf = ownerResolver(assetPaths, design.unexported);
 

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from graphene_demo_twin.plant_design import PlantDesign
+from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
 from graphene_demo_twin.sim import Event, EventError
 from graphene_demo_twin.sim.electrical import METER_TYPES, incomers
 
@@ -50,12 +50,27 @@ class Mechanism(StrEnum):
         """Namespace of the AssetState variables this mechanism drives."""
         return _PREFIX[self]
 
+    @property
+    def spreads_along(self) -> frozenset[ConnectionKind]:
+        """The Plant Design connection kinds its effect travels downstream along: the causal
+        path. A quality loss follows the control network only; a corrupted reading goes
+        nowhere, since the physical world is unchanged."""
+        return _SPREADS[self]
+
 
 _PREFIX = {
     Mechanism.PHYSICAL_CONSTRAINT: "constraint",
     Mechanism.OBSERVATION: "observation",
     Mechanism.QUALITY: "quality",
     Mechanism.CONTROLLER: "controller",
+}
+
+_PHYSICAL = frozenset(ConnectionKind) - {ConnectionKind.NET}
+_SPREADS = {
+    Mechanism.PHYSICAL_CONSTRAINT: _PHYSICAL,
+    Mechanism.OBSERVATION: frozenset[ConnectionKind](),
+    Mechanism.QUALITY: frozenset({ConnectionKind.NET}),
+    Mechanism.CONTROLLER: _PHYSICAL,
 }
 
 MECHANISM_OF: Mapping[FaultCategory, Mechanism] = {

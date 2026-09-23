@@ -105,7 +105,7 @@ _Avoid_: delivery ratio
 ### Faults
 
 **Fault**:
-A named failure mechanism bound to an asset type, in one of five categories: equipment, sensor, communication, control, or external. It acts only through Physical Constraints, observation corruption, or Controller misbehaviour, and never writes alarm points directly.
+A named failure mechanism bound to an asset type, in one of five categories: equipment, sensor, communication, control, or external. It acts only through Physical Constraints, observation corruption (sensor faults), quality changes (communication faults), or Controller misbehaviour, and never writes alarm points directly.
 _Avoid_: failure, incident, error
 
 **Physical Constraint**:

@@ -320,27 +320,108 @@ def test_operator_commands_are_logged_and_validated(twin, clock):
 
 
 @pytest.mark.parametrize("minutes", [15, 30, 60])
-def test_a_preview_predicts_what_the_live_world_then_shows(twin, clock, minutes):
-    """Same seed, same Event Log, same duration: the preview is what the Live World shows."""
-    twin.inject_fault(CRAC1, "crac.fan_failure", {"severity": 0.6, "auto_clear_min": 10})
+def test_a_preview_predicts_what_the_live_world_then_shows(
+    asset_model, plant_design, clock, minutes
+):
+    """Same seed, same Event Log, same duration: the preview's changes are exactly how the Live
+    World with the fault differs from an independent world run without it, step by step."""
+    live, base = (Twin(asset_model, plant_design, seed=7, clock=clock) for _ in range(2))
+    for twin in (live, base):
+        twin.inject_fault(CRAC1, "crac.fan_failure", {"severity": 0.6, "auto_clear_min": 10})
     clock.now += 120
-    twin.tick()
-
-    twin.command(CRAC3, "setpoint", 16.0)  # logged, takes effect on the next step
+    for twin in (live, base):
+        twin.tick()
+        twin.command(CRAC3, "setpoint", 16.0)  # logged, takes effect on the next step
     params = {"severity": 0.9, "ramp_min": 5}
-    preview = twin.preview_fault(CRAC3, "crac.compressor_trip", params, minutes * 60)
-    assert preview.diffs and preview.alarms
-    twin.inject_fault(CRAC3, "crac.compressor_trip", params)
-    clock.now += minutes * 60
-    frame = twin.tick()
+    preview = live.preview_fault(CRAC3, "crac.compressor_trip", params, minutes * 60)
+    live.inject_fault(CRAC3, "crac.compressor_trip", params)
 
-    assert frame.time == preview.end
-    live = frame.projection
+    bits = [p.path for p in asset_model.points.values() if p.alarm_bit]
+    first: dict[str, tuple[int, object, object]] = {}
+    for _ in range(minutes * 60):
+        clock.now += 1
+        faulted, clean = live.tick().projection, base.tick().projection
+        for path in bits:
+            if path not in first and faulted.values[path] != clean.values[path]:
+                first[path] = (faulted.time, clean.values[path], faulted.values[path])
+
+    assert faulted.time == preview.end
+    changed = {
+        path
+        for path, value in faulted.values.items()
+        if value != clean.values[path] or faulted.quality(path) is not clean.quality(path)
+    }
+    assert changed
+    assert {d.path for d in preview.diffs} == changed
     for d in preview.diffs:
-        assert live.values[d.path] == d.predicted, d.path
-        assert live.quality(d.path) is d.predicted_quality, d.path
-    for a in preview.alarms:
-        assert live.values[a.path] == a.predicted, a.path
+        assert (d.base, d.base_quality) == (clean.values[d.path], clean.quality(d.path)), d.path
+        assert (d.predicted, d.predicted_quality) == (
+            faulted.values[d.path],
+            faulted.quality(d.path),
+        ), d.path
+    assert first
+    assert {a.path: (a.first_at, a.base, a.predicted) for a in preview.alarms} == first
+
+
+def test_a_preview_rejects_a_fault_the_live_world_would_reject_as_active(twin, clock):
+    twin.inject_fault(CRAC3, "crac.compressor_trip", {})
+    with pytest.raises(FaultConflict, match="already active"):  # logged, not yet stepped
+        twin.preview_fault(CRAC3, "crac.compressor_trip", {}, 900)
+    clock.now += 5
+    twin.tick()
+    with pytest.raises(FaultConflict, match="already active"):
+        twin.preview_fault(CRAC3, "crac.compressor_trip", {}, 900)
+    twin.preview_fault(CRAC3, "crac.fan_failure", {}, 60)
+    twin.preview_fault(CRAC1, "crac.compressor_trip", {}, 60)
+
+
+def test_a_preview_forks_the_published_step_while_others_wait(twin, clock, monkeypatch):
+    """The wall clock may tick, and other threads may act, while a preview takes its fork:
+    the fork is still the step just published, and they wait for it."""
+    clock.now += 3
+    fork, seen = twin.live.fork, []
+
+    def fork_as_the_clock_ticks(*args, **kwargs):
+        clock.now += 1
+        other = threading.Thread(target=lambda: twin.command(CRAC1, "mode", "hand"))
+        other.start()
+        other.join(0.2)
+        seen.append(other.is_alive())
+        taken = fork(*args, **kwargs)
+        seen.append(other)
+        return taken
+
+    monkeypatch.setattr(twin.live, "fork", fork_as_the_clock_ticks)
+    preview = twin.preview_fault(CRAC3, "crac.compressor_trip", {}, 60)
+    blocked, other = seen
+    other.join(2)
+    assert blocked  # the operator action waited for the fork
+    published = _published(twin)
+    assert preview.start == START + 3
+    assert preview.start in [f.time for f in published if f.event_count == 0]
+    assert [f.time for f in published] == [START + s for s in (1, 2, 3, 4, 4)]
+    assert [f.event_count for f in published] == [0, 0, 0, 0, 1]
+
+
+def test_generic_operator_actions_are_validated_as_their_own_entry_points_do(twin):
+    twin.submit("fault.inject", CRAC3, TRIP)
+    with pytest.raises(FaultConflict, match="already active"):
+        twin.submit("fault.inject", CRAC3, TRIP)
+    with pytest.raises(FaultConflict, match="not active"):
+        twin.submit("fault.clear", CRAC1, TRIP)
+    with pytest.raises(EventError, match="unknown"):
+        twin.submit("fault.clear", CRAC3, {**TRIP, "severity": 1})
+    with pytest.raises(EventError, match="setpoint"):
+        twin.submit("command", CRAC3, {"command": "setpoint", "value": 99})
+    with pytest.raises(EventError, match="unknown"):
+        twin.submit("command", CRAC3, {"command": "mode", "value": "hand", "extra": 1})
+    assert [e.kind for e in twin.live.events] == ["fault.inject"]
+    assert twin.live.events[0].params == {
+        **TRIP,
+        "severity": 1.0,
+        "ramp_min": 0,
+        "auto_clear_min": None,
+    }
 
 
 def test_clearing_all_faults_returns_the_live_world_to_the_base_world(

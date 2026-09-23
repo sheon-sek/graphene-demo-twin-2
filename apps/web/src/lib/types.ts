@@ -79,11 +79,15 @@ export type SourceClass =
   | 'static_metadata'
   | 'support';
 
+/** What drives a point's value: the modelled world, or a constant Compatibility Fallback. */
+export type PointSource = 'physics' | 'plant_view' | 'fallback';
+
 export interface PointInfo {
   path: string;
   sourceClass: SourceClass;
   /** A fault or alarm bit, active when true or nonzero; counts, codes and texts are not. */
   alarmBit: boolean;
+  source: PointSource;
 }
 
 export type Quality = 'good' | 'uncertain' | 'bad';
@@ -117,6 +121,8 @@ export interface FaultSpec {
   targets?: string[] | null;
   category: FaultCategory;
   mechanism: string;
+  /** The connection kinds its effect travels downstream along: its causal path. */
+  spreadsAlong: ConnectionKind[];
   variable: string;
   span: number;
   unit: string;
@@ -139,6 +145,8 @@ export interface ActiveFault {
   fault: string;
   name: string;
   category: FaultCategory;
+  /** The connection kinds its effect travels downstream along: its causal path. */
+  spreadsAlong: ConnectionKind[];
   target: string;
   severity: number;
   /** Current level: rises from 0 to `severity` over the ramp. */

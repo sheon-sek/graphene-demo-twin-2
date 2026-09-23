@@ -15,6 +15,8 @@ export class LiveStore {
   faults: ActiveFault[] = [];
   /** The assets with an active fault, one per line: a cheap value to subscribe to. */
   faultTargets = '';
+  /** Each faulted asset, a tab, and the kinds its fault spreads along; one per line. */
+  faultSpread = '';
   /** Bumped once per applied frame; lets React subscribe cheaply. */
   version = 0;
 
@@ -43,6 +45,9 @@ export class LiveStore {
     this.eventCount = frame.events;
     this.faults = frame.faults ?? [];
     this.faultTargets = [...new Set(this.faults.map((f) => f.target))].join('\n');
+    this.faultSpread = [
+      ...new Set(this.faults.map((f) => `${f.target}\t${f.spreadsAlong.join(',')}`)),
+    ].join('\n');
     this.version++;
     for (const listener of this.listeners) listener();
   }

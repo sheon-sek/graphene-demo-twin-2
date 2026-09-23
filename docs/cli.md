@@ -42,12 +42,12 @@ Every read comes from the latest published frame, which is one Live World step. 
 | `GET` | `/api/state/{node}` | AssetState for one node: an asset path, `~<name>` or a room id. |
 | `GET` | `/api/plant-design` | The Plant Design graph: floors, rooms, service shafts, placed assets, Unexported Assets and connections. |
 | `GET` | `/api/events` | The Event Log. |
-| `POST` | `/api/events` | Log an operator action `{kind, target, params}` at the current sim time. Returns 201, or 422 if no domain accepts it. |
-| `GET` | `/api/faults/catalog` | The fault catalog: id, name, asset type, category, mechanism, driven variable, span, unit, description and default severity. Filter with `type=`. |
-| `GET` | `/api/faults` | The active faults in injection order: target, fault, severity, current level, `since`, ramp and auto-clear time (`until`). |
+| `POST` | `/api/events` | Log an operator action `{kind, target, params}` at the current sim time. A fault action or Operator Command is checked exactly as its own endpoint checks it (`fault.inject` params are normalized the same way). Returns 201, 409 if a fault is already active (inject) or not active (clear), or 422 if no domain accepts it. |
+| `GET` | `/api/faults/catalog` | The fault catalog: id, name, asset type, category, mechanism, the connection kinds its effect spreads along (`spreadsAlong`, the causal path), driven variable, span, unit, description and default severity. Filter with `type=`. |
+| `GET` | `/api/faults` | The active faults in injection order: target, fault, `spreadsAlong`, severity, current level, `since`, ramp and auto-clear time (`until`). |
 | `POST` | `/api/faults` | Inject `{target, fault, params}` on exactly `target`. `params` is `{severity?, ramp_min?, auto_clear_min?}`: severity in (0, 1], default 1; `ramp_min` 0 (default) is a step onset; `auto_clear_min` null (default) acts until cleared. Logs `fault.inject` and returns 201, 409 if the fault is already active there, or 422 if it does not apply to that asset. |
 | `POST` | `/api/faults/clear` | Clear `{target, fault}`. Logs `fault.clear` and returns 201, or 409 if the fault is not active. |
-| `POST` | `/api/faults/preview` | Fault Preview of `{target, fault, params, minutes}` with `minutes` 15, 30 or 60. The Live World is untouched. Returns the affected nodes in propagation order, the point diffs at the end, and the alarm bits that change. |
+| `POST` | `/api/faults/preview` | Fault Preview of `{target, fault, params, minutes}` with `minutes` 15, 30 or 60. The Live World is untouched. Returns the affected nodes in propagation order, every point whose value or quality differs at the end, and every alarm bit that differs at any second, with its values when it first did. Returns 409 if the fault is already active there, as injecting it would. |
 | `GET` | `/api/commands/{path}` | The Operator Commands an asset takes, with their current values. |
 | `POST` | `/api/commands` | Give an Operator Command `{target, command, value}`. Logs `command` and returns 201, or 422 if the asset cannot take it. |
 | `POST` | `/api/reset` | Reset. Requires `{"confirm": true}`. It discards the Event Log and every fork, and starts a new epoch. |
