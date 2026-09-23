@@ -11,7 +11,7 @@ import statistics
 from collections.abc import Callable, Iterable
 
 from graphene_demo_twin.asset_model import AssetModel
-from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
+from graphene_demo_twin.plant_design import PlantDesign
 from graphene_demo_twin.projection.projector import Binding
 from graphene_demo_twin.sim import Scalar, WorldState
 from graphene_demo_twin.sim.it_load import it_equipment
@@ -29,7 +29,6 @@ WEATHER = "Chiller System Control/Weather"
 DASHBOARD = "Dashboard"
 ENERGY = "Dashboard/Energy"
 OTHER = "Other"
-BRANCH_METER_TYPE = "BCPM"
 
 WEATHER_POINTS: dict[str, Callable[[dict[str, Scalar]], Scalar]] = {
     "Outside Temperature": lambda s: s["dry_bulb_c"],
@@ -78,17 +77,10 @@ def _weather(design: PlantDesign) -> Iterable[Binding]:
 
 
 def _it_load(asset_model: AssetModel, design: PlantDesign) -> Iterable[Binding]:
-    """Each hall's IT Load as its branch circuit monitors and its Environment Monitoring
-    aggregate see it, and its IT energy on the Dashboard."""
+    """Each hall's IT Load as its Environment Monitoring aggregate sees it, and its IT energy
+    on the Dashboard. Its branch circuit monitors are the electrical network's."""
     for node in it_equipment(design):
         hall = design.room_of(node)
-        meters = [
-            m
-            for m in design.upstream(node, ConnectionKind.POWER)
-            if m in design.assets and design.asset(m).type_id == BRANCH_METER_TYPE
-        ]
-        for meter in meters:
-            yield Binding(f"{meter}/Active Power", _var(node, "power_kw", 1.0 / len(meters)))
         yield Binding(
             f"Environment Monitoring/{hall.floor}/{hall.id}/IT Load", _var(node, "power_kw")
         )

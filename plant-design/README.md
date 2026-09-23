@@ -10,6 +10,8 @@ Rev 0.1 was approved on 2026-09-23 with review items A1–A14 accepted as drafte
 
 Rev 0.2 (2026-09-23) adds the service shafts (review item A15, not yet reviewed). There are five risers beside the lift core, one per discipline, each running from Ground to Roof. Every connection that changes floor runs up the shaft that carries its kind. The loader rejects a shaft that sits outside the rooms of any floor it passes through, a connection kind carried by two shafts, and a connection that changes floor with no shaft of its kind reaching both floors. The Operator Console routes its risers from these shafts.
 
+Rev 0.3 (2026-09-23) authors the load side of the power graph for #19 (review item A16, not yet reviewed): every electrical consumer, including each room's lighting, hangs off exactly one board or sub-meter, so the meter tree can balance. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads, because the gensets are sources and wiring their auxiliaries back to them would loop the graph; the electrical model gives them a stand-in draw.
+
 Key decisions the design encodes:
 
 - One chiller plant with four chillers. CH-004 is an Unexported Asset (ADR-0004).

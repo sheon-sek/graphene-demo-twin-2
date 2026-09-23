@@ -1,6 +1,6 @@
 """Projection: world state onto every Asset Model point, one typed value per point per step."""
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
@@ -34,6 +34,16 @@ class Binding:
 
     path: str
     read: Callable[[WorldState], Scalar]
+
+
+@dataclass(frozen=True, slots=True)
+class GroupBinding:
+    """Drives several points from one reading of the world state, for points that share an
+    expensive derivation (a power-flow pass over every meter). `read` returns the raw values
+    in the order of `paths`."""
+
+    paths: tuple[str, ...]
+    read: Callable[[WorldState], Sequence[Scalar]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,23 +106,32 @@ class Projector:
     def __init__(
         self,
         asset_model: AssetModel,
-        bindings: Iterable[Binding],
+        bindings: Iterable[Binding | GroupBinding],
         quality: Iterable[QualityBinding] = (),
     ) -> None:
         self._data_types = {p.path: p.data_type for p in asset_model.points.values()}
         self._bindings: dict[str, Binding] = {}
+        self._groups: list[tuple[GroupBinding, frozenset[str]]] = []
+        bound: set[str] = set()
         for b in bindings:
-            if b.path not in asset_model.points:
-                raise ValueError(f"bound point is not in the Asset Model: {b.path}")
-            if b.path in self._bindings:
-                raise ValueError(f"point bound twice: {b.path}")
-            self._bindings[b.path] = b
+            paths = b.paths if isinstance(b, GroupBinding) else (b.path,)
+            for path in paths:
+                if path not in asset_model.points:
+                    raise ValueError(f"bound point is not in the Asset Model: {path}")
+                if path in bound:
+                    raise ValueError(f"point bound twice: {path}")
+                bound.add(path)
+            if isinstance(b, GroupBinding):
+                self._groups.append((b, frozenset(b.paths)))
+            else:
+                self._bindings[b.path] = b
         self._quality = tuple(quality)
         for q in self._quality:
             if missing := [p for p in q.paths if p not in asset_model.points]:
                 raise ValueError(f"quality bound to points not in the Asset Model: {missing}")
+        self._bound = frozenset(bound)
         self._template: dict[str, Scalar] = {
-            p.path: type_default(p.data_type) if p.path in self._bindings else fallback_value(p)
+            p.path: type_default(p.data_type) if p.path in bound else fallback_value(p)
             for p in asset_model.points.values()
         }
         """Every point in export-path order, holding its fallback, or a slot if bound."""
@@ -121,16 +140,30 @@ class Projector:
             for p in asset_model.points.values()
         )
 
-    def project(self, state: WorldState) -> Projection:
+    def project(self, state: WorldState, only: Collection[str] | None = None) -> Projection:
+        """Every point's value and quality, or with `only` just those points' (the others keep
+        their fallback or type default, and good quality)."""
         values = dict(self._template)
         degraded: dict[str, Quality] = {}
-        for path, binding in self._bindings.items():
-            data_type = self._data_types[path]
+        data_types = self._data_types
+        bindings = self._bindings
+        if only is not None:
+            bindings = {p: bindings[p] for p in only if p in bindings}
+        for path, binding in bindings.items():
             try:
-                values[path] = coerce(binding.read(state), data_type)
+                values[path] = coerce(binding.read(state), data_types[path])
             except ValueError:
-                values[path] = type_default(data_type)
+                values[path] = type_default(data_types[path])
                 degraded[path] = Quality.BAD
+        for group, members in self._groups:
+            if only is not None and members.isdisjoint(only):
+                continue
+            for path, raw in zip(group.paths, group.read(state), strict=True):
+                try:
+                    values[path] = coerce(raw, data_types[path])
+                except ValueError:
+                    values[path] = type_default(data_types[path])
+                    degraded[path] = Quality.BAD
         for q in self._quality:
             quality = q.read(state)
             if quality is not Quality.GOOD:
@@ -140,7 +173,7 @@ class Projector:
         return Projection(state.time, MappingProxyType(values), MappingProxyType(degraded))
 
     def _source(self, path: str) -> PointSource:
-        if path not in self._bindings:
+        if path not in self._bound:
             return PointSource.FALLBACK
         if any(path.startswith(f"{view}/") for view in PLANT_VIEWS):
             return PointSource.PLANT_VIEW

@@ -254,6 +254,27 @@ for n, desc in SUB.items():
     rid = 'L2-SUP' if mcc.startswith('Meter/Level 2') else 'L1-SUP'
     put(a, rid, 4 + (len([p for p in place if place[p]['room'] == rid and p.startswith('Meter/Meter')]) % 10) * 3.8, (51 if rid == 'L2-SUP' else 45) + (len([p for p in place if place[p]['room'] == rid and p.startswith('Meter/Meter')]) // 10) * 3.5, f'Sub-meter: {desc}', 'Electrical')
     link('power', mcc, a)
+# Load side (rev 0.3, A16): each sub-meter and lighting board feeds the equipment and rooms it names.
+# Meter14 (lifts) and Meter16 (genset auxiliaries) feed nothing in the design: gensets are sources, so
+# wiring their auxiliaries back to them would loop the power graph.
+LOADS = {1: [f'Cooling Towers Plant/R_P1_CT{c}' for c in range(1, 6)], 2: [f'Cooling Towers Plant/R_P1_CT{c}' for c in range(6, 11)],
+         3: [f'Cooling Towers Plant/R_P2_CT{c}' for c in range(1, 6)], 4: [f'Cooling Towers Plant/R_P2_CT{c}' for c in range(6, 11)],
+         5: [f'Chiller/R_CP{p}' for p in range(1, 5)], 6: [f'Chiller/R_CP{p}' for p in range(5, 9)], 7: ['Chiller/R_CP9'],
+         8: [f'Cooling Towers Plant/R_P1_P{p}' for p in range(1, 11)], 9: [f'Cooling Towers Plant/R_P2_P{p}' for p in range(1, 11)],
+         10: sorted([p for p in A if A[p]['type'] in ('CRAC', 'PAHU', 'FWU') and A[p]['name'].startswith('R_')], key=nat) + [f'~CCU-00{h}' for h in (5, 6, 7, 8)],
+         11: sorted([p for p in A if A[p]['type'] in ('CRAC', 'PAHU', 'FCU') and A[p]['name'].startswith('L1_')], key=nat) + [f'~CCU-00{h}' for h in (1, 2, 3, 4)],
+         12: sorted([p for p in A if A[p]['type'] in ('CRAC', 'PAHU', 'FWU') and A[p]['name'].startswith('G_')], key=nat),
+         13: [f'TIW/CDU-0{i}' for i in (1, 2, 3)], 15: [f'Diesel/Tank {t}' for t in (1, 2, 3)],
+         17: ['L1-SUP', 'L1-COM', 'L1-CORE', 'L1-COR'],
+         18: [f'Cold Water and Sanitary System/G_TP{p}' for p in (1, 2, 3)] + [f'Cold Water and Sanitary System/R_BP{b}' for b in (1, 2)] + [f'AC Makeup Tank/G_P{p}' for p in (1, 2)],
+         19: ['G-GEN', 'G-DSL', 'G-NOC', 'R-CT1', 'R-CT2', 'R-AIR']}
+for n, loads in LOADS.items():
+    for load in loads: link('power', f'Meter/Meter{n}', load)
+LIGHTING = {'Meter/Level 2_MSB A_6': ['G-HV', 'G-UPSA', 'G-UPSB', 'G-BAT', 'G-WTR', 'G-CORE', 'G-AIR'],
+            'Meter/Level 1_DB_22': ['DH01', 'DH02', 'DH03', 'DH04'],
+            'Meter/Level 2_MSB B_14': ['DH05', 'DH06', 'DH07', 'DH08', 'L2-SUP', 'L2-COM', 'L2-CORE', 'L2-COR', 'R-CHP', 'R-BT', 'R-WT', 'R-CORE']}
+for board, lit in LIGHTING.items():
+    for r in lit: link('power', board, r, 'lighting & small power')
 # Water
 put('Cold Water and Sanitary System/G_V1', 'G-WTR', 2, 25, 'Municipal inlet valve', 'Water')
 for t in (1, 2):
@@ -376,9 +397,10 @@ reviews = [
  dict(id='A13', area='Site', title='Room layout', text='Ground: HV intake, UPS rooms, water plant, genset yard and diesel farm outdoors. L1: DH01–04, DB room, BMS control room. L2: DH05–08, MSB A/B rooms (the meter names say MSB is on Level 2). Roof: chillers, 20 tower cells, buffer tanks, water tanks, AHU deck. Lifts 1–3 in a central core.'),
  dict(id='A14', area='Water', title='Water path', text='Municipal supply → G_V1 → ground tanks → transfer pumps (2 + 1) → riser → roof tanks → boosters → makeup headers → one VSD makeup pump per tower cell. AC Makeup Tank pumps top up the closed CHW loop from the ground tank branch.'),
  dict(id='A15', area='Site', title='Service shafts', text='Rev 0.2. Five risers beside the lift core, Ground to Roof: electrical (power), chilled & condenser water, supply-air duct, cold water, control network. Every connection that changes floor runs up its discipline\'s shaft. Diesel stays on the Ground floor and needs none.'),
+ dict(id='A16', area='Electrical', title='Load side of the power graph', text='Rev 0.3. Every consumer hangs off exactly one board or sub-meter, so each meter reads what its authored loads draw. Meter1–4 feed the five cells of Tower Groups CT-001–004, Meter5–7 the chiller pumps, Meter8–9 the makeup pumps of tower plants P1 and P2, Meter10–12 the roof, Level 1 and ground air units (CCU-005–008 on Meter10, CCU-001–004 on Meter11), Meter13 the CDUs, Meter15 the diesel tanks\' fuel pumps, Meter18 the transfer, booster and AC makeup pumps. Lighting: MSB A_6 lights the Ground rooms, DB_22 DH01–04, Meter17 the other Level 1 rooms, MSB B_14 Level 2 and the roof plant rooms, and Meter19 the outdoor areas and security. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads; their draw is a stand-in on the meter.'),
 ]
 
-out = dict(version='0.2', date='2026-09-23', floors=FLOORS, rooms=list(rooms.values()), shafts=shafts,
+out = dict(version='0.3', date='2026-09-23', floors=FLOORS, rooms=list(rooms.values()), shafts=shafts,
            assets=[dict(path=p, type=A[p]['type'], unexported=A[p].get('unexported', False), **place[p]) for p in sorted(A, key=nat)],
            edges=edges, unexported=list(unexported.values()), views=views, fire=fire, leak=LEAK_ZONES,
            gateways=GATEWAY_DOMAINS, basis=basis, reviews=reviews,

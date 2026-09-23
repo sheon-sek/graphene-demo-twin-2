@@ -3,13 +3,15 @@ Dashboard reads.
 
 Every consumer node carries `power_kw`, the real power it draws (or, for UPS modules and
 transformers, dissipates) this step, and belongs to one LoadClass on one floor. Facility
-power is the sum over all of them and IT power the sum over the IT equipment, so PUE and
-every energy total come from the same step's power flow.
+power is the sum over all of them, which the electrical network's sources supply exactly, and
+IT power the sum over the IT equipment, so PUE and every energy total come from the same step.
 
-Until the electrical network (#19) and the chiller plant and airside (P2) are modelled, this
-domain is their stand-in: it works out the non-IT loads from the state the other domains
-have reached this step (IT Load, CRAC units, hall cooling, outdoor air) with simple plant
-curves. It must step last.
+Two domains share the work around the electrical network (`sim.electrical`). SiteLoadDomain
+steps before it: until the chiller plant and airside (P2), water (P3) and building services
+(P4) are modelled, it is their stand-in, working out each non-IT load from the state the other
+domains have reached this step (CRAC units, hall cooling, outdoor air) with simple plant curves,
+and nothing draws while its supply is dead. The electrical network adds the UPS and transformer
+losses, and SitePowerDomain steps last to total everything up.
 """
 
 import functools
@@ -18,9 +20,16 @@ from collections.abc import Mapping
 from enum import StrEnum
 
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
+from graphene_demo_twin.sim.electrical import (
+    UPS_KW,
+    control_ups,
+    hall_ups,
+    incomers,
+    network,
+)
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
-from graphene_demo_twin.sim.it_load import IT_TYPE, it_equipment, it_heat_kw
+from graphene_demo_twin.sim.it_load import IT_TYPE
 from graphene_demo_twin.sim.placeholder import (
     CRAC_TYPE,
     air_suppliers,
@@ -58,7 +67,8 @@ class LoadClass(StrEnum):
     LOSSES = "losses"
     """UPS and transformer losses."""
     OTHER = "other"
-    """Everything else: the control UPS's BMS and network load."""
+    """Everything else: the control UPS's BMS and network load, water pumps, lifts, fuel
+    system, genset auxiliaries and the control-room circuits."""
 
 
 _CLASS_OF_TYPE = {
@@ -66,7 +76,15 @@ _CLASS_OF_TYPE = {
     CRAC_TYPE: LoadClass.COOLING,
     "Chiller": LoadClass.COOLING,
     "Chiller Pump": LoadClass.COOLING,
+    "CDU": LoadClass.COOLING,
     "Cooling Tower": LoadClass.HEAT_REJECTION,
+    "Makeup Water Pump": LoadClass.HEAT_REJECTION,
+    "CW Transfer Pump": LoadClass.OTHER,
+    "CW Booster Pump": LoadClass.OTHER,
+    "AC Makeup Pump": LoadClass.OTHER,
+    "IPS": LoadClass.OTHER,
+    "RCMS": LoadClass.OTHER,
+    "Diesel": LoadClass.OTHER,
     "PAHU": LoadClass.VENTILATION,
     "FCU": LoadClass.VENTILATION,
     "FWU": LoadClass.VENTILATION,
@@ -90,11 +108,22 @@ TOWER_FAN_KW = 11.0
 CHW_PUMP_KW, CW_PUMP_KW, DISTRIBUTION_PUMP_KW = 18.5, 30.0, 37.0
 CYCLES_OF_CONCENTRATION = 4.0
 LATENT_KJ_PER_KG = 2430.0
-UPS_KVA, UPS_PF = 500.0, 0.9
-UPS_NO_LOAD_KW, UPS_LOSS = 2.0, 0.035
-CONTROL_LOAD_KW = 45.0
-"""BMS control room and network load on the control UPS."""
-TRANSFORMER_NO_LOAD_KW, TRANSFORMER_LOSS = 4.5, 0.008
+SERVICE_KW = {
+    "CDU": 7.5,
+    "CW Transfer Pump": 1.8,
+    "CW Booster Pump": 2.2,
+    "AC Makeup Pump": 0.2,
+    "IPS": 2.5,
+    "RCMS": 4.0,
+}
+"""Average draw of equipment whose physics comes later (P3 water, the CDU loop, the control
+room's critical circuits)."""
+MAKEUP_PUMP_KW, MAKEUP_PUMP_LPH = 0.9, 1000.0
+"""A tower cell's makeup pump at its rated flow; it idles at a fifth of that."""
+LIFT_KW, LIFT_BUSY_KW = 6.0, 6.0
+"""Lifts 1–3 beyond Meter14: standing losses, and the extra during office hours."""
+GENSET_AUX_KW = 30.0
+"""Jacket-water heaters and battery chargers of the six gensets, beyond Meter16."""
 LIGHTING_W_M2 = {
     "hall": 2.0,
     "support": 9.0,
@@ -112,29 +141,20 @@ OUTDOOR_W_M2 = 1.0
 """Floodlighting on outdoor areas, from dusk to dawn."""
 
 
-class SitePowerDomain:
-    """Every consumer's power this step, the site totals, each floor's energy per load class
-    and the running averages. The IT equipment's power and energy are the IT Load domain's;
-    this domain adds everything else and must step after every other domain."""
+class SiteLoadDomain:
+    """The draw of every consumer the electrical network does not model itself, other than the
+    IT equipment: cooling, heat rejection, ventilation, lighting and building services. It must
+    step after the CRAC and hall domains and before the electrical network."""
 
     settling_s = 0
 
     def initial(self, ctx: StepContext) -> dict[str, AssetState]:
-        states: dict[str, AssetState] = {
-            node: {"power_kw": 0.0}
-            for node, (cls, _) in consumers(ctx.design).items()
-            if cls is not LoadClass.IT
-        }
-        site: AssetState = {name: 0.0 for name in site_variables(ctx.design)}
-        states[SITE] = site
+        states: dict[str, AssetState] = {node: {"power_kw": 0.0} for node in site_loads(ctx.design)}
+        states[SITE] = dict.fromkeys(PLANT_VARIABLES, 0.0)
         return states
 
     def complete(self, state: WorldState, ctx: StepContext) -> None:
-        self._flow(state, ctx)
-        site = state.assets[SITE]
-        for window in AVERAGE_WINDOWS:
-            for q in AVERAGED:
-                site[f"avg.{window}.{q}"] = site[q]
+        self.step(state, ctx)
 
     def handles(self, event: Event, design: PlantDesign) -> bool:
         return False
@@ -143,18 +163,20 @@ class SitePowerDomain:
         raise AssertionError("no events")
 
     def step(self, state: WorldState, ctx: StepContext) -> None:
-        self._flow(state, ctx)
-        site = state.assets[SITE]
-        for node, (cls, floor) in consumers(ctx.design).items():
-            if cls is not LoadClass.IT:
-                site[energy_key(floor, cls)] += state.assets[node]["power_kw"] * ctx.dt / 3600.0
-        for window, tau in AVERAGE_WINDOWS.items():
-            for q in AVERAGED:
-                key = f"avg.{window}.{q}"
-                site[key] += (site[q] - site[key]) * ctx.dt / tau
-
-    def _flow(self, state: WorldState, ctx: StepContext) -> None:
         design = ctx.design
+        assets = state.assets
+        net = network(design)
+        flag = net.supply_flag
+        if net.order and net.order[0] in assets:
+
+            def fed(node: str) -> bool:
+                return assets[flag[node]]["live"]
+
+        else:  # a world without the electrical network: everything has supply
+
+            def fed(node: str) -> bool:
+                return True
+
         power: dict[str, float] = {}
         air = site_air(state, design)
         dry, dew, wb, hpa = (
@@ -164,7 +186,8 @@ class SitePowerDomain:
             air["pressure_hpa"],
         )
 
-        # DX CRAC units: fans, and compressors rejecting to the outdoor air.
+        # DX CRAC units: fans, and compressors rejecting to the outdoor air. A unit without
+        # supply has already stopped.
         dx_cooling = 0.0
         for crac in assets_of(design, CRAC_TYPE):
             s = state.assets[crac]
@@ -179,16 +202,16 @@ class SitePowerDomain:
         # Air units on chilled water: their fans, and the heat their coils take up.
         chw_load = 0.0
         for unit, type_id in air_units(design).items():
-            power[unit] = FAN_KW[type_id]
-            chw_load += FAN_KW[type_id]
+            power[unit] = FAN_KW[type_id] if fed(unit) else 0.0
+            chw_load += power[unit]
         fresh = FRESH_AIR_KG_S * (
             enthalpy_kj_per_kg(dry, dew, hpa) - enthalpy_kj_per_kg(OFF_COIL_C, OFF_COIL_C, hpa)
         )
-        chw_load += max(fresh, 0.0) * len(assets_of(design, "PAHU"))
+        chw_load += max(fresh, 0.0) * sum(fed(u) for u in assets_of(design, "PAHU"))
         for hall in halls(design):
             temp = state.assets[hall]["temp_c"]
             for supplier, share in air_suppliers(design, hall):
-                if supplier not in assets_of(design, CRAC_TYPE):
+                if supplier not in assets_of(design, CRAC_TYPE) and fed(supplier):
                     airflow, supply_c = supplier_air(state, supplier)
                     chw_load += share * airflow * (temp - supply_c) * ua_kw_per_k(design, hall)
         chw_load = max(chw_load, 0.0)
@@ -221,14 +244,14 @@ class SitePowerDomain:
             / LATENT_KJ_PER_KG
             * (CYCLES_OF_CONCENTRATION / (CYCLES_OF_CONCENTRATION - 1.0))
         )
+        pumps = assets_of(design, "Makeup Water Pump")
+        each = min(makeup / max(len(pumps), 1) / MAKEUP_PUMP_LPH, 1.5)
+        for pump in pumps:
+            power[pump] = MAKEUP_PUMP_KW * (0.2 + 0.8 * each)
 
-        # UPS modules lose a share of the IT Load they carry; the control UPS feeds the BMS.
-        for hall, modules in hall_ups(design).items():
-            load = it_heat_kw(state, design, hall) / len(modules)
-            for ups in modules:
-                power[ups] = UPS_NO_LOAD_KW + UPS_LOSS * load
-        for ups in control_ups(design):
-            power[ups] = CONTROL_LOAD_KW + UPS_NO_LOAD_KW
+        # Building services, until their own physics arrives.
+        for node, type_id in services(design).items():
+            power[node] = SERVICE_KW[type_id]
 
         # Lighting, room by room.
         local = ctx.time + LOCAL_OFFSET_S
@@ -244,19 +267,61 @@ class SitePowerDomain:
                     watts *= 0.35
             power[room.id] = room.w * room.h * watts / 1000.0
 
-        # Transformers lose a share of everything they carry.
-        it = {n: state.assets[n]["power_kw"] for n in it_equipment(design)}
-        through = sum(power.values()) + sum(it.values())
-        transformers = incomers(design)
-        loss = len(transformers) * TRANSFORMER_NO_LOAD_KW + TRANSFORMER_LOSS * through
-        for node in transformers:
-            power[node] = loss / len(transformers)
+        # The draw beyond the meters with nothing authored below them.
+        for meter in stand_in_meters(design):
+            if meter.endswith("Meter14"):
+                power[meter] = LIFT_KW + (LIFT_BUSY_KW if office else 0.0)
+            else:
+                power[meter] = GENSET_AUX_KW
 
-        totals = dict.fromkeys(LoadClass, 0.0)
-        totals[LoadClass.IT] = sum(it.values())
         for node, kw in power.items():
-            state.assets[node]["power_kw"] = kw
-            totals[consumers(design)[node][0]] += kw
+            assets[node]["power_kw"] = kw if fed(node) else 0.0
+        site = state.assets[SITE]
+        site["chw_load_kw"] = chw_load
+        site["chw_plant_kw"] = sum(
+            state.assets[n]["power_kw"] for leg in plant.legs for n in (*leg[:3], *leg[3])
+        ) + sum(state.assets[p]["power_kw"] for p in plant.distribution)
+        site["cooling_load_kw"] = dx_cooling + chw_load
+        site["makeup_lph"] = makeup
+
+
+class SitePowerDomain:
+    """The site totals, each floor's energy per load class and the running averages, over every
+    consumer's power this step. It must step after every other domain."""
+
+    settling_s = 0
+
+    def initial(self, ctx: StepContext) -> dict[str, AssetState]:
+        return {SITE: {name: 0.0 for name in site_variables(ctx.design)}}
+
+    def complete(self, state: WorldState, ctx: StepContext) -> None:
+        self._totals(state, ctx.design)
+        site = state.assets[SITE]
+        for window in AVERAGE_WINDOWS:
+            for q in AVERAGED:
+                site[f"avg.{window}.{q}"] = site[q]
+
+    def handles(self, event: Event, design: PlantDesign) -> bool:
+        return False
+
+    def apply(self, event: Event, state: WorldState) -> None:
+        raise AssertionError("no events")
+
+    def step(self, state: WorldState, ctx: StepContext) -> None:
+        self._totals(state, ctx.design)
+        site = state.assets[SITE]
+        hours = ctx.dt / 3600.0
+        for node, key in _energy_keys(ctx.design):
+            site[key] += state.assets[node]["power_kw"] * hours
+        for window, tau in AVERAGE_WINDOWS.items():
+            for q in AVERAGED:
+                key = f"avg.{window}.{q}"
+                site[key] += (site[q] - site[key]) * ctx.dt / tau
+
+    def _totals(self, state: WorldState, design: PlantDesign) -> None:
+        totals = dict.fromkeys(LoadClass, 0.0)
+        for node, cls in _classes(design):
+            totals[cls] += state.assets[node]["power_kw"]
         site = state.assets[SITE]
         for cls, kw in totals.items():
             site[f"{cls}_kw"] = kw
@@ -266,14 +331,8 @@ class SitePowerDomain:
             + totals[LoadClass.HEAT_REJECTION]
             + totals[LoadClass.VENTILATION]
         )
-        site["chw_load_kw"] = chw_load
-        site["chw_plant_kw"] = sum(
-            power[n] for leg in plant.legs for n in (*leg[:3], *leg[3])
-        ) + sum(power[p] for p in plant.distribution)
-        site["cooling_load_kw"] = dx_cooling + chw_load
-        site["makeup_lph"] = makeup
-        site["transformer_loss_kw"] = loss
-        site["ups_capacity_kw"] = UPS_KVA * UPS_PF * sum(len(m) for m in hall_ups(design).values())
+        site["transformer_loss_kw"] = sum(state.assets[i]["power_kw"] for i in incomers(design))
+        site["ups_capacity_kw"] = UPS_KW * sum(len(m) for m in hall_ups(design).values())
 
 
 def _crac_cooling_kw(state: WorldState, design: PlantDesign, crac: str) -> float:
@@ -321,38 +380,25 @@ def air_units(design: PlantDesign) -> dict[str, str]:
 
 
 @functools.cache
-def hall_ups(design: PlantDesign) -> dict[str, tuple[str, ...]]:
-    """Data Hall → the UPS modules feeding its IT equipment, over the authored power path."""
-    modules: dict[str, tuple[str, ...]] = {}
-    for node in it_equipment(design):
-        hall = design.asset(node).room
-        found = [
-            n
-            for n in design.upstream(node, ConnectionKind.POWER, transitive=True)
-            if n in design.assets and design.asset(n).type_id == "UPS"
-        ]
-        modules[hall] = tuple(dict.fromkeys([*modules.get(hall, ()), *found]))
-    return modules
+def services(design: PlantDesign) -> dict[str, str]:
+    """Placed building-service loads with a fixed stand-in draw → their type."""
+    return {a.path: a.type_id for a in design.assets.values() if a.type_id in SERVICE_KW and a.room}
 
 
 @functools.cache
-def control_ups(design: PlantDesign) -> tuple[str, ...]:
-    feeding_halls = {u for m in hall_ups(design).values() for u in m}
-    return tuple(u for u in assets_of(design, "UPS") if u not in feeding_halls)
+def stand_in_meters(design: PlantDesign) -> tuple[str, ...]:
+    """Meters with nothing authored below them, whose draw beyond is a stand-in."""
+    return tuple(f.meter for f in network(design).feeds if f.stand_in)
 
 
 @functools.cache
-def incomers(design: PlantDesign) -> tuple[str, ...]:
-    """The utility incomer meters, each metering one transformer: where the site's power
-    enters (a metered power source with nothing upstream of it but the grid)."""
+def site_loads(design: PlantDesign) -> tuple[str, ...]:
+    """The consumers whose draw SiteLoadDomain works out: all but the IT equipment and what
+    the electrical network owns (UPS, transformers, the diesel tanks' fuel pumps)."""
+    net = network(design)
+    owned = {*net.ups, *net.incomers, *net.tanks}
     return tuple(
-        a.path
-        for a in design.assets.values()
-        if a.room
-        and a.system == "Electrical"
-        and a.type_id == "GPQM144"
-        and not design.upstream(a.path, ConnectionKind.POWER)
-        and design.downstream(a.path, ConnectionKind.POWER)
+        n for n, (cls, _) in consumers(design).items() if cls is not LoadClass.IT and n not in owned
     )
 
 
@@ -367,12 +413,13 @@ def consumers(design: PlantDesign) -> dict[str, tuple[LoadClass, str]]:
     """Every node that draws power → its load class and floor."""
     found: dict[str, tuple[LoadClass, str]] = {}
     losses = {u for m in hall_ups(design).values() for u in m} | set(incomers(design))
+    others = {*control_ups(design), *stand_in_meters(design)}
     for a in design.assets.values():
         if a.room is None:
             continue
         if a.path in losses:
             cls = LoadClass.LOSSES
-        elif a.path in control_ups(design):
+        elif a.path in others:
             cls = LoadClass.OTHER
         elif a.type_id in _CLASS_OF_TYPE:
             cls = _CLASS_OF_TYPE[a.type_id]
@@ -389,19 +436,30 @@ def energy_key(floor: str, cls: LoadClass) -> str:
     return f"energy_kwh.{floor}.{cls}"
 
 
+PLANT_VARIABLES = ("chw_load_kw", "chw_plant_kw", "cooling_load_kw", "makeup_lph")
+"""Site variables SiteLoadDomain owns: the stand-in plant's loads."""
+
+
+@functools.cache
+def _classes(design: PlantDesign) -> tuple[tuple[str, LoadClass], ...]:
+    return tuple((node, cls) for node, (cls, _) in consumers(design).items())
+
+
+@functools.cache
+def _energy_keys(design: PlantDesign) -> tuple[tuple[str, str], ...]:
+    """(consumer, site variable its energy adds to), for every non-IT consumer."""
+    return tuple(
+        (node, energy_key(floor, cls))
+        for node, (cls, floor) in consumers(design).items()
+        if cls is not LoadClass.IT
+    )
+
+
 @functools.cache
 def site_variables(design: PlantDesign) -> tuple[str, ...]:
+    """Site variables SitePowerDomain owns."""
     names = [f"{cls}_kw" for cls in LoadClass]
-    names += [
-        "facility_kw",
-        "cooling_elec_kw",
-        "chw_load_kw",
-        "chw_plant_kw",
-        "cooling_load_kw",
-        "makeup_lph",
-        "transformer_loss_kw",
-        "ups_capacity_kw",
-    ]
+    names += ["facility_kw", "cooling_elec_kw", "transformer_loss_kw", "ups_capacity_kw"]
     names += sorted(
         {
             energy_key(floor, cls)

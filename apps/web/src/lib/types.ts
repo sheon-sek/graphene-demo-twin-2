@@ -113,6 +113,8 @@ export interface FaultSpec {
   id: string;
   name: string;
   assetType: string;
+  /** The only assets of that type it applies to (a utility loss needs an incomer); null for all. */
+  targets?: string[] | null;
   category: FaultCategory;
   mechanism: string;
   variable: string;

@@ -1,5 +1,5 @@
 {
- "version": "0.2",
+ "version": "0.3",
  "date": "2026-09-23",
  "floors": [
   "Ground",
@@ -9037,6 +9037,894 @@
    "label": ""
   },
   {
+   "kind": "power",
+   "a": "Meter/Meter1",
+   "b": "Cooling Towers Plant/R_P1_CT1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter1",
+   "b": "Cooling Towers Plant/R_P1_CT2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter1",
+   "b": "Cooling Towers Plant/R_P1_CT3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter1",
+   "b": "Cooling Towers Plant/R_P1_CT4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter1",
+   "b": "Cooling Towers Plant/R_P1_CT5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter2",
+   "b": "Cooling Towers Plant/R_P1_CT6",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter2",
+   "b": "Cooling Towers Plant/R_P1_CT7",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter2",
+   "b": "Cooling Towers Plant/R_P1_CT8",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter2",
+   "b": "Cooling Towers Plant/R_P1_CT9",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter2",
+   "b": "Cooling Towers Plant/R_P1_CT10",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter3",
+   "b": "Cooling Towers Plant/R_P2_CT1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter3",
+   "b": "Cooling Towers Plant/R_P2_CT2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter3",
+   "b": "Cooling Towers Plant/R_P2_CT3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter3",
+   "b": "Cooling Towers Plant/R_P2_CT4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter3",
+   "b": "Cooling Towers Plant/R_P2_CT5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter4",
+   "b": "Cooling Towers Plant/R_P2_CT6",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter4",
+   "b": "Cooling Towers Plant/R_P2_CT7",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter4",
+   "b": "Cooling Towers Plant/R_P2_CT8",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter4",
+   "b": "Cooling Towers Plant/R_P2_CT9",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter4",
+   "b": "Cooling Towers Plant/R_P2_CT10",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter5",
+   "b": "Chiller/R_CP1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter5",
+   "b": "Chiller/R_CP2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter5",
+   "b": "Chiller/R_CP3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter5",
+   "b": "Chiller/R_CP4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter6",
+   "b": "Chiller/R_CP5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter6",
+   "b": "Chiller/R_CP6",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter6",
+   "b": "Chiller/R_CP7",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter6",
+   "b": "Chiller/R_CP8",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter7",
+   "b": "Chiller/R_CP9",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter8",
+   "b": "Cooling Towers Plant/R_P1_P1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter8",
+   "b": "Cooling Towers Plant/R_P1_P2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter8",
+   "b": "Cooling Towers Plant/R_P1_P3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter8",
+   "b": "Cooling Towers Plant/R_P1_P4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter8",
+   "b": "Cooling Towers Plant/R_P1_P5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter8",
+   "b": "Cooling Towers Plant/R_P1_P6",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter8",
+   "b": "Cooling Towers Plant/R_P1_P7",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter8",
+   "b": "Cooling Towers Plant/R_P1_P8",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter8",
+   "b": "Cooling Towers Plant/R_P1_P9",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter8",
+   "b": "Cooling Towers Plant/R_P1_P10",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter9",
+   "b": "Cooling Towers Plant/R_P2_P1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter9",
+   "b": "Cooling Towers Plant/R_P2_P2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter9",
+   "b": "Cooling Towers Plant/R_P2_P3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter9",
+   "b": "Cooling Towers Plant/R_P2_P4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter9",
+   "b": "Cooling Towers Plant/R_P2_P5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter9",
+   "b": "Cooling Towers Plant/R_P2_P6",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter9",
+   "b": "Cooling Towers Plant/R_P2_P7",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter9",
+   "b": "Cooling Towers Plant/R_P2_P8",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter9",
+   "b": "Cooling Towers Plant/R_P2_P9",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter9",
+   "b": "Cooling Towers Plant/R_P2_P10",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "CRAC/R_CRAC1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "CRAC/R_CRAC2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "CRAC/R_CRAC3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "CRAC/R_CRAC4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "CRAC/R_CRAC5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "FWU/R_FWU1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "FWU/R_FWU2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "FWU/R_FWU3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "FWU/R_FWU4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "FWU/R_FWU5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "PAHU/R_PAHU1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "PAHU/R_PAHU2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "PAHU/R_PAHU3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "PAHU/R_PAHU4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "PAHU/R_PAHU5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "~CCU-005",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "~CCU-006",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "~CCU-007",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter10",
+   "b": "~CCU-008",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "CRAC/L1_CRAC1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "CRAC/L1_CRAC2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "CRAC/L1_CRAC3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "CRAC/L1_CRAC4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "CRAC/L1_CRAC5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "FCU/L1_FCU1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "FCU/L1_FCU2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "FCU/L1_FCU3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "FCU/L1_FCU4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "FCU/L1_FCU5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "PAHU/L1_PAHU1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "PAHU/L1_PAHU2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "PAHU/L1_PAHU3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "PAHU/L1_PAHU4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "PAHU/L1_PAHU5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "~CCU-001",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "~CCU-002",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "~CCU-003",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter11",
+   "b": "~CCU-004",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "CRAC/G_CRAC1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "CRAC/G_CRAC2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "CRAC/G_CRAC3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "CRAC/G_CRAC4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "CRAC/G_CRAC5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "FWU/G_FWU1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "FWU/G_FWU2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "FWU/G_FWU3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "FWU/G_FWU4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "FWU/G_FWU5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "PAHU/G_PAHU1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "PAHU/G_PAHU2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "PAHU/G_PAHU3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "PAHU/G_PAHU4",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter12",
+   "b": "PAHU/G_PAHU5",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter13",
+   "b": "TIW/CDU-01",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter13",
+   "b": "TIW/CDU-02",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter13",
+   "b": "TIW/CDU-03",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter15",
+   "b": "Diesel/Tank 1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter15",
+   "b": "Diesel/Tank 2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter15",
+   "b": "Diesel/Tank 3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter17",
+   "b": "L1-SUP",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter17",
+   "b": "L1-COM",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter17",
+   "b": "L1-CORE",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter17",
+   "b": "L1-COR",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter18",
+   "b": "Cold Water and Sanitary System/G_TP1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter18",
+   "b": "Cold Water and Sanitary System/G_TP2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter18",
+   "b": "Cold Water and Sanitary System/G_TP3",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter18",
+   "b": "Cold Water and Sanitary System/R_BP1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter18",
+   "b": "Cold Water and Sanitary System/R_BP2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter18",
+   "b": "AC Makeup Tank/G_P1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter18",
+   "b": "AC Makeup Tank/G_P2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter19",
+   "b": "G-GEN",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter19",
+   "b": "G-DSL",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter19",
+   "b": "G-NOC",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter19",
+   "b": "R-CT1",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter19",
+   "b": "R-CT2",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Meter19",
+   "b": "R-AIR",
+   "label": ""
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB A_6",
+   "b": "G-HV",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB A_6",
+   "b": "G-UPSA",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB A_6",
+   "b": "G-UPSB",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB A_6",
+   "b": "G-BAT",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB A_6",
+   "b": "G-WTR",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB A_6",
+   "b": "G-CORE",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB A_6",
+   "b": "G-AIR",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 1_DB_22",
+   "b": "DH01",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 1_DB_22",
+   "b": "DH02",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 1_DB_22",
+   "b": "DH03",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 1_DB_22",
+   "b": "DH04",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "DH05",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "DH06",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "DH07",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "DH08",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "L2-SUP",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "L2-COM",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "L2-CORE",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "L2-COR",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "R-CHP",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "R-BT",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "R-WT",
+   "label": "lighting & small power"
+  },
+  {
+   "kind": "power",
+   "a": "Meter/Level 2_MSB B_14",
+   "b": "R-CORE",
+   "label": "lighting & small power"
+  },
+  {
    "kind": "water",
    "a": "Cold Water and Sanitary System/G_V1",
    "b": "Cold Water and Sanitary System/G_V2",
@@ -10163,12 +11051,18 @@
    "area": "Site",
    "title": "Service shafts",
    "text": "Rev 0.2. Five risers beside the lift core, Ground to Roof: electrical (power), chilled & condenser water, supply-air duct, cold water, control network. Every connection that changes floor runs up its discipline's shaft. Diesel stays on the Ground floor and needs none."
+  },
+  {
+   "id": "A16",
+   "area": "Electrical",
+   "title": "Load side of the power graph",
+   "text": "Rev 0.3. Every consumer hangs off exactly one board or sub-meter, so each meter reads what its authored loads draw. Meter1–4 feed the five cells of Tower Groups CT-001–004, Meter5–7 the chiller pumps, Meter8–9 the makeup pumps of tower plants P1 and P2, Meter10–12 the roof, Level 1 and ground air units (CCU-005–008 on Meter10, CCU-001–004 on Meter11), Meter13 the CDUs, Meter15 the diesel tanks' fuel pumps, Meter18 the transfer, booster and AC makeup pumps. Lighting: MSB A_6 lights the Ground rooms, DB_22 DH01–04, Meter17 the other Level 1 rooms, MSB B_14 Level 2 and the roof plant rooms, and Meter19 the outdoor areas and security. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads; their draw is a stand-in on the meter."
   }
  ],
  "counts": {
   "exported": 639,
   "unexported": 27,
-  "edges": 406,
+  "edges": 554,
   "shafts": 5
  }
 }

@@ -37,6 +37,8 @@ const catalog: FaultSpec[] = [
   spec('crac.compressor_trip', 'Compressor trip', 'CRAC', 'equipment'),
   spec('crac.setpoint_drift', 'Setpoint drift', 'CRAC', 'control'),
   spec('th.drift', 'Sensor drift', 'Temperature and Humidity', 'sensor'),
+  { ...spec('crac.here', 'Here only', 'CRAC', 'external'), targets: [CRAC3] },
+  { ...spec('crac.elsewhere', 'Elsewhere only', 'CRAC', 'external'), targets: ['CRAC/L1_CRAC1'] },
 ];
 const world = buildWorld(design, assetPaths, points, catalog);
 
@@ -151,6 +153,12 @@ describe('inspector, Faults tab', () => {
     expect(screen.getByRole('radio', { name: /Compressor trip/ })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /Setpoint drift/ })).toBeTruthy();
     expect(screen.queryByRole('radio', { name: /Sensor drift/ })).toBeNull();
+  });
+
+  it('offers a fault limited to some assets of the type only on those', () => {
+    open();
+    expect(screen.getByRole('radio', { name: /Here only/ })).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: /Elsewhere only/ })).toBeNull();
   });
 
   it('previews the fault on the selected asset and shows the propagation', async () => {

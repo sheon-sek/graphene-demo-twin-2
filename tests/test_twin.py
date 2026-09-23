@@ -364,6 +364,9 @@ def test_clearing_all_faults_returns_the_live_world_to_the_base_world(
             continue  # history remembers what the faults cost
         if isinstance(value, float):
             assert faulted.projection.values[path] == pytest.approx(value, rel=5e-3, abs=0.02)
+        elif isinstance(value, int) and not isinstance(value, bool):
+            # a rounded kW figure may land either side of a rounding boundary
+            assert faulted.projection.values[path] == pytest.approx(value, rel=5e-3, abs=1)
         else:
             assert faulted.projection.values[path] == value, path
     assert faulted.projection.degraded == clean.projection.degraded

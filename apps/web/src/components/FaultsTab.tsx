@@ -15,7 +15,9 @@ const DIFFS_SHOWN = 40;
  */
 export function FaultsTab({ world, live, node }: { world: World; live: LiveStore; node: string }) {
   const typeId = world.nodes.get(node)?.typeId;
-  const specs = world.catalog.filter((s) => s.assetType === typeId);
+  const specs = world.catalog.filter(
+    (s) => s.assetType === typeId && (!s.targets || s.targets.includes(node)),
+  );
   const [chosen, setChosen] = useState<FaultSpec | null>(null);
   const [severity, setSeverity] = useState(1);
   const [ramp, setRamp] = useState<number | null>(null);

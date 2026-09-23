@@ -19,6 +19,7 @@ from graphene_demo_twin.faults import (
 )
 from graphene_demo_twin.projection import Projector, Quality
 from graphene_demo_twin.sim import Event, EventError, Simulation, WorldState
+from graphene_demo_twin.sim.electrical import network
 from graphene_demo_twin.sim.site import SITE, load_class
 from graphene_demo_twin.world import SETTLING_S, default_domains, default_projector
 
@@ -36,6 +37,15 @@ TARGET = {
     "Network Device": SWITCH,
     "Weather Station": "~WX-01",
     "IT Load": "~IT-DH03",
+    "GPQM144": "Meter/SPPA Incomer 1",  # a utility loss needs an incomer
+    "GEM630": "Meter/Level 2_MSB A_1",  # main bus A and its ATS
+    "GEM230": "Meter/Level 2_MSB A_6",  # lighting A
+    "GPM96": "Meter/Level 2_MSB A_4",  # chiller CH-001's feeder
+    "GPQM96": "Meter/Level 2_MSB A_3",  # A-side UPS feeders for DH05-08
+    "BCPM": "BCPM/3L1",
+    "UPS": "UPS/UPS 1",
+    "Genset": "Genset/Genset 1",
+    "Diesel": "Diesel/Tank 1",
 }
 
 
@@ -308,6 +318,9 @@ def test_clearing_every_fault_returns_to_the_base_world_within_the_settling_time
             continue
         if isinstance(value, float):
             assert after.values[path] == pytest.approx(value, rel=2e-3, abs=0.02), path
+        elif isinstance(value, int) and not isinstance(value, bool):
+            # a rounded kW figure may land either side of a rounding boundary
+            assert after.values[path] == pytest.approx(value, rel=2e-3, abs=1), path
         else:
             assert after.values[path] == value, path
 
@@ -317,9 +330,9 @@ def _differs(a: WorldState, b: WorldState) -> bool:
 
 
 def _history(name: str) -> bool:
-    """Energy integrals and running averages remember what the fault cost: the world
-    recovers, its history does not."""
-    return name.startswith(("energy_kwh", "avg."))
+    """Energy integrals, running averages, fuel burnt and engine hours remember what the fault
+    cost: the world recovers, its history does not."""
+    return name.startswith(("energy_kwh", "avg.")) or name in ("fuel_l", "fuel_pumped_l", "run_s")
 
 
 def _history_point(asset_model, path: str) -> bool:
@@ -407,11 +420,16 @@ def test_a_preview_reports_the_propagation_diffs_and_alarms(plant_design, asset_
         if a.type_id in ("Temperature and Humidity", "Environment Monitoring")
     }
     assert sensors <= set(nodes)
-    # Beyond the hall and its sensors, only the power the site draws to cool it changes.
+    # Beyond the hall and its sensors, only the power the site draws to cool it changes, and
+    # the electrical network that supplies it.
     assert SITE in nodes
+    supply = {*network(plant_design).meters, *network(plant_design).incomers}
+    supply |= {*network(plant_design).ups, "G-UPSA", "G-UPSB", "L1-SUP"}  # UPS losses
+    assert supply & set(nodes)
     for node in set(nodes[2:]) - sensors - {SITE}:
-        assert load_class(plant_design, node) is not None, node
-        assert plant_design.asset(node).room not in {"DH01", "DH02", "DH04"}, node
+        assert load_class(plant_design, node) is not None or node in supply, node
+        if node in plant_design.assets:
+            assert plant_design.asset(node).room not in {"DH01", "DH02", "DH04"}, node
     assert all(a.first_at >= START + 30 for a in preview.affected)
     times = [a.first_at for a in preview.affected]
     assert times == sorted(times)

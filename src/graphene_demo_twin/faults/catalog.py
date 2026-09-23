@@ -1,13 +1,14 @@
 """The fault catalog: named failure mechanisms bound to an asset type, and their parameters."""
 
 import math
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
 from graphene_demo_twin.plant_design import PlantDesign
 from graphene_demo_twin.sim import Event, EventError
+from graphene_demo_twin.sim.electrical import METER_TYPES, incomers
 
 INJECT = "fault.inject"
 CLEAR = "fault.clear"
@@ -83,10 +84,23 @@ class FaultSpec:
     unit: str
     description: str
     default_severity: float = 1.0
+    where: Callable[[PlantDesign], Iterable[str]] | None = None
+    """The only assets of its type the fault can act on (a utility loss needs an incomer);
+    None for every placed asset of the type."""
 
     @property
     def mechanism(self) -> Mechanism:
         return MECHANISM_OF[self.category]
+
+    def targets(self, design: PlantDesign) -> tuple[str, ...]:
+        """The placed assets this fault can be injected on."""
+        if self.where is not None:
+            return tuple(self.where(design))
+        return tuple(
+            a.path
+            for a in design.assets.values()
+            if a.type_id == self.asset_type and a.room and not a.support
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,6 +217,8 @@ class FaultCatalog:
                 f"{spec.id} applies to {spec.asset_type} assets, "
                 f"and {event.target} is a {placed.type_id}"
             )
+        if spec.where is not None and event.target not in spec.targets(design):
+            return f"{spec.id} applies only to {', '.join(spec.targets(design))}"
         return None
 
 
@@ -340,6 +356,103 @@ STANDARD_CATALOG = FaultCatalog(
             "fraction of design load",
             "Tenant workload surges in one Data Hall, up to its design load. All of it becomes "
             "heat in that hall, and the UPS and transformers carry more.",
+        ),
+        FaultSpec(
+            "utility.incomer_loss",
+            "Utility incomer loss",
+            "GPQM144",
+            FaultCategory.EXTERNAL,
+            "constraint.utility_loss",
+            1.0,
+            "loss",
+            "The grid supply on this incomer fails (a voltage sag below half severity). The "
+            "other transformer on the side carries its MSB; with both gone the ATS starts the "
+            "gensets and transfers, and the UPS batteries bridge the gap.",
+            where=incomers,
+        ),
+        FaultSpec(
+            "genset.fail_to_start",
+            "Fail to start",
+            "Genset",
+            FaultCategory.EQUIPMENT,
+            "constraint.fail_to_start",
+            1.0,
+            "fail",
+            "The engine cranks but does not fire, and shuts down on over-crank; the other "
+            "gensets on its bus (N+1) carry the load.",
+        ),
+        FaultSpec(
+            "ats.fail_to_transfer",
+            "ATS fails to transfer",
+            "GEM630",
+            FaultCategory.EQUIPMENT,
+            "constraint.ats_stuck",
+            1.0,
+            "stuck",
+            "The main bus's ATS mechanism jams: it stays where it is, so on a utility loss "
+            "the bus stays dead while its gensets run, and the UPS batteries run down.",
+        ),
+        FaultSpec(
+            "ups.rectifier_failure",
+            "Rectifier failure",
+            "UPS",
+            FaultCategory.EQUIPMENT,
+            "constraint.rectifier_failure",
+            1.0,
+            "fail",
+            "The rectifier fails: the module runs on its battery until it is exhausted, then "
+            "drops out and the other two modules in the hall take its share.",
+        ),
+        FaultSpec(
+            "ups.battery_degradation",
+            "Battery degradation",
+            "UPS",
+            FaultCategory.EQUIPMENT,
+            "constraint.battery_fade",
+            0.8,
+            "fraction of capacity lost",
+            "The battery strings age and lose capacity: nothing shows until the module is on "
+            "battery, when its charge falls faster and its autonomy is shorter.",
+            default_severity=0.5,
+        ),
+        *(
+            FaultSpec(
+                f"{type_id.lower()}.breaker_trip",
+                "Breaker trip",
+                type_id,
+                FaultCategory.EQUIPMENT,
+                "constraint.breaker_trip",
+                1.0,
+                "trip",
+                "The breaker of the circuit this meter measures trips (once the level passes "
+                "half): everything below it loses supply.",
+            )
+            for type_id in (*sorted(METER_TYPES), "BCPM")
+        ),
+        *(
+            FaultSpec(
+                f"{type_id.lower()}.comm_loss",
+                "Communication loss",
+                type_id,
+                FaultCategory.COMMUNICATION,
+                "quality.comm_loss",
+                1.0,
+                "fraction of polls lost",
+                "The meter stops answering polls: its points go uncertain, then bad at half "
+                "severity. The circuit itself carries on.",
+            )
+            for type_id in (*sorted(METER_TYPES), "BCPM")
+        ),
+        FaultSpec(
+            "diesel.fuel_pump_failure",
+            "Fuel pump failure",
+            "Diesel",
+            FaultCategory.EQUIPMENT,
+            "constraint.pump_failure",
+            1.0,
+            "fail",
+            "The tank's transfer pump trips: while its gensets run, their day tanks drain and "
+            "are not refilled, until the engines shut down on low fuel.",
         ),
     ]
 )

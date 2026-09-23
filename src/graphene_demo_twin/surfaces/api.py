@@ -24,7 +24,7 @@ from graphene_demo_twin.faults import (
     FaultPreview,
     FaultSpec,
 )
-from graphene_demo_twin.plant_design import ConnectionKind
+from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
 from graphene_demo_twin.projection import PointSource, Projection
 from graphene_demo_twin.sim import CommandSpec, Event, EventError, WorldState
 from graphene_demo_twin.twin import ForkSession, Frame, Twin
@@ -291,7 +291,9 @@ def create_app(twin: Twin, console_dir: Path | None = CONSOLE_DIR) -> FastAPI:
 
     @app.get("/api/faults/catalog")
     def fault_catalog(type: str | None = None) -> list[dict[str, Any]]:
-        return [spec_json(s) for s in twin.catalog if type is None or s.asset_type == type]
+        return [
+            spec_json(s, twin.design) for s in twin.catalog if type is None or s.asset_type == type
+        ]
 
     @app.get("/api/faults")
     def active_faults() -> dict[str, Any]:
@@ -481,11 +483,12 @@ def state_json(state: WorldState) -> dict[str, Any]:
     }
 
 
-def spec_json(spec: FaultSpec) -> dict[str, Any]:
+def spec_json(spec: FaultSpec, design: PlantDesign) -> dict[str, Any]:
     return {
         "id": spec.id,
         "name": spec.name,
         "assetType": spec.asset_type,
+        "targets": None if spec.where is None else list(spec.targets(design)),
         "category": spec.category.value,
         "mechanism": spec.mechanism.value,
         "variable": spec.variable,

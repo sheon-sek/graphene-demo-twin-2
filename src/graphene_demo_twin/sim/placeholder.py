@@ -12,11 +12,16 @@ from collections.abc import Iterable
 
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
 from graphene_demo_twin.sim.commands import CommandSpec, command_problem
+from graphene_demo_twin.sim.electrical import powered
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
 from graphene_demo_twin.sim.it_load import it_equipment, it_heat_kw, it_utilisation
 from graphene_demo_twin.sim.state import AssetState, WorldState
-from graphene_demo_twin.sim.weather import outdoor_air, relative_humidity, site_air
+from graphene_demo_twin.sim.weather import (
+    outdoor_air,
+    saturation_kpa,
+    site_air,
+)
 
 SUPPLY_C = 18.0
 """Supply air temperature every air supplier delivers at steady state."""
@@ -185,9 +190,9 @@ class PlaceholderCracDomain:
             target = s["setpoint_c"] + offset
             demand = min(max((return_c - target) / self.COIL_DT_K, 0.0), 1.0)
 
-            # Equipment
+            # Equipment: it stops without supply and restarts when supply returns.
             tripped = trip >= 0.5 or fan_loss >= 0.9
-            running = run_cmd and not tripped
+            running = run_cmd and not tripped and powered(state, ctx.design, crac)
             compressor = min(demand, 1.0 - derate) if running else 0.0
             leaving = return_c - compressor * self.COIL_DT_K
             s["run_cmd"] = run_cmd
@@ -238,11 +243,14 @@ class PlaceholderSensorDomain:
             if s.get("observation.stuck", 0.0) >= 0.5:
                 continue  # frozen on its last reading
             s["temp_c"] = state.assets[hall]["temp_c"] + s.get("observation.bias_c", 0.0)
+        vapour: dict[str, float] = {}  # each hall's vapour pressure, shared by its sensors
         for sensor, (hall, offset) in cold_aisle_sensors(ctx.design).items():
             h = state.assets[hall]
             s = state.assets[sensor]
             s["temp_c"] = h["cold_aisle_c"] + offset
-            s["rh_pct"] = relative_humidity(s["temp_c"], h["dew_point_c"])
+            if hall not in vapour:
+                vapour[hall] = saturation_kpa(h["dew_point_c"])
+            s["rh_pct"] = 100.0 * vapour[hall] / saturation_kpa(s["temp_c"])
 
 
 class PlaceholderNetworkDomain:

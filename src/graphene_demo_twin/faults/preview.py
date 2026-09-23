@@ -101,6 +101,7 @@ def preview_fault(
         for p in asset_model.points.values()
         if p.source_class is SourceClass.FAULT_ALARM and p.data_type == "Boolean"
     ]
+    alarm_set = frozenset(alarms)
     pending = {*base.state.assets, target}
     first: dict[str, int] = {}
     alarm_first: dict[str, int] = {}
@@ -112,7 +113,8 @@ def preview_fault(
             first[node] = faulted.time
             pending.discard(node)
         if i % ALARM_SAMPLE_S == 0 or i == seconds:
-            before, after = projector.project(base.state), projector.project(faulted.state)
+            before = projector.project(base.state, only=alarm_set)
+            after = projector.project(faulted.state, only=alarm_set)
             for path in alarms:
                 if path not in alarm_first and before.values[path] != after.values[path]:
                     alarm_first[path] = faulted.time

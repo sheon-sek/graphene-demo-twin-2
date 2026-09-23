@@ -55,7 +55,7 @@ def test_loads_floors_rooms_assets_and_connections(plant_design):
     assert len(plant_design.rooms) == 33
     assert len(plant_design.assets) == 639 + 27
     assert len(plant_design.unexported) == 27
-    assert len(plant_design.connections) == 406
+    assert len(plant_design.connections) == 554
 
 
 def test_room_carries_floor_plan_rectangle_and_fire_zone(plant_design):
@@ -266,7 +266,7 @@ def test_room_and_floor_of_an_asset(plant_design):
 
 
 def test_committed_design_is_valid(plant_design):
-    assert plant_design.version == "0.2"
+    assert plant_design.version == "0.3"
 
 
 def test_fails_when_an_exported_asset_is_unplaced(raw, asset_model):

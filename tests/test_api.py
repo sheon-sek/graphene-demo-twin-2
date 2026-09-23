@@ -85,7 +85,7 @@ def test_points_carry_value_quality_and_sim_timestamp(client, twin, clock):
     assert hot["quality"] == "good"
     assert hot["timestamp"] == "2026-09-21T14:14:20Z"
     assert hot["source"] == "physics"
-    assert by_path[COLON_PATH]["source"] == "fallback"
+    assert by_path[COLON_PATH]["source"] == "physics"  # the gensets have physics since #19
 
 
 def test_points_filter_by_prefix_and_asset(client, asset_model):
@@ -102,7 +102,7 @@ def test_point_detail_by_url_encoded_path(client):
     assert body["path"] == COLON_PATH
     assert body["dataType"] == "Float4"
     assert body["asset"] == "Genset/Genset 2"
-    assert body["debt"] is True
+    assert body["debt"] is False  # the gensets have physics since #19
     assert client.get("/api/points/No/Such/Point").status_code == 404
 
 

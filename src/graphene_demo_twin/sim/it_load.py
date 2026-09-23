@@ -3,13 +3,15 @@
 Each hall's IT equipment is an Unexported Asset (`~IT-DHnn`) at the end of its three branch
 circuits. It follows a profile from the Plant Design basis: a share of the hall's design load
 between its operating bounds, with a diurnal and a weekly shape and a slow per-hall wander.
-An external fault can surge it towards the hall's design load.
+An external fault can surge it towards the hall's design load. With every branch dead the
+equipment goes down and draws nothing.
 """
 
 import functools
 import math
 
 from graphene_demo_twin.plant_design import ITBasis, PlantDesign
+from graphene_demo_twin.sim.electrical import powered
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
 from graphene_demo_twin.sim.noise import Noise
@@ -81,7 +83,8 @@ class ITLoadDomain:
             s = state.assets[node]
             u = it_utilisation(ctx.noise, basis, ctx.time) + s.get("constraint.load_surge", 0.0)
             s["utilisation"] = min(u, 1.0)
-            s["power_kw"] = basis.design_kw * s["utilisation"]
+            up = powered(state, ctx.design, node)
+            s["power_kw"] = basis.design_kw * s["utilisation"] if up else 0.0
             s["energy_kwh"] += s["power_kw"] * ctx.dt / 3600.0
 
 

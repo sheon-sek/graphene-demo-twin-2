@@ -15,6 +15,7 @@ from graphene_demo_twin.projection import (
     fallback_value,
 )
 from graphene_demo_twin.sim import Event, Simulation, WorldState
+from graphene_demo_twin.sim.electrical import network
 from graphene_demo_twin.world import default_domains, default_projector
 
 START = 1_790_000_000
@@ -138,7 +139,7 @@ def test_placeholder_points_follow_the_hall_state(asset_model, plant_design, pro
     assert sum(p.values[b] for b in bcpm) == pytest.approx(it["~IT-DH03"]["power_kw"], rel=1e-6)
 
 
-def test_a_fault_moves_only_the_points_downstream_of_it(plant_design, projector):
+def test_a_fault_moves_only_the_points_downstream_of_it(asset_model, plant_design, projector):
     sim = _sim(plant_design)
     sim.advance(10)
     fork = sim.fork()
@@ -171,6 +172,12 @@ def test_a_fault_moves_only_the_points_downstream_of_it(plant_design, projector)
         if p.startswith("Environment Monitoring/Level 1/DH03/")
     }
     downstream |= {p for p in projector.coverage.entries if p.startswith(("Dashboard/", "Other/"))}
+    # So does the electrical network that supplies that power: its meters, UPS and
+    # transformers, and the bus voltages that follow what they carry.
+    net = network(plant_design)
+    downstream |= {
+        pt.path for n in (*net.meters, *net.incomers, *net.ups) for pt in asset_model.points_of(n)
+    }
     assert HOT_AISLE_DH03 in changed and f"{CRAC3}/System Failure_Trip" in changed
     assert changed <= downstream
     bound = {*projector.coverage.paths(PointSource.PHYSICS)}
@@ -215,13 +222,11 @@ def test_branch_meters_split_the_load_of_the_it_equipment_they_supply(asset_mode
         "BCPM/3L3",
     )
 
-    projector = default_projector(asset_model, design)
-    state = _sim(plant_design).state.copy()
-    state.assets["~IT-DH01"]["power_kw"] = 300.0
-    state.assets["~IT-DH03"]["power_kw"] = 900.0
-    p = projector.project(state)
+    sim = Simulation(design, default_domains(), 7, START)
+    sim.advance(5)
+    p = default_projector(asset_model, design).project(sim.state)
     for hall, meters in {"DH03": ("3L1", "3L2", "3L3"), "DH01": ("1L1", "1L2", "1L3")}.items():
-        load = state.assets[f"~IT-{hall}"]["power_kw"]
+        load = sim.state.assets[f"~IT-{hall}"]["power_kw"]
         for meter in meters:
             assert p.values[f"BCPM/{meter}/Active Power"] == pytest.approx(load / 3, rel=1e-6)
 
