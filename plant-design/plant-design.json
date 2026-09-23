@@ -4081,7 +4081,7 @@
    "room": "G-GEN",
    "x": 105,
    "y": 8,
-   "role": "3,000 kVA genset on genset bus A (N+1)",
+   "role": "3,750 kVA genset on genset bus A (N+1)",
    "sys": "Electrical"
   },
   {
@@ -4091,7 +4091,7 @@
    "room": "G-GEN",
    "x": 115,
    "y": 8,
-   "role": "3,000 kVA genset on genset bus A (N+1)",
+   "role": "3,750 kVA genset on genset bus A (N+1)",
    "sys": "Electrical"
   },
   {
@@ -4101,7 +4101,7 @@
    "room": "G-GEN",
    "x": 125,
    "y": 8,
-   "role": "3,000 kVA genset on genset bus A (N+1)",
+   "role": "3,750 kVA genset on genset bus A (N+1)",
    "sys": "Electrical"
   },
   {
@@ -4111,7 +4111,7 @@
    "room": "G-GEN",
    "x": 105,
    "y": 28,
-   "role": "3,000 kVA genset on genset bus B (N+1)",
+   "role": "3,750 kVA genset on genset bus B (N+1)",
    "sys": "Electrical"
   },
   {
@@ -4121,7 +4121,7 @@
    "room": "G-GEN",
    "x": 115,
    "y": 28,
-   "role": "3,000 kVA genset on genset bus B (N+1)",
+   "role": "3,750 kVA genset on genset bus B (N+1)",
    "sys": "Electrical"
   },
   {
@@ -4131,7 +4131,7 @@
    "room": "G-GEN",
    "x": 125,
    "y": 28,
-   "role": "3,000 kVA genset on genset bus B (N+1)",
+   "role": "3,750 kVA genset on genset bus B (N+1)",
    "sys": "Electrical"
   },
   {
@@ -4261,7 +4261,7 @@
    "room": "L1-SUP",
    "x": 12.0,
    "y": 55,
-   "role": "L1 DB: Fire pump & life safety",
+   "role": "L1 DB: Essential services: fire pump & life safety, lifts, fuel system, genset auxiliaries, BMS & external lighting",
    "sys": "Electrical"
   },
   {
@@ -6411,7 +6411,7 @@
    "room": "G-UPSA",
    "x": 29.8,
    "y": 4,
-   "role": "500 kVA UPS 1 of 3 for DH01 (side A)",
+   "role": "800 kVA UPS 1 of 3 for DH01 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6421,7 +6421,7 @@
    "room": "G-UPSB",
    "x": 51.0,
    "y": 4,
-   "role": "500 kVA UPS 2 of 3 for DH01 (side B)",
+   "role": "800 kVA UPS 2 of 3 for DH01 (side B)",
    "sys": "Electrical"
   },
   {
@@ -6431,7 +6431,7 @@
    "room": "G-UPSA",
    "x": 34.6,
    "y": 4,
-   "role": "500 kVA UPS 3 of 3 for DH01 (side A)",
+   "role": "800 kVA UPS 3 of 3 for DH01 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6441,7 +6441,7 @@
    "room": "G-UPSA",
    "x": 39.4,
    "y": 4,
-   "role": "500 kVA UPS 1 of 3 for DH02 (side A)",
+   "role": "800 kVA UPS 1 of 3 for DH02 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6451,7 +6451,7 @@
    "room": "G-UPSB",
    "x": 55.8,
    "y": 4,
-   "role": "500 kVA UPS 2 of 3 for DH02 (side B)",
+   "role": "800 kVA UPS 2 of 3 for DH02 (side B)",
    "sys": "Electrical"
   },
   {
@@ -6461,7 +6461,7 @@
    "room": "G-UPSB",
    "x": 60.6,
    "y": 4,
-   "role": "500 kVA UPS 3 of 3 for DH02 (side B)",
+   "role": "800 kVA UPS 3 of 3 for DH02 (side B)",
    "sys": "Electrical"
   },
   {
@@ -6471,7 +6471,7 @@
    "room": "G-UPSA",
    "x": 44.2,
    "y": 4,
-   "role": "500 kVA UPS 1 of 3 for DH03 (side A)",
+   "role": "800 kVA UPS 1 of 3 for DH03 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6481,7 +6481,7 @@
    "room": "G-UPSB",
    "x": 65.4,
    "y": 4,
-   "role": "500 kVA UPS 2 of 3 for DH03 (side B)",
+   "role": "800 kVA UPS 2 of 3 for DH03 (side B)",
    "sys": "Electrical"
   },
   {
@@ -6491,7 +6491,7 @@
    "room": "G-UPSA",
    "x": 25.0,
    "y": 10,
-   "role": "500 kVA UPS 3 of 3 for DH03 (side A)",
+   "role": "800 kVA UPS 3 of 3 for DH03 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6501,7 +6501,7 @@
    "room": "G-UPSA",
    "x": 29.8,
    "y": 10,
-   "role": "500 kVA UPS 1 of 3 for DH04 (side A)",
+   "role": "800 kVA UPS 1 of 3 for DH04 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6511,7 +6511,7 @@
    "room": "G-UPSB",
    "x": 70.2,
    "y": 4,
-   "role": "500 kVA UPS 2 of 3 for DH04 (side B)",
+   "role": "800 kVA UPS 2 of 3 for DH04 (side B)",
    "sys": "Electrical"
   },
   {
@@ -6521,7 +6521,7 @@
    "room": "G-UPSB",
    "x": 51.0,
    "y": 10,
-   "role": "500 kVA UPS 3 of 3 for DH04 (side B)",
+   "role": "800 kVA UPS 3 of 3 for DH04 (side B)",
    "sys": "Electrical"
   },
   {
@@ -6531,7 +6531,7 @@
    "room": "G-UPSA",
    "x": 34.6,
    "y": 10,
-   "role": "500 kVA UPS 1 of 3 for DH05 (side A)",
+   "role": "800 kVA UPS 1 of 3 for DH05 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6541,7 +6541,7 @@
    "room": "G-UPSB",
    "x": 55.8,
    "y": 10,
-   "role": "500 kVA UPS 2 of 3 for DH05 (side B)",
+   "role": "800 kVA UPS 2 of 3 for DH05 (side B)",
    "sys": "Electrical"
   },
   {
@@ -6551,7 +6551,7 @@
    "room": "G-UPSA",
    "x": 39.4,
    "y": 10,
-   "role": "500 kVA UPS 3 of 3 for DH05 (side A)",
+   "role": "800 kVA UPS 3 of 3 for DH05 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6561,7 +6561,7 @@
    "room": "G-UPSA",
    "x": 44.2,
    "y": 10,
-   "role": "500 kVA UPS 1 of 3 for DH06 (side A)",
+   "role": "800 kVA UPS 1 of 3 for DH06 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6571,7 +6571,7 @@
    "room": "G-UPSB",
    "x": 60.6,
    "y": 10,
-   "role": "500 kVA UPS 2 of 3 for DH06 (side B)",
+   "role": "800 kVA UPS 2 of 3 for DH06 (side B)",
    "sys": "Electrical"
   },
   {
@@ -6581,7 +6581,7 @@
    "room": "G-UPSB",
    "x": 65.4,
    "y": 10,
-   "role": "500 kVA UPS 3 of 3 for DH06 (side B)",
+   "role": "800 kVA UPS 3 of 3 for DH06 (side B)",
    "sys": "Electrical"
   },
   {
@@ -6591,7 +6591,7 @@
    "room": "G-UPSA",
    "x": 25.0,
    "y": 16,
-   "role": "500 kVA UPS 1 of 3 for DH07 (side A)",
+   "role": "800 kVA UPS 1 of 3 for DH07 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6601,7 +6601,7 @@
    "room": "G-UPSB",
    "x": 70.2,
    "y": 10,
-   "role": "500 kVA UPS 2 of 3 for DH07 (side B)",
+   "role": "800 kVA UPS 2 of 3 for DH07 (side B)",
    "sys": "Electrical"
   },
   {
@@ -6611,7 +6611,7 @@
    "room": "G-UPSA",
    "x": 29.8,
    "y": 16,
-   "role": "500 kVA UPS 3 of 3 for DH07 (side A)",
+   "role": "800 kVA UPS 3 of 3 for DH07 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6621,7 +6621,7 @@
    "room": "G-UPSA",
    "x": 34.6,
    "y": 16,
-   "role": "500 kVA UPS 1 of 3 for DH08 (side A)",
+   "role": "960 kVA UPS 1 of 3 for DH08 (side A)",
    "sys": "Electrical"
   },
   {
@@ -6631,7 +6631,7 @@
    "room": "G-UPSB",
    "x": 51.0,
    "y": 16,
-   "role": "500 kVA UPS 2 of 3 for DH08 (side B)",
+   "role": "960 kVA UPS 2 of 3 for DH08 (side B)",
    "sys": "Electrical"
   },
   {
@@ -6641,7 +6641,7 @@
    "room": "G-UPSB",
    "x": 55.8,
    "y": 16,
-   "role": "500 kVA UPS 3 of 3 for DH08 (side B)",
+   "role": "960 kVA UPS 3 of 3 for DH08 (side B)",
    "sys": "Electrical"
   },
   {
@@ -9002,7 +9002,7 @@
   },
   {
    "kind": "power",
-   "a": "Meter/Level 1_DB_22",
+   "a": "Meter/Level 1_DB_24",
    "b": "Meter/Meter14",
    "label": ""
   },
@@ -9020,7 +9020,7 @@
   },
   {
    "kind": "power",
-   "a": "Meter/Level 1_DB_22",
+   "a": "Meter/Level 1_DB_24",
    "b": "Meter/Meter17",
    "label": ""
   },
@@ -9032,7 +9032,7 @@
   },
   {
    "kind": "power",
-   "a": "Meter/Level 1_DB_22",
+   "a": "Meter/Level 1_DB_24",
    "b": "Meter/Meter19",
    "label": ""
   },
@@ -10949,7 +10949,7 @@
    ],
    [
     "Gensets",
-    "6 × 3,000 kVA, 3 per side (N+1), ATS transfer ≤ 15 s"
+    "6 × 3,750 kVA / 3,000 kW prime, 3 per side (N+1: two carry the side), ATS transfer ≤ 15 s; UPS recharge limited to their headroom"
    ],
    [
     "Diesel",
@@ -10957,7 +10957,7 @@
    ],
    [
     "Hall UPS",
-    "24 × 500 kVA, 3 per Data Hall, distributed redundant; ~8 min battery at design load"
+    "3 per Data Hall, distributed redundant: 21 × 800 kVA (DH01–07), 3 × 960 kVA (DH08); any two carry the design load at < 70 %; 8 min battery at rated load"
    ],
    [
     "Control UPS",
@@ -11064,7 +11064,7 @@
    "id": "A16",
    "area": "Electrical",
    "title": "Load side of the power graph",
-   "text": "Rev 0.3. Every consumer hangs off exactly one board or sub-meter, so each meter reads what its authored loads draw. Meter1–4 feed the five cells of Tower Groups CT-001–004, Meter5–7 the chiller pumps, Meter8–9 the makeup pumps of tower plants P1 and P2, Meter10–12 the roof, Level 1 and ground air units (CCU-005–008 on Meter10, CCU-001–004 on Meter11), Meter13 the CDUs, Meter15 the diesel tanks' fuel pumps, Meter18 the transfer, booster and AC makeup pumps. Lighting: MSB A_6 lights the Ground rooms, DB_22 DH01–04, Meter17 the other Level 1 rooms, MSB B_14 Level 2 and the roof plant rooms, and Meter19 the outdoor areas and security. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads; their draw is a stand-in on the meter."
+   "text": "Rev 0.3. Every consumer hangs off exactly one board or sub-meter, so each meter reads what its authored loads draw. Meter1–4 feed the five cells of Tower Groups CT-001–004, Meter5–7 the chiller pumps, Meter8–9 the makeup pumps of tower plants P1 and P2, Meter10–12 the roof, Level 1 and ground air units (CCU-005–008 on Meter10, CCU-001–004 on Meter11), Meter13 the CDUs, Meter15 the diesel tanks' fuel pumps, Meter18 the transfer, booster and AC makeup pumps. Lighting: MSB A_6 lights the Ground rooms, DB_22 DH01–04, Meter17 the other Level 1 rooms, MSB B_14 Level 2 and the roof plant rooms, and Meter19 the outdoor areas and security. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads; their draw is a stand-in on the meter. The three-phase sub-meters Meter14, 17 and 19 hang off the essential-services board DB_24, not the single-phase lighting board DB_22."
   }
  ],
  "counts": {

@@ -156,20 +156,8 @@ def _dashboard(design: PlantDesign) -> Iterable[Binding]:
         f"{DASHBOARD}/Plant Efficiency (Daily)",
         _ratio("avg.day.cooling_elec_kw", "avg.day.cooling_load_kw", KW_PER_RT),
     )
-    yield Binding(
-        f"{DASHBOARD}/IT Power Chain Efficiency",
-        lambda s: (
-            100.0
-            * s.assets[SITE]["it_kw"]
-            / (s.assets[SITE]["it_kw"] + s.assets[SITE]["losses_kw"])
-        ),
-    )
-    yield Binding(
-        f"{DASHBOARD}/Transformer Efficiency",
-        lambda s: (
-            100.0 * (1.0 - s.assets[SITE]["transformer_loss_kw"] / s.assets[SITE]["facility_kw"])
-        ),
-    )
+    yield Binding(f"{DASHBOARD}/IT Power Chain Efficiency", _it_chain_efficiency)
+    yield Binding(f"{DASHBOARD}/Transformer Efficiency", _transformer_efficiency)
     yield Binding(f"{DASHBOARD}/UPS Load Factor", _ratio("it_kw", "ups_capacity_kw", 100.0))
 
 
@@ -218,6 +206,22 @@ def _ratio(num: str, den: str, den_scale: float = 1.0) -> Callable[[WorldState],
         return site[num] / denominator if denominator else float("nan")
 
     return read
+
+
+def _it_chain_efficiency(s: WorldState) -> float:
+    """IT power as a share of IT power and the losses in the chain feeding it; Bad with no
+    IT Load."""
+    site = s.assets[SITE]
+    total = site["it_kw"] + site["losses_kw"]
+    return 100.0 * site["it_kw"] / total if total > 0.0 else float("nan")
+
+
+def _transformer_efficiency(s: WorldState) -> float:
+    """What the transformers deliver as a share of what the utility supplies them; Bad with
+    no utility supply."""
+    site = s.assets[SITE]
+    utility = site["utility_kw"]
+    return 100.0 * (1.0 - site["transformer_loss_kw"] / utility) if utility > 0.0 else float("nan")
 
 
 def _over(nodes: list[str], name: str, reduce: Callable) -> Callable[[WorldState], float]:

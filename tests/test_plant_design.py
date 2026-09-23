@@ -487,3 +487,36 @@ def test_fails_when_it_design_power_is_not_a_finite_positive_number(raw, asset_m
 def test_fails_when_an_it_basis_number_is_invalid(raw, asset_model, field, value):
     _it_basis(raw, "DH08")[field] = value
     assert "IT basis for DH08" in _errors(raw, asset_model)
+
+
+# ---- Electrical phases
+
+
+def _three_phase(asset_model, node: str) -> bool | None:
+    """Whether a meter measures three phases; None for anything that is not a meter."""
+    names = {p.name for p in asset_model.points_of(node)} if node in asset_model.assets else set()
+    if "V1" not in names:
+        return None
+    return "V2" in names
+
+
+def test_no_three_phase_meter_hangs_off_a_single_phase_board(plant_design, asset_model):
+    for c in plant_design.connections:
+        if c.kind is ConnectionKind.POWER and _three_phase(asset_model, c.target):
+            assert _three_phase(asset_model, c.source) is not False, (c.source, c.target)
+
+
+def test_fails_when_a_three_phase_meter_is_fed_from_a_single_phase_board(raw, asset_model):
+    feed = next(e for e in raw["edges"] if e["kind"] == "power" and e["b"] == "Meter/Meter13")
+    feed["a"] = "Meter/Level 2_MSB A_6"  # a GEM230
+    assert (
+        "power connection Meter/Level 2_MSB A_6 → Meter/Meter13 feeds a three-phase meter "
+        "from a single-phase one"
+    ) in _errors(raw, asset_model)
+
+
+def test_the_load_side_names_every_air_unit_it_powers():
+    """Rev 0.3's air-unit feeders are a reviewed list of paths, not a filter over names."""
+    source = (REPO / "plant-design" / "author.py").read_text(encoding="utf-8")
+    load_side = source[source.index("LOADS = {") : source.index("for n, loads in LOADS.items()")]
+    assert "startswith" not in load_side and "['type']" not in load_side

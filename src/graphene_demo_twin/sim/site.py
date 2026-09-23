@@ -2,9 +2,11 @@
 Dashboard reads.
 
 Every consumer node carries `power_kw`, the real power it draws (or, for UPS modules and
-transformers, dissipates) this step, and belongs to one LoadClass on one floor. Facility
-power is the sum over all of them, which the electrical network's sources supply exactly, and
-IT power the sum over the IT equipment, so PUE and every energy total come from the same step.
+transformers, dissipates) this step, never negative, and belongs to one LoadClass on one floor.
+Facility power is the sum over all of them and IT power the sum over the IT equipment, so PUE
+and every energy total come from the same step. The electrical network's sources supply the
+facility power plus what the UPS batteries store (`storage_kw`), which is negative while they
+carry the load.
 
 Two domains share the work around the electrical network (`sim.electrical`). SiteLoadDomain
 steps before it: until the chiller plant and airside (P2), water (P3) and building services
@@ -21,11 +23,11 @@ from enum import StrEnum
 
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
 from graphene_demo_twin.sim.electrical import (
-    UPS_KW,
     control_ups,
     hall_ups,
     incomers,
     network,
+    ups_rating,
 )
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
@@ -211,8 +213,8 @@ class SiteLoadDomain:
         for hall in halls(design):
             temp = state.assets[hall]["temp_c"]
             for supplier, share in air_suppliers(design, hall):
-                if supplier not in assets_of(design, CRAC_TYPE) and fed(supplier):
-                    airflow, supply_c = supplier_air(state, supplier)
+                if supplier not in assets_of(design, CRAC_TYPE):
+                    airflow, supply_c = supplier_air(state, design, supplier)
                     chw_load += share * airflow * (temp - supply_c) * ua_kw_per_k(design, hall)
         chw_load = max(chw_load, 0.0)
 
@@ -332,7 +334,12 @@ class SitePowerDomain:
             + totals[LoadClass.VENTILATION]
         )
         site["transformer_loss_kw"] = sum(state.assets[i]["power_kw"] for i in incomers(design))
-        site["ups_capacity_kw"] = UPS_KW * sum(len(m) for m in hall_ups(design).values())
+        site["utility_kw"] = sum(state.assets[i]["p_kw"] for i in incomers(design))
+        net = network(design)
+        site["storage_kw"] = sum(state.assets[u]["battery_kw"] for u in net.ups)
+        site["ups_capacity_kw"] = sum(
+            ups_rating(net, u)[0] for m in hall_ups(design).values() for u in m
+        )
 
 
 def _crac_cooling_kw(state: WorldState, design: PlantDesign, crac: str) -> float:
@@ -459,7 +466,8 @@ def _energy_keys(design: PlantDesign) -> tuple[tuple[str, str], ...]:
 def site_variables(design: PlantDesign) -> tuple[str, ...]:
     """Site variables SitePowerDomain owns."""
     names = [f"{cls}_kw" for cls in LoadClass]
-    names += ["facility_kw", "cooling_elec_kw", "transformer_loss_kw", "ups_capacity_kw"]
+    names += ["facility_kw", "cooling_elec_kw", "transformer_loss_kw", "utility_kw"]
+    names += ["storage_kw", "ups_capacity_kw"]
     names += sorted(
         {
             energy_key(floor, cls)

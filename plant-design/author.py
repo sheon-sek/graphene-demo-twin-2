@@ -191,7 +191,7 @@ for i in range(1, 5):
     link('power', a, f'Meter/Level 2_MSB {side}_{1 if side == "A" else 9}', f'TX-{i}')
 for g in range(1, 7):
     a = f'Genset/Genset {g}'; side = 'A' if g <= 3 else 'B'
-    put(a, 'G-GEN', 105 + ((g - 1) % 3) * 10, 8 + ((g - 1) // 3) * 20, f'3,000 kVA genset on genset bus {side} (N+1)', 'Electrical')
+    put(a, 'G-GEN', 105 + ((g - 1) % 3) * 10, 8 + ((g - 1) // 3) * 20, f'3,750 kVA genset on genset bus {side} (N+1)', 'Electrical')
     link('power', a, f'Meter/Level 2_MSB {side}_{1 if side == "A" else 9}', f'ATS-{side}')
 for t in (1, 2, 3):
     a = f'Diesel/Tank {t}'
@@ -213,7 +213,9 @@ for side, feeders in MSB.items():
         if a != main: link('power', main, a)
         if load and load.startswith(('Chiller', '~')): link('power', a, load)
     link('power', main, 'Meter/Level 1_DB_18', f'ATS-DB ({side})')
-# Hall UPS: three per hall — distributed redundant
+# Hall UPS: three per hall — distributed redundant, each module rated at 0.8 kVA per kW of its hall's design IT load
+# so that any two carry the design load at under 70 % (limit 75 %)
+UPS_KVA = {h: 960 if h == 8 else 800 for h in range(1, 9)}
 for h in range(1, 9):
     for k in (1, 2, 3):
         u = 3 * (h - 1) + k
@@ -221,7 +223,7 @@ for h in range(1, 9):
         a = f'UPS/UPS {u}'
         room_id = 'G-UPSA' if side == 'A' else 'G-UPSB'
         cnt = collections.Counter(p['room'] for p in place.values())[room_id]
-        put(a, room_id, rooms[room_id]['x'] + 3 + (cnt % 5) * 4.8, 4 + (cnt // 5) * 6, f'500 kVA UPS {k} of 3 for DH0{h} (side {side})', 'Electrical')
+        put(a, room_id, rooms[room_id]['x'] + 3 + (cnt % 5) * 4.8, 4 + (cnt // 5) * 6, f'{UPS_KVA[h]} kVA UPS {k} of 3 for DH0{h} (side {side})', 'Electrical')
         feeder = f'Meter/Level 2_MSB {side}_' + (('2' if h <= 4 else '3') if side == 'A' else ('10' if h <= 4 else '11'))
         link('power', feeder, a)
         b = f'BCPM/{h}L{k}'
@@ -230,7 +232,8 @@ for h in range(1, 9):
         link('power', a, b); link('power', b, f'~IT-DH0{h}', 'IT load')
 put('UPS/UPS 25', 'L1-SUP', 41, 57, '100 kVA UPS for BMS control room & network', 'Electrical')
 DB = {18: ('L1 DB incomer (from ATS-DB)', None), 19: ('UPS 25 input', 'UPS/UPS 25'), 20: ('IPS panel', None), 21: ('RCMS panel', None),
-      22: ('L1 lighting (1-phase)', None), 23: ('Water plant: transfer & booster pumps', None), 24: ('Fire pump & life safety', None)}
+      22: ('L1 lighting (1-phase)', None), 23: ('Water plant: transfer & booster pumps', None),
+      24: ('Essential services: fire pump & life safety, lifts, fuel system, genset auxiliaries, BMS & external lighting', None)}
 for n, (desc, load) in DB.items():
     a = f'Meter/Level 1_DB_{n}'
     put(a, 'L1-SUP', 3 + ((n - 18) % 4) * 4.5, 50 + ((n - 18) // 4) * 5, f'L1 DB: {desc}', 'Electrical')
@@ -250,7 +253,7 @@ for n, desc in SUB.items():
     a = f'Meter/Meter{n}'
     mcc = 'Meter/Level 2_MSB A_7' if n in (1, 2, 5, 8) else 'Meter/Level 2_MSB B_15' if n in (3, 4, 6, 9) else \
           'Meter/Level 2_MSB A_7' if n == 7 else 'Meter/Level 2_MSB A_8' if n in (10, 11, 13) else 'Meter/Level 2_MSB B_16' if n == 12 else \
-          'Meter/Level 1_DB_23' if n == 18 else 'Meter/Level 1_DB_22' if n in (14, 17, 19) else 'Meter/Level 1_DB_24'
+          'Meter/Level 1_DB_23' if n == 18 else 'Meter/Level 1_DB_24'  # three-phase sub-meters need a three-phase board
     rid = 'L2-SUP' if mcc.startswith('Meter/Level 2') else 'L1-SUP'
     put(a, rid, 4 + (len([p for p in place if place[p]['room'] == rid and p.startswith('Meter/Meter')]) % 10) * 3.8, (51 if rid == 'L2-SUP' else 45) + (len([p for p in place if place[p]['room'] == rid and p.startswith('Meter/Meter')]) // 10) * 3.5, f'Sub-meter: {desc}', 'Electrical')
     link('power', mcc, a)
@@ -261,9 +264,11 @@ LOADS = {1: [f'Cooling Towers Plant/R_P1_CT{c}' for c in range(1, 6)], 2: [f'Coo
          3: [f'Cooling Towers Plant/R_P2_CT{c}' for c in range(1, 6)], 4: [f'Cooling Towers Plant/R_P2_CT{c}' for c in range(6, 11)],
          5: [f'Chiller/R_CP{p}' for p in range(1, 5)], 6: [f'Chiller/R_CP{p}' for p in range(5, 9)], 7: ['Chiller/R_CP9'],
          8: [f'Cooling Towers Plant/R_P1_P{p}' for p in range(1, 11)], 9: [f'Cooling Towers Plant/R_P2_P{p}' for p in range(1, 11)],
-         10: sorted([p for p in A if A[p]['type'] in ('CRAC', 'PAHU', 'FWU') and A[p]['name'].startswith('R_')], key=nat) + [f'~CCU-00{h}' for h in (5, 6, 7, 8)],
-         11: sorted([p for p in A if A[p]['type'] in ('CRAC', 'PAHU', 'FCU') and A[p]['name'].startswith('L1_')], key=nat) + [f'~CCU-00{h}' for h in (1, 2, 3, 4)],
-         12: sorted([p for p in A if A[p]['type'] in ('CRAC', 'PAHU', 'FWU') and A[p]['name'].startswith('G_')], key=nat),
+         10: ['CRAC/R_CRAC1', 'CRAC/R_CRAC2', 'CRAC/R_CRAC3', 'CRAC/R_CRAC4', 'CRAC/R_CRAC5', 'FWU/R_FWU1', 'FWU/R_FWU2', 'FWU/R_FWU3', 'FWU/R_FWU4', 'FWU/R_FWU5', 'PAHU/R_PAHU1', 'PAHU/R_PAHU2', 'PAHU/R_PAHU3', 'PAHU/R_PAHU4', 'PAHU/R_PAHU5']
+             + [f'~CCU-00{h}' for h in (5, 6, 7, 8)],
+         11: ['CRAC/L1_CRAC1', 'CRAC/L1_CRAC2', 'CRAC/L1_CRAC3', 'CRAC/L1_CRAC4', 'CRAC/L1_CRAC5', 'FCU/L1_FCU1', 'FCU/L1_FCU2', 'FCU/L1_FCU3', 'FCU/L1_FCU4', 'FCU/L1_FCU5', 'PAHU/L1_PAHU1', 'PAHU/L1_PAHU2', 'PAHU/L1_PAHU3', 'PAHU/L1_PAHU4', 'PAHU/L1_PAHU5']
+             + [f'~CCU-00{h}' for h in (1, 2, 3, 4)],
+         12: ['CRAC/G_CRAC1', 'CRAC/G_CRAC2', 'CRAC/G_CRAC3', 'CRAC/G_CRAC4', 'CRAC/G_CRAC5', 'FWU/G_FWU1', 'FWU/G_FWU2', 'FWU/G_FWU3', 'FWU/G_FWU4', 'FWU/G_FWU5', 'PAHU/G_PAHU1', 'PAHU/G_PAHU2', 'PAHU/G_PAHU3', 'PAHU/G_PAHU4', 'PAHU/G_PAHU5'],
          13: [f'TIW/CDU-0{i}' for i in (1, 2, 3)], 15: [f'Diesel/Tank {t}' for t in (1, 2, 3)],
          17: ['L1-SUP', 'L1-COM', 'L1-CORE', 'L1-COR'],
          18: [f'Cold Water and Sanitary System/G_TP{p}' for p in (1, 2, 3)] + [f'Cold Water and Sanitary System/R_BP{b}' for b in (1, 2)] + [f'AC Makeup Tank/G_P{p}' for p in (1, 2)],
@@ -374,9 +379,9 @@ basis = dict(
     ('Tower Groups', '4 groups × 5 cells, 1,000 kW rejection per cell at 27 °C WB; CW 32 / 37 °C; VFD fans'),
     ('Buffer tanks', '8 × 30 m³ stratified, 2 per chiller leg'),
     ('Utility', '4 × 5 MVA transformers (SPPA Incomers 1–4), 2 per MSB side'),
-    ('Gensets', '6 × 3,000 kVA, 3 per side (N+1), ATS transfer ≤ 15 s'),
+    ('Gensets', '6 × 3,750 kVA / 3,000 kW prime, 3 per side (N+1: two carry the side), ATS transfer ≤ 15 s; UPS recharge limited to their headroom'),
     ('Diesel', '3 × 50,000 L bulk tanks, each feeding a genset pair'),
-    ('Hall UPS', '24 × 500 kVA, 3 per Data Hall, distributed redundant; ~8 min battery at design load'),
+    ('Hall UPS', '3 per Data Hall, distributed redundant: 21 × 800 kVA (DH01–07), 3 × 960 kVA (DH08); any two carry the design load at < 70 %; 8 min battery at rated load'),
     ('Control UPS', 'UPS 25, 100 kVA, BMS control room & network'),
     ('Water', '2 ground tanks × 200 m³, 2 roof tanks × 60 m³; transfer 2 duty + 1 standby; boosters 1 + 1'),
   ])
@@ -397,7 +402,7 @@ reviews = [
  dict(id='A13', area='Site', title='Room layout', text='Ground: HV intake, UPS rooms, water plant, genset yard and diesel farm outdoors. L1: DH01–04, DB room, BMS control room. L2: DH05–08, MSB A/B rooms (the meter names say MSB is on Level 2). Roof: chillers, 20 tower cells, buffer tanks, water tanks, AHU deck. Lifts 1–3 in a central core.'),
  dict(id='A14', area='Water', title='Water path', text='Municipal supply → G_V1 → ground tanks → transfer pumps (2 + 1) → riser → roof tanks → boosters → makeup headers → one VSD makeup pump per tower cell. AC Makeup Tank pumps top up the closed CHW loop from the ground tank branch.'),
  dict(id='A15', area='Site', title='Service shafts', text='Rev 0.2. Five risers beside the lift core, Ground to Roof: electrical (power), chilled & condenser water, supply-air duct, cold water, control network. Every connection that changes floor runs up its discipline\'s shaft. Diesel stays on the Ground floor and needs none.'),
- dict(id='A16', area='Electrical', title='Load side of the power graph', text='Rev 0.3. Every consumer hangs off exactly one board or sub-meter, so each meter reads what its authored loads draw. Meter1–4 feed the five cells of Tower Groups CT-001–004, Meter5–7 the chiller pumps, Meter8–9 the makeup pumps of tower plants P1 and P2, Meter10–12 the roof, Level 1 and ground air units (CCU-005–008 on Meter10, CCU-001–004 on Meter11), Meter13 the CDUs, Meter15 the diesel tanks\' fuel pumps, Meter18 the transfer, booster and AC makeup pumps. Lighting: MSB A_6 lights the Ground rooms, DB_22 DH01–04, Meter17 the other Level 1 rooms, MSB B_14 Level 2 and the roof plant rooms, and Meter19 the outdoor areas and security. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads; their draw is a stand-in on the meter.'),
+ dict(id='A16', area='Electrical', title='Load side of the power graph', text='Rev 0.3. Every consumer hangs off exactly one board or sub-meter, so each meter reads what its authored loads draw. Meter1–4 feed the five cells of Tower Groups CT-001–004, Meter5–7 the chiller pumps, Meter8–9 the makeup pumps of tower plants P1 and P2, Meter10–12 the roof, Level 1 and ground air units (CCU-005–008 on Meter10, CCU-001–004 on Meter11), Meter13 the CDUs, Meter15 the diesel tanks\' fuel pumps, Meter18 the transfer, booster and AC makeup pumps. Lighting: MSB A_6 lights the Ground rooms, DB_22 DH01–04, Meter17 the other Level 1 rooms, MSB B_14 Level 2 and the roof plant rooms, and Meter19 the outdoor areas and security. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads; their draw is a stand-in on the meter. The three-phase sub-meters Meter14, 17 and 19 hang off the essential-services board DB_24, not the single-phase lighting board DB_22.'),
 ]
 
 out = dict(version='0.3', date='2026-09-23', floors=FLOORS, rooms=list(rooms.values()), shafts=shafts,

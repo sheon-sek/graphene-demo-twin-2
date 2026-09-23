@@ -8,12 +8,16 @@ import pytest
 from graphene_demo_twin.asset_model import SourceClass
 from graphene_demo_twin.faults import STANDARD_CATALOG
 from graphene_demo_twin.projection import PointSource, Projector, Quality
+from graphene_demo_twin.projection.electrical import UNMODELLED
 from graphene_demo_twin.sim import Event, Simulation
 from graphene_demo_twin.sim.electrical import (
+    GENSET_KW,
+    OVERLOAD_TRIP_S,
     TRANSFER_LIMIT_S,
     network,
     powered,
 )
+from graphene_demo_twin.sim.placeholder import air_suppliers, supplier_air
 from graphene_demo_twin.sim.site import SITE, consumers
 from graphene_demo_twin.world import default_domains, default_projector
 
@@ -155,8 +159,10 @@ def assert_balanced(state, design) -> None:
         assert u["p_kw"] == pytest.approx(
             u["output_kw"] + u["loss_kw"] + u["battery_kw"], abs=1e-9
         ), n
+        # A hall UPS dissipates its losses; the control UPS also consumes its BMS load.
+        assert u["loss_kw"] >= 0.0 and u["output_kw"] >= 0.0
         assert u["power_kw"] == pytest.approx(
-            u["p_kw"] - (u["output_kw"] if n <= 24 else 0.0), abs=1e-9
+            u["loss_kw"] + (u["output_kw"] if n == 25 else 0.0), abs=1e-9
         )
     for h in HALLS:
         branches = [a[b]["p_kw"] for b in _branches(h)]
@@ -165,8 +171,11 @@ def assert_balanced(state, design) -> None:
             assert a[ups]["output_kw"] == a[b]["p_kw"]
     sources = sum(a[i]["p_kw"] for i in net.incomers) + sum(a[g]["p_kw"] for g in net.gensets)
     drawn = sum(a[n]["power_kw"] for n in consumers(design))
-    assert sources == pytest.approx(drawn, rel=1e-9)
-    assert a[SITE]["facility_kw"] == pytest.approx(sources, rel=1e-9)
+    stored = sum(a[_ups(n)]["battery_kw"] for n in range(1, 26))
+    assert all(a[n]["power_kw"] >= 0.0 for n in consumers(design))
+    assert a[SITE]["storage_kw"] == pytest.approx(stored, rel=1e-9, abs=1e-9)
+    assert sources == pytest.approx(drawn + stored, rel=1e-9, abs=1e-6)  # batteries: sink/source
+    assert a[SITE]["facility_kw"] == pytest.approx(drawn, rel=1e-9)
 
 
 def assert_phases_balanced(p, state, design) -> None:
@@ -186,9 +195,12 @@ def assert_phases_balanced(p, state, design) -> None:
             assert sk == pytest.approx(math.hypot(pk, qk), rel=1e-5, abs=1e-3), (m, k)
             if sk > 1e-3:
                 assert p.values[f"{m}/PF{k}"] == pytest.approx(pk / sk, rel=1e-5), (m, k)
-            if sk > 1e-3 and p.values[f"{m}/V{k}"] > 0:  # not the second its breaker opens
+            if sk > 1e-3:  # power flowed, so the meter had voltage while it did
+                assert p.values[f"{m}/V{k}"] > 0, (m, k)
                 amps = sk * 1000 / p.values[f"{m}/V{k}"]
                 assert p.values[f"{m}/I{k}"] == pytest.approx(amps, rel=1e-4), (m, k)
+            elif p.values[f"{m}/V{k}"] == 0:
+                assert p.values[f"{m}/I{k}"] == 0, (m, k)
             stot += sk
         assert p.values[f"{m}/Stot"] == pytest.approx(stot, rel=1e-5, abs=1e-3), m
         assert p.values[f"{m}/Wh_Im"] == pytest.approx(a[m]["energy_kwh"], rel=1e-6, abs=1e-3)
@@ -287,7 +299,7 @@ def test_losing_both_side_a_incomers_transfers_to_the_genset_bus_within_15_s(
     assert all(a[g]["stage"] == "standby" for g in (GEN[4], GEN[5], GEN[6]))
     p = projector.project(sim.state)
     for g in online:
-        load = a[g]["p_kw"] / 2400
+        load = a[g]["p_kw"] / GENSET_KW
         assert 0.3 < load < 1.0
         assert p.values[f"{g}/Run Command Active"] == 1
         assert p.values[f"{g}/Engine Speed"] == pytest.approx(p.values[f"{g}/Frequency"] * 30)
@@ -344,18 +356,56 @@ def test_a_genset_that_fails_to_start_leaves_n_plus_1_to_carry_the_bus(plant_des
     for i in (1, 2):
         sim.schedule(_inject(t0, INC[i], "utility.incomer_loss"))
     sim.run_until(t0)
-    while not sim.state.assets[BUS_A]["live"]:
+    while sim.state.assets[BUS_A]["source"] != "genset":
         sim.step()
     assert sim.time - t0 <= TRANSFER_LIMIT_S
-    sim.advance(30)
-    a = sim.state.assets
-    assert [g for g in (GEN[1], GEN[2], GEN[3]) if a[g]["online"]] == [GEN[1], GEN[3]]
+    # N carry the side within their rating through the block load and the UPS recharge.
+    charged = False
+    for _ in range(1800):
+        sim.step()
+        a = sim.state.assets
+        assert [g for g in (GEN[1], GEN[2], GEN[3]) if a[g]["online"]] == [GEN[1], GEN[3]]
+        for g in (GEN[1], GEN[3]):
+            assert a[g]["load_pct"] <= 100.0, (sim.time, a[g]["p_kw"])
+            assert not a[g]["overload"]
+        charged |= a[SITE]["storage_kw"] > 100.0
+    assert charged
+    assert all(a[_ups(n)]["soc"] > 0.999 for n in SIDE_A_UPS)
     assert a[GEN[2]]["stage"] == "failed" and a[GEN[2]]["p_kw"] == 0.0
     p = projector.project(sim.state)
     assert p.values[f"{GEN[2]}/Over Crank Shutdown"] is True
     assert p.values[f"{GEN[2]}/General Genset Alarm"] is True
     assert p.values[f"{GEN[2]}/HasAlarm"] is True
     assert p.values[f"{GEN[1]}/Over Crank Shutdown"] is False
+
+
+def test_an_overloaded_genset_trips_rather_than_run_beyond_its_rating(plant_design, projector):
+    sim = _sim(plant_design)
+    t0 = START + 60
+    sim.schedule(_inject(START, GEN[2], "genset.fail_to_start"))
+    for i in (1, 2):
+        sim.schedule(_inject(t0, INC[i], "utility.incomer_loss"))
+    for h in HALLS:  # far more IT Load than two sets can carry
+        sim.schedule(_inject(t0 + 120, f"~IT-{h}", "it.load_surge", severity=1.0))
+    over = dict.fromkeys((GEN[1], GEN[3]), 0)
+    for _ in range(300):
+        sim.step()
+        for g in over:
+            s = sim.state.assets[g]
+            over[g] = over[g] + 1 if s["load_pct"] > 100.0 else 0
+            assert over[g] <= OVERLOAD_TRIP_S, g
+    a = sim.state.assets
+    assert all(a[g]["stage"] == "failed" and a[g]["overload_trip"] for g in over)
+    assert not a[BUS_A]["live"] and all(a[_ups(n)]["mode"] == "battery" for n in SIDE_A_UPS)
+    p = projector.project(sim.state)
+    assert p.values[f"{GEN[1]}/General Genset Alarm"] is True
+    # With no genset to hold the bus, the ATS returns it to the utility at once; the trip
+    # resets once the start command drops.
+    for i in (1, 2):
+        sim.schedule(_clear(sim.time, INC[i], "utility.incomer_loss"))
+    sim.advance(5)
+    assert sim.state.assets[BUS_A]["source"] == "utility"
+    assert all(sim.state.assets[g]["stage"] == "standby" for g in over)
 
 
 def test_a_failed_ats_leaves_the_bus_dead_until_cleared(plant_design, projector):
@@ -370,7 +420,7 @@ def test_a_failed_ats_leaves_the_bus_dead_until_cleared(plant_design, projector)
     assert all(a[g]["stage"] == "running" and not a[g]["online"] for g in (GEN[1], GEN[3]))
     assert all(a[_ups(n)]["mode"] == "battery" for n in SIDE_A_UPS)
     soc = a[_ups(1)]["soc"]
-    assert soc < 0.9
+    assert soc < 0.95
     p = projector.project(sim.state)
     assert p.values[f"{BUS_A}/HasAlarm"] is True and p.values[f"{BUS_A}/V1"] == 0.0
     assert p.values[f"{DB}/V1"] > 200  # the L1 DB changed over to MSB B
@@ -400,17 +450,19 @@ def test_a_degraded_battery_bridges_the_same_gap_with_more_of_its_charge(plant_d
 # ---- UPS in distributed redundancy
 
 
-def _quiet_hall(sim) -> str:
-    """The hall running furthest below its nominal IT Load, so N+1 has its design margin."""
-    a = sim.state.assets
-    hall = min(HALLS[:7], key=lambda h: a[f"~IT-{h}"]["utilisation"])  # DH08 is a 1.2 MW hall
-    assert a[f"~IT-{hall}"]["utilisation"] <= 0.675
-    return hall
+def _fail_first_ups(sim, hall: str) -> None:
+    """Fail the hall's first UPS module and run until its battery is exhausted."""
+    failed = _hall_ups(hall)[0]
+    sim.schedule(_inject(sim.time, failed, "ups.rectifier_failure"))
+    while sim.state.assets[failed]["mode"] != "off":
+        sim.step()
+        assert sim.time < START + 7200
+    sim.advance(5)
 
 
-def test_one_ups_failing_moves_its_share_onto_the_other_two(plant_design, projector):
+@pytest.mark.parametrize("hall", HALLS)
+def test_one_ups_failing_moves_its_share_onto_the_other_two(plant_design, projector, hall):
     sim = _sim(plant_design)
-    hall = _quiet_hall(sim)
     failed, *others = _hall_ups(hall)
     lost, *kept = _branches(hall)
     before = projector.project(sim.state)
@@ -445,6 +497,21 @@ def test_one_ups_failing_moves_its_share_onto_the_other_two(plant_design, projec
     assert powered(sim.state, plant_design, f"~IT-{hall}")
 
 
+@pytest.mark.parametrize("hall", HALLS)
+def test_two_ups_carry_the_halls_design_load_at_no_more_than_75_percent(plant_design, hall):
+    """The top of the operating band, and beyond it up to the hall's design IT Load."""
+    sim = _sim(plant_design)
+    sim.schedule(_inject(START, f"~IT-{hall}", "it.load_surge", severity=1.0))
+    _fail_first_ups(sim, hall)
+    a = sim.state.assets
+    it = a[f"~IT-{hall}"]
+    assert it["utilisation"] >= plant_design.it_basis[hall].operating_max
+    for ups in _hall_ups(hall)[1:]:
+        assert a[ups]["mode"] == "online"
+        assert a[ups]["output_kw"] == pytest.approx(it["power_kw"] / 2)
+        assert a[ups]["load_pct"] <= 75.0, ups
+
+
 def test_a_branch_breaker_trip_redistributes_at_once(plant_design, projector):
     sim = _sim(plant_design)
     sim.schedule(_inject(START + 10, "BCPM/5L3", "bcpm.breaker_trip"))
@@ -457,6 +524,34 @@ def test_a_branch_breaker_trip_redistributes_at_once(plant_design, projector):
 
 
 # ---- Breakers, meters and comms
+
+
+def test_meter_readings_describe_one_instant_on_the_step_a_breaker_opens(plant_design, projector):
+    sim = _sim(plant_design)
+    mcc = "Meter/Level 2_MSB A_8"
+    sim.schedule(_inject(START + 10, mcc, "gpqm144.breaker_trip"))
+    sim.advance(8)
+    for _ in range(5):
+        sim.step()
+        p = projector.project(sim.state)
+        assert_phases_balanced(p, sim.state, plant_design)
+        for m in (mcc, "Meter/Meter10", "Meter/Meter11"):
+            if p.values[f"{m}/V1"] == 0:
+                assert p.values[f"{m}/P1"] == 0 and p.values[f"{m}/I1"] == 0, (sim.time, m)
+
+
+def test_a_dead_air_supplier_delivers_no_cooling(plant_design):
+    sim = _sim(plant_design)
+    sim.schedule(_inject(START + 10, "Meter/Meter11", "gpm96.breaker_trip"))
+    sim.advance(15)
+    a = sim.state.assets
+    suppliers = [s for s, _ in air_suppliers(plant_design, "DH01")]
+    assert set(suppliers) == {"CRAC/L1_CRAC1", "PAHU/L1_PAHU1", "FCU/L1_FCU1"}
+    for supplier in suppliers:
+        assert not powered(sim.state, plant_design, supplier), supplier
+        assert supplier_air(sim.state, plant_design, supplier)[0] == 0.0, supplier
+    assert a["DH01"]["cooling_kw"] == 0.0  # every one of its suppliers is on Meter11
+    assert a["DH05"]["cooling_kw"] > 0.0  # on Meter10
 
 
 def test_a_feeder_trip_de_energises_everything_below_it(plant_design, projector):
@@ -562,14 +657,88 @@ def test_ups_losses_become_heat_in_the_ups_rooms(plant_design):
     assert surged.state.assets[room]["ups_heat_kw"] > a[room]["ups_heat_kw"]
 
 
+KPIS = (
+    "Dashboard/PUE",
+    "Dashboard/IT Power Chain Efficiency",
+    "Dashboard/Transformer Efficiency",
+    "Other/Power Losses",
+    "Other/IT Load",
+)
+
+
+def _kpis(projector, state) -> dict[str, float | None]:
+    """The power KPIs, None where the point is Bad."""
+    p = projector.project(state, only=KPIS)
+    return {k: None if p.quality(k) is Quality.BAD else p.values[k] for k in KPIS}
+
+
+def test_the_kpis_stay_physical_on_battery_and_while_recharging(plant_design, projector):
+    sim = _sim(plant_design)
+    for i in INC:
+        sim.schedule(_inject(START + 30, INC[i], "utility.incomer_loss"))
+    on_battery = recharging = False
+    for _ in range(1200):
+        sim.step()
+        a = sim.state.assets
+        site = a[SITE]
+        k = _kpis(projector, sim.state)
+        ups_losses = sum(a[_ups(n)]["loss_kw"] for n in range(1, 25))  # UPS 25 is "other"
+        assert k["Other/Power Losses"] == pytest.approx(site["losses_kw"], abs=0.5)
+        assert site["losses_kw"] >= ups_losses - 1e-9 > 0.0
+        assert k["Dashboard/PUE"] >= 1.0
+        assert 90.0 < k["Dashboard/IT Power Chain Efficiency"] < 100.0
+        if all(a[_ups(n)]["fed_mode"] == "battery" for n in range(1, 25)):
+            on_battery = True
+            assert site["storage_kw"] < 0.0  # the batteries are the source
+            assert k["Dashboard/Transformer Efficiency"] is None  # no utility to measure
+        if site["storage_kw"] > 0.0:
+            recharging = True
+    assert on_battery and recharging
+
+
+def test_a_whole_site_blackout_projects_through_battery_exhaustion(plant_design, projector):
+    sim = _sim(plant_design)
+    for bus in (BUS_A, BUS_B):
+        sim.schedule(_inject(START, bus, "ats.fail_to_transfer"))
+    for i in INC:
+        sim.schedule(_inject(START + 30, INC[i], "utility.incomer_loss"))
+    dark = 0
+    while dark < 30:
+        sim.step()
+        assert sim.time < START + 7200
+        a = sim.state.assets
+        if all(a[_ups(n)]["mode"] == "off" for n in range(1, 26)):
+            dark += 1
+        k = _kpis(projector, sim.state)
+        assert k["Other/Power Losses"] >= 0.0
+        assert k["Dashboard/PUE"] is None or k["Dashboard/PUE"] >= 1.0
+        chain = k["Dashboard/IT Power Chain Efficiency"]
+        assert chain is None or 0.0 < chain <= 100.0
+        if sim.time > START + 31:
+            assert k["Dashboard/Transformer Efficiency"] is None
+        if sim.time % 60 == 0:
+            projector.project(sim.state)  # every surface projects the whole world
+    k = _kpis(projector, sim.state)
+    assert k["Other/IT Load"] == 0.0 and k["Other/Power Losses"] == 0.0
+    assert k["Dashboard/PUE"] is None and k["Dashboard/IT Power Chain Efficiency"] is None
+    projector.project(sim.state)
+
+
 def test_the_electrical_points_have_a_causal_source(projector, asset_model, plant_design):
+    """Every point is driven by the world except the declared Compatibility Fallback debt,
+    which the coverage report counts."""
     net = network(plant_design)
     physical = {*net.meters, *net.incomers, *net.ups, *net.gensets, *net.tanks, *net.branch_meters}
     physical |= {a.path for a in plant_design.assets.values() if a.type_id in ("IPS", "RCMS")}
+    types = {plant_design.asset(n).type_id for n in physical}
+    assert set(UNMODELLED) <= types
     for node in physical:
+        unmodelled = UNMODELLED.get(plant_design.asset(node).type_id, ())
         for point in asset_model.points_of(node):
             if point.source_class is SourceClass.STATIC_METADATA:
                 continue
-            assert projector.coverage.entries[point.path].source is not PointSource.FALLBACK, (
-                point.path
-            )
+            entry = projector.coverage.entries[point.path]
+            if point.name in unmodelled:
+                assert entry.source is PointSource.FALLBACK and entry.debt, point.path
+            else:
+                assert entry.source is not PointSource.FALLBACK, point.path

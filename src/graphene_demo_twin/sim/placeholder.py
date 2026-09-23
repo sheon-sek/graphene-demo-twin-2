@@ -54,8 +54,9 @@ class PlaceholderHallDomain:
     """How much of an outdoor dew point change leaks into the halls."""
     RECIRCULATION = 0.15
     """Share of hot-aisle air that reaches the cold aisle."""
-    settling_s = int(6 * TAU_S)
-    """Time for a disturbance to die out to within 0.25 %."""
+    settling_s = int(8 * TAU_S)
+    """Time for a disturbance to die out to within 0.035 %: a main-bus trip stops every air
+    supplier on its airside boards and heats the halls by about 12 K in 20 minutes."""
 
     def initial(self, ctx: StepContext) -> dict[str, AssetState]:
         air = outdoor_air(ctx.noise, ctx.time)
@@ -91,7 +92,7 @@ class PlaceholderHallDomain:
             ua = ua_kw_per_k(ctx.design, hall)
             cooling = flow = supply = 0.0
             for supplier, share in air_suppliers(ctx.design, hall):
-                airflow, supply_c = supplier_air(state, supplier)
+                airflow, supply_c = supplier_air(state, ctx.design, supplier)
                 cooling += share * airflow * (temp - supply_c)
                 flow += share * airflow
                 supply += share * airflow * supply_c
@@ -351,13 +352,14 @@ def ua_kw_per_k(design: PlantDesign, hall: str) -> float:
     return nominal / (HALL_C - SUPPLY_C)
 
 
-def supplier_air(state: WorldState, supplier: str) -> tuple[float, float]:
+def supplier_air(state: WorldState, design: PlantDesign, supplier: str) -> tuple[float, float]:
     """(airflow as a fraction of nominal, supply temperature) of an air supplier; a unit
-    not modelled yet is steady at full flow and SUPPLY_C."""
+    not modelled yet is steady at full flow and SUPPLY_C while it has supply, and still
+    without it."""
     unit = state.assets.get(supplier)
     if unit is not None and "airflow" in unit:
         return unit["airflow"], unit["supply_c"]
-    return 1.0, SUPPLY_C
+    return (1.0 if powered(state, design, supplier) else 0.0), SUPPLY_C
 
 
 @functools.cache
