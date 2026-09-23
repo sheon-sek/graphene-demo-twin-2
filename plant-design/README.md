@@ -4,6 +4,7 @@ The site's hand-authored physical design (ADR-0002): rooms and floors, where eve
 
 - `author.py`: the authored source. Edit this file, never the JSON.
 - `plant-design.json`: generated output, which the engine loads. Regenerate it with `python plant-design/author.py plant-design/plant-design.json`.
+- `graphene_demo_twin.plant_design.load_plant_design` loads the JSON and validates it against the Asset Model. A test regenerates the JSON and fails if it differs from the committed file, so commit both files together.
 
 Rev 0.1 was approved on 2026-09-23 with review items A1–A14 accepted as drafted. The review page is https://claude.ai/artifact/FdHDsz3THQMf2Hj8iAYqwn.
 
