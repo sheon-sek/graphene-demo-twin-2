@@ -174,10 +174,15 @@ class SiteLoadDomain:
             power[crac] = CRAC_FAN_KW * (s["fan_pct"] / 100.0) ** 3 + compressor
             dx_cooling += cooling
 
-        # Air units on chilled water: their fans. The chiller plant (`sim.plant`) takes up
-        # the heat their coils remove and works out its own equipment's draw.
+        # Air units on chilled water: their fans, while they run. The chiller plant
+        # (`sim.plant`) takes up the heat their coils remove and works out its own
+        # equipment's draw.
         for unit, type_id in air_units(design).items():
-            power[unit] = FAN_KW[type_id]
+            s = assets[unit]
+            if s.get("running", True):
+                power[unit] = FAN_KW[type_id] * (1.0 - s.get("constraint.fan_loss", 0.0))
+            else:
+                power[unit] = 0.0
         plant = assets.get(PLANT)
         chw_load = plant["load_kw"] if plant is not None else 0.0
         rejected = plant["rejected_kw"] if plant is not None else 0.0
@@ -199,6 +204,9 @@ class SiteLoadDomain:
         office = (local // DAY_S + 3) % 7 < 5 and 8.0 <= hour < 18.0
         dark = hour < 7.0 or hour >= 19.0
         power.update(_scheduled_loads(design, office, dark))
+        for node in services(design):  # a stopped service (a tripped CDU) draws nothing
+            if not assets[node].get("running", True):
+                power[node] = 0.0
 
         if net.order and net.order[0] in assets:
             for node, kw in power.items():

@@ -132,9 +132,12 @@ def test_unit_air_and_water_temperatures_agree_with_the_zone_and_the_plant(plant
         # The supply air holds the zone's moisture, so it is more humid at its cooler
         # temperature, and never supersaturated.
         assert s["return_rh_pct"] < s["supply_rh_pct"] <= 100.0, unit
+    feeds = {u: b for b, units in cooling_blocks(plant_design).items() for u in units}
     for unit, type_id in chw_units(plant_design).items():
         s = a[unit]
-        assert s["chws_c"] == pytest.approx(plant["chws_c"], abs=1e-9), unit
+        # A unit fed by a Cooling Block gets the block's hall supply, after the riser.
+        upstream = a[feeds[unit]]["hall_supply_c"] if unit in feeds else plant["chws_c"]
+        assert s["chws_c"] == pytest.approx(upstream, abs=1e-9), unit
         assert s["chwr_c"] > s["chws_c"], unit
         if type_id != LIQUID_TYPE:
             # A coil cannot cool the air below the water that feeds it.
@@ -182,6 +185,7 @@ def test_cooling_blocks_carry_their_units_water(plant_design, projector):
         mixed = sum(a[u]["flow_lps"] * a[u]["chwr_c"] for u in units) / flow
         assert b["chwr_c"] == pytest.approx(mixed, rel=1e-9)
         assert b["chws_c"] == pytest.approx(plant["chws_c"], abs=1e-9)
+        assert b["hall_supply_c"] > b["chws_c"]
         tag = block.lstrip("~")
         folder = f"{CS}/Cooling Blocks/{tag}"
         assert p.values[f"{folder}/FM-01/Flow Rate"] == pytest.approx(b["flow_lps"] * M3H, rel=1e-4)
@@ -215,8 +219,29 @@ def test_a_fire_alarm_shuts_the_fresh_air_handler_down(plant_design, projector):
     assert p.values[f"{pahu}/On_Off"] == 0 and p.values[f"{pahu}/Fan On_Off"] == 0
     assert sim.state.assets[pahu]["airflow"] == 0.0
     assert p.values["PAHU/R_PAHU2/Main Fire Alarm"] is False
+    # A stopped unit draws nothing, and its energy stays flat.
+    s = sim.state.assets[pahu]
+    assert s["power_kw"] == 0.0
+    energy = s["energy_kwh"]
+    sim.advance(60)
+    assert s["power_kw"] == 0.0 and s["energy_kwh"] == energy
     # Without its fresh-air handler, DH05's air is no longer dried.
     assert sim.state.assets["DH05"]["dew_point_c"] > base.state.assets["DH05"]["dew_point_c"] + 0.5
+
+
+def test_tripped_units_draw_no_power(plant_design):
+    sim = _sim(plant_design)
+    units = {type_id: u for u, type_id in chw_units(plant_design).items()}
+    fcu, cdu = units["FCU"], units[LIQUID_TYPE]
+    for unit in (fcu, cdu):
+        sim.state.assets[unit]["constraint.trip"] = 1.0
+    sim.advance(10)
+    a = sim.state.assets
+    energy = a[fcu]["energy_kwh"], a[cdu]["pump1_kwh"], a[cdu]["facility_kwh"] - a[cdu]["it_kwh"]
+    sim.advance(60)
+    assert a[fcu]["power_kw"] == 0.0 and a[cdu]["power_kw"] == 0.0
+    after = a[fcu]["energy_kwh"], a[cdu]["pump1_kwh"], a[cdu]["facility_kwh"] - a[cdu]["it_kwh"]
+    assert after == pytest.approx(energy, abs=1e-9)
 
 
 def test_unit_valves_throttle_on_supply_air(plant_design):

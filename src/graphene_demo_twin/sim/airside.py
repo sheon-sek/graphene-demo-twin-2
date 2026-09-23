@@ -340,7 +340,6 @@ class ChilledWaterUnitDomain:
             chws, delivery, plant_lps = plant["chws_c"], plant["delivery"], plant["flow_lps"]
         else:  # a world without the plant: ideal chilled water
             chws, delivery, plant_lps = SUPPLY_C - COIL_APPROACH_K, 1.0, math.inf
-        coil = chws + COIL_APPROACH_K
         valve_blend = 1.0 if settle else min(dt / VALVE_TAU_S, 1.0)
         stagnant = 1.0 if settle else min(dt / STAGNANT_TAU_S, 1.0)
         hours = 0.0 if settle else dt / 3600.0
@@ -351,17 +350,14 @@ class ChilledWaterUnitDomain:
             0.0,
         )
         can_dry = delivery >= 0.5 and chws <= DEHUMIDIFY_MAX_CHWS_C
-        liquid_factor = min(max((FWS_MAX_C - chws) / (FWS_MAX_C - CHWS_SP_C), 0.0), 1.0)
 
+        # What each unit asks of the water: its valve Controller, on the water it had last
+        # step, and the flow that valve asks for.
         plan = _unit_plan(ctx.design)
         asked_total = 0.0
         for u in plan:
             s = a[u.id]
-            zone = a[u.room]
-            temp = zone["temp_c"]
-            flag = u.flag
-            live = flag is None or a.get(flag, _LIVE).get("live", True)
-            fan_kw = s.get("power_kw", 0.0)
+            live = u.flag is None or a.get(u.flag, _LIVE).get("live", True)
             if u.liquid:
                 it = 0.0
                 for node in u.it:
@@ -371,23 +367,12 @@ class ChilledWaterUnitDomain:
                 s["running"] = running
                 s["it_kw"] = it
                 demand = it if running else 0.0
-                take = demand * liquid_factor
-                s["removed_kw"] = take * delivery
-                s["cooling_kw"] = s["removed_kw"]
-                s["chw_demand_kw"], s["chw_take_kw"] = demand, take
+                s["chw_demand_kw"] = demand
                 s["asked_lps"] = demand / (CP * CHW_DT_K)
                 s["valve_pct"] = 100.0 if running else 0.0
                 asked_total += s["asked_lps"]
-                if hours:
-                    pump = fan_kw / CDU_DUTY_PUMPS
-                    for k in range(1, CDU_DUTY_PUMPS + 1):
-                        s[f"pump{k}_kwh"] += pump * hours
-                    s["it_kwh"] += it * hours
-                    s["facility_kwh"] += (it + fan_kw) * hours
-                s["pue"] = (it + fan_kw) / it if it > 0.0 else 1.0
                 continue
 
-            lost = s.get("comm", "good") == "bad"
             if _UNIT_INPUTS.isdisjoint(s):  # healthy, as nearly every unit is
                 fire = tripped = False
                 fan_loss = blockage = 0.0
@@ -398,6 +383,8 @@ class ChilledWaterUnitDomain:
                 blockage = s.get("constraint.filter_blockage", 0.0)
             running = live and not fire and not tripped
             airflow = (1.0 - fan_loss) * (1.0 - blockage) if running else 0.0
+            temp = a[u.room]["temp_c"]
+            coil = (s["chws_c"] if s["flow_lps"] > 0.0 else chws) + COIL_APPROACH_K
 
             # Valve Controller on supply air: the share of full flow that brings the coil's
             # leaving air to setpoint.
@@ -411,29 +398,25 @@ class ChilledWaterUnitDomain:
             valve_pct = s["valve_pct"]
             valve_pct += (100.0 * need - valve_pct) * valve_blend
             valve_pct = 0.0 if valve_pct < 0.0 else 100.0 if valve_pct > 100.0 else valve_pct
-            valve = valve_pct / 100.0
-            supply = temp - (temp - coil) * valve * delivery if running and temp > coil else temp
             cap = u.cap * airflow
+            fan_kw = s.get("power_kw", 0.0) if running else 0.0
+            extra = fan_kw + fresh_kw if u.fresh_air else fan_kw
             if running:
-                extra = fan_kw + fresh_kw if u.fresh_air else fan_kw
                 demand = cap * (temp - sp) + extra if temp > sp else extra
-                take = cap * (temp - coil) * valve + extra if temp > coil else extra
             else:
-                demand = take = 0.0
-            asked = demand * valve / (CP * CHW_DT_K)
+                demand = 0.0
+            asked = demand * valve_pct / 100.0 / (CP * CHW_DT_K)
             asked_total += asked
             s["valve_pct"] = valve_pct
-            s["chw_demand_kw"], s["chw_take_kw"], s["asked_lps"] = demand, take, asked
+            s["chw_demand_kw"], s["asked_lps"] = demand, asked
             s["running"], s["tripped"], s["airflow"] = running, tripped, airflow
-            s["return_c"], s["supply_c"] = temp, supply
-            s["cooling_kw"] = cap * (temp - supply)
             s["static_kpa"] = STATIC_KPA * airflow * airflow * (1.0 + blockage)
             if hours:
                 s["energy_kwh"] += fan_kw * hours
-            _humidity(s, zone, supply)
             if u.fresh_air:
                 s["fire_alarm"] = fire
                 s["dehumidifying"] = running and can_dry
+            lost = s.get("comm", "good") == "bad"
             alarm_filter = running and blockage >= 0.25
             alarm_airflow = running and airflow < 0.5
             s["alarm_filter"], s["alarm_airflow"] = alarm_filter, alarm_airflow
@@ -441,43 +424,100 @@ class ChilledWaterUnitDomain:
             s["alarm_fault"] = tripped or alarm_airflow
             s["has_alarm"] = alarm_filter or alarm_airflow or tripped or lost or fire
 
-        # The water: the plant's flow shared out in proportion to what each unit asks.
+        # The water: the plant's flow shared out in proportion to what each unit asks; each
+        # Cooling Block carries its units' share up its riser, which warms it on the way.
         if plant_lps == math.inf:
             scale = 1.0
         else:
             scale = plant_lps / asked_total if asked_total > 0.0 else 0.0
         for u in plan:
-            s = a[u.id]
-            flow = s["asked_lps"] * scale
-            s["flow_lps"] = flow
+            a[u.id]["flow_lps"] = a[u.id]["asked_lps"] * scale
+        supply = {}
+        for block, units in _block_plan(ctx.design):
+            b = a[block]
+            flow = valves = 0.0
+            for unit in units:
+                s = a[unit]
+                flow += s["flow_lps"]
+                valves += s["flow_lps"] * s["valve_pct"]
+            b["flow_lps"] = flow
             if flow > 0.0:
-                heat = s["chw_take_kw"] * delivery
-                s["chws_c"] = chws
-                s["chwr_c"] = chws + heat / (CP * flow)
+                b["chws_c"] = chws
+                b["hall_supply_c"] = chws + RISER_GAIN_KW / (CP * flow)
+                b["mv1_pct"] = min(valves / flow, 100.0)
+            supply[block] = b["hall_supply_c"]
+            b["mv2_pct"] = 100.0
+
+        # What each unit's coil does with the water it gets.
+        for u in plan:
+            s = a[u.id]
+            flow = s["flow_lps"]
+            if flow > 0.0:
+                unit_chws = supply[u.block] if u.block is not None else chws
+            else:
+                unit_chws = s["chws_c"]
+            if u.liquid:
+                running = s["running"]
+                it = s["it_kw"]
+                factor = min(max((FWS_MAX_C - unit_chws) / (FWS_MAX_C - CHWS_SP_C), 0.0), 1.0)
+                take = s["chw_demand_kw"] * factor
+                s["removed_kw"] = take * delivery
+                s["cooling_kw"] = s["removed_kw"]
+                pump_kw = s.get("power_kw", 0.0) if running else 0.0
+                if hours:
+                    pump = pump_kw / CDU_DUTY_PUMPS
+                    for k in range(1, CDU_DUTY_PUMPS + 1):
+                        s[f"pump{k}_kwh"] += pump * hours
+                    s["it_kwh"] += it * hours
+                    s["facility_kwh"] += (it + pump_kw) * hours
+                s["pue"] = (it + pump_kw) / it if it > 0.0 else 1.0
+            else:
+                zone = a[u.room]
+                temp = zone["temp_c"]
+                coil = unit_chws + COIL_APPROACH_K
+                valve = s["valve_pct"] / 100.0
+                running = s["running"]
+                air_out = (
+                    temp - (temp - coil) * valve * delivery if running and temp > coil else temp
+                )
+                if running:
+                    extra = s.get("power_kw", 0.0)
+                    if u.fresh_air:
+                        extra += fresh_kw
+                    take = u.cap * s["airflow"] * (temp - coil) * valve + extra
+                    take = take if temp > coil else extra
+                else:
+                    take = 0.0
+                s["return_c"], s["supply_c"] = temp, air_out
+                s["cooling_kw"] = u.cap * s["airflow"] * (temp - air_out)
+                _humidity(s, zone, air_out)
+            if flow > 0.0:
+                s["chws_c"] = unit_chws
+                s["chwr_c"] = unit_chws + take * delivery / (CP * flow)
+                if u.block is not None:  # its share of the riser's heat reaches the plant
+                    riser = RISER_GAIN_KW * flow / a[u.block]["flow_lps"]
+                    take += riser
+                    s["chw_demand_kw"] += riser
+                s["chw_take_kw"] = take
             else:  # the water standing in the coil warms towards the room
+                s["chw_take_kw"] = take
                 temp = a[u.room]["temp_c"]
                 s["chws_c"] += (temp - s["chws_c"]) * stagnant
                 s["chwr_c"] += (temp - s["chwr_c"]) * stagnant
         for block, units in _block_plan(ctx.design):
             b = a[block]
-            flow = weighted = valves = 0.0
-            for unit in units:
-                s = a[unit]
-                flow += s["flow_lps"]
-                weighted += s["flow_lps"] * s["chwr_c"]
-                valves += s["flow_lps"] * s["valve_pct"]
-            b["flow_lps"] = flow
+            flow = b["flow_lps"]
             if flow > 0.0:
-                b["chws_c"] = chws
+                weighted = 0.0
+                for unit in units:
+                    weighted += a[unit]["flow_lps"] * a[unit]["chwr_c"]
+                # The riser's heat is in the units' supply, so it is in their returns too.
                 b["chwr_c"] = weighted / flow
-                b["hall_supply_c"] = chws + RISER_GAIN_KW / (CP * flow)
-                b["mv1_pct"] = min(valves / flow, 100.0)
             else:
                 hall = a[units[0]]["chwr_c"] if units else b["chwr_c"]
                 b["chws_c"] += (hall - b["chws_c"]) * stagnant
                 b["chwr_c"] = hall
                 b["hall_supply_c"] = b["chws_c"]
-            b["mv2_pct"] = 100.0
 
 
 def _humidity(s: AssetState, zone: AssetState | None, supply_c: float) -> None:
@@ -583,12 +623,15 @@ class _Unit:
     """For a CDU, the IT equipment of its pod's hall."""
     liquid_share: float
     """For a CDU, its share of the hall's IT Load."""
+    block: str | None
+    """The Cooling Block that feeds it, if any."""
 
 
 @functools.cache
 def _unit_plan(design: PlantDesign) -> tuple[_Unit, ...]:
     flags = network(design).supply_flag
     units = chw_units(design)
+    feeds = {u: b for b, fed in cooling_blocks(design).items() for u in fed}
     plan = []
     for unit, type_id in units.items():
         room = served_room(design, unit)
@@ -610,6 +653,7 @@ def _unit_plan(design: PlantDesign) -> tuple[_Unit, ...]:
                 liquid,
                 it_in(design, room) if liquid else (),
                 share,
+                feeds.get(unit),
             )
         )
     return tuple(plan)
