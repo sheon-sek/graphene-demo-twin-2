@@ -3,6 +3,7 @@ import { locate } from '../actions';
 import { api } from '../lib/api';
 import { clockTime, shortName } from '../lib/format';
 import type { LiveStore } from '../lib/live';
+import { isSet } from '../lib/status';
 import type { LoggedEvent } from '../lib/types';
 import type { World } from '../lib/world';
 
@@ -17,7 +18,7 @@ export function BottomBar({ world, live }: { world: World; live: LiveStore }) {
     (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
     [],
   );
-  const alarms = world.alarmPoints.filter((p) => live.reading(p.path)?.value === true);
+  const alarms = world.alarmPoints.filter((p) => isSet(live.reading(p.path)?.value ?? null));
 
   return (
     <section className="bottombar" aria-label="Operations">

@@ -14,10 +14,12 @@ const SENSOR = 'Temperature and Humidity/Datahall 3/Sensor 17';
 const design = plantDesign();
 const assetPaths = design.assets.filter((a) => !a.unexported).map((a) => a.path);
 const points: PointInfo[] = [
-  { path: `${CRAC3}/Supply Air Temperature`, sourceClass: 'process_value' },
-  { path: `${CRAC3}/System Failure_Trip`, sourceClass: 'fault_alarm' },
-  { path: 'CRAC/L1_CRAC1/System Failure_Trip', sourceClass: 'fault_alarm' },
-  { path: `${SENSOR}/Temp`, sourceClass: 'process_value' },
+  { path: `${CRAC3}/Supply Air Temperature`, sourceClass: 'process_value', alarmBit: false },
+  { path: `${CRAC3}/System Failure_Trip`, sourceClass: 'fault_alarm', alarmBit: true },
+  { path: 'CRAC/L1_CRAC1/System Failure_Trip', sourceClass: 'fault_alarm', alarmBit: true },
+  { path: 'Breaker/CB-01/Trip', sourceClass: 'fault_alarm', alarmBit: true },
+  { path: 'Breaker/CB-01/Alarm Code', sourceClass: 'fault_alarm', alarmBit: false },
+  { path: `${SENSOR}/Temp`, sourceClass: 'process_value', alarmBit: false },
 ];
 const spec = (id: string, name: string, assetType: string, category: FaultSpec['category']) => ({
   id,
@@ -61,6 +63,8 @@ function frame(seq: number, faults: ActiveFault[], alarm = false, events = 0): F
     points: {
       [`${CRAC3}/System Failure_Trip`]: { value: alarm, quality: 'good' },
       'CRAC/L1_CRAC1/System Failure_Trip': { value: false, quality: 'good' },
+      'Breaker/CB-01/Trip': { value: alarm ? 1 : 0, quality: 'good' },
+      'Breaker/CB-01/Alarm Code': { value: 7, quality: 'good' },
     },
     faults,
   };
@@ -315,7 +319,7 @@ describe('bottom bar', () => {
     ],
   };
 
-  it('lists active faults with a Clear each, and the alarm bits that are set', async () => {
+  it('lists active faults with a Clear each, and the alarm bits that are set, integer bits included', async () => {
     const calls = mockFetch({
       'GET /api/events': () => events,
       'POST /api/faults/clear': (body) => body,
@@ -336,8 +340,10 @@ describe('bottom bar', () => {
     const alarms = screen.getByRole('region', { name: 'Alarms' });
     expect(within(alarms).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
       expect.stringContaining('System Failure_Trip'),
+      expect.stringContaining('Trip'),
     ]);
-    fireEvent.click(within(alarms).getByRole('button'));
+    expect(alarms.textContent).not.toContain('Alarm Code');
+    fireEvent.click(within(alarms).getAllByRole('button')[0]);
     expect(useConsole.getState().selected).toBe(CRAC3);
 
     const log = screen.getByRole('region', { name: 'Event Log' });

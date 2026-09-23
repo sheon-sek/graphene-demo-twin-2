@@ -19,7 +19,8 @@ const WARNING = /warning|prealarm/i;
 const RUN_FEEDBACK = /^(On_?Off|Fan On_Off|Compressor On_Off Status|EC Fan Run Status|Unit Running Status)$/;
 
 const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1);
-const isSet = (value: Reading['value']) =>
+/** Whether an alarm bit's reading is set: true or nonzero. */
+export const isSet = (value: Reading['value']) =>
   value === true || (typeof value === 'number' && value !== 0);
 
 /**
