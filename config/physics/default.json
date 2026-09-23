@@ -1,6 +1,49 @@
 {
-  "cooling": {"chillerDesignCapacityKw": 1450.0, "chwsSetpointC": 5.3, "designChwsSetpointC": 6.5},
-  "airside": {"pahuStaticPressureSetpointPa": 600.0, "designStaticPressureSetpointPa": 450.0},
-  "electrical": {"nominalVoltageV": 230.0, "nominalFrequencyHz": 50.0, "modeledLossFraction": 0.012},
-  "environment": {"hallTempC": 23.2, "hallRhPct": 52.0}
+  "cooling": {
+    "chillerDesignCapacityKw": 1450,
+    "chwsSetpointC": 7,
+    "designChwsSetpointC": 6.5,
+    "itHeatFraction": 0.92,
+    "envelopeKwPerC": 18,
+    "chwDesignDeltaTC": 5.5,
+    "chillerPumpDesignFlowLps": 90,
+    "chillerPumpDesignPowerKw": 32,
+    "chillerPumpNominalSpeedFraction": 0.74,
+    "towerFanDesignPowerKw": 26,
+    "towerDesignFlowLps": 82,
+    "minimumChillers": 1,
+    "maximumChillers": 4,
+    "chillerLoadLimitFraction": 0.85
+  },
+  "airside": {
+    "pahuStaticPressureSetpointPa": 600,
+    "designStaticPressureSetpointPa": 450,
+    "cracDesignCoolingKw": 110,
+    "cracFanDesignPowerKw": 4.5,
+    "pahuDesignCoolingKw": 220,
+    "pahuSupplyAirTempSetpointC": 15,
+    "pahuReturnAirTempSetpointC": 25,
+    "pahuSupplyAirRhSetpointPct": 47.5,
+    "pahuReturnAirRhSetpointPct": 52.5,
+    "pahuAfterHoursExtraDemandFraction": 0.25
+  },
+  "electrical": {
+    "nominalVoltageV": 230,
+    "nominalFrequencyHz": 50,
+    "modeledLossFraction": 0.012
+  },
+  "environment": {
+    "hallTempC": 23.2,
+    "hallRhPct": 52,
+    "thermalUnmetGainC": 4.5,
+    "returnAirDeltaC": 0.8,
+    "humidityUnmetGainPct": 3
+  },
+  "facility": {
+    "nonCoolingAuxKw": 180
+  },
+  "energy": {
+    "stepSeconds": 300,
+    "repeatPeriodSeconds": 604800
+  }
 }

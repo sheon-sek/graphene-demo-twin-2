@@ -8,7 +8,7 @@ Generated from the read-only reference exports.
 - Instance folders: **296**
 - UDT instances: **831**
 - Exported AtomicTags: **8741**
-- Twin diagnostic extensions: **1019**
+- Twin diagnostic extensions: **1022**
 - Coverage gap: **0**
 
 ## Rules
@@ -20,7 +20,7 @@ Existing export paths, member names and type IDs are retained exactly. Extension
 - CONTROL_COMMAND: 319
 - CONTROL_FEEDBACK: 131
 - ELECTRICAL_DERIVED: 1467
-- ENERGY_INTEGRAL: 132
+- ENERGY_INTEGRAL: 135
 - ENVIRONMENT: 504
 - EQUIPMENT_STATE: 409
 - FAULT_STATE: 808
