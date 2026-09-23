@@ -181,6 +181,9 @@ def mode(c: Mode):
 @app.post("/api/faults/inject")
 def inject(c: FaultIn):
     def do():
+        valid_ids = {r["id"] for r in fault_catalog().get("recipes", [])}
+        if c.recipeId not in valid_ids:
+            raise ValueError(f"unknown recipeId: {c.recipeId!r}; valid: {sorted(valid_ids)}")
         fault = rt().faults.inject(c.recipeId, c.targetAsset, c.severity, rt().now())
         rt()._event(
             "FAULT_INJECTED",
