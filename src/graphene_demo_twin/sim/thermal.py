@@ -13,9 +13,10 @@ Moisture: the fresh-air handlers serving a zone hold its dew point low, a little
 humid days; without one running it drifts towards the outdoor dew point. Relative humidity
 follows from the dew point at each temperature.
 
-Debt until P2: a chilled-water air unit (PAHU, FCU, FWU, CDU) is not modelled yet. It
-delivers full airflow at SUPPLY_C whenever it has supply, as if the chilled water reaching
-its coil were an ideal boundary condition; the DX CRAC units are modelled in
+A chilled-water air unit (PAHU, FCU, FWU, CDU) that the airside (#22) does not model yet
+runs at full airflow whenever it has supply, and its coil cools the air towards the water
+the chiller plant (`sim.plant`) supplies: SUPPLY_C at the design supply temperature and full
+flow, warmer as the water warms or the flow falls short. The DX CRAC units are modelled in
 `sim.placeholder`.
 """
 
@@ -33,6 +34,11 @@ from graphene_demo_twin.sim.weather import outdoor_air, saturation_kpa, site_air
 
 SUPPLY_C = 18.0
 """Supply air temperature every air supplier delivers at steady state."""
+PLANT = "plant"
+"""World-state key of the chiller plant (`sim.plant`) as a whole: its headers, its
+Controllers and its totals. Not a Plant Design node."""
+COIL_APPROACH_K = 4.0
+"""How far a chilled-water coil's leaving air sits above the water supplied to it."""
 HALL_C = 24.0
 """Data Hall return air temperature at its nominal IT Load with full cooling."""
 NOMINAL_UTILISATION = 0.675
@@ -249,12 +255,27 @@ def zone_heat_kw(state: WorldState, design: PlantDesign, zone: str) -> float:
 
 def supplier_air(state: WorldState, design: PlantDesign, supplier: str) -> tuple[float, float]:
     """(airflow as a fraction of nominal, supply temperature) of an air supplier. A unit not
-    modelled yet runs at full flow and SUPPLY_C whenever it has supply (an ideal chilled-water
-    boundary condition, until P2)."""
+    modelled yet runs at full flow whenever it has supply, its coil cooling its room's air
+    with the chilled water the plant supplies (`chw_coil_air`)."""
     unit = state.assets.get(supplier)
     if unit is not None and "airflow" in unit:
         return unit["airflow"], unit["supply_c"]
-    return (1.0 if powered(state, design, supplier) else 0.0), SUPPLY_C
+    room = served_room(design, supplier)
+    return_c = state.assets[room]["temp_c"] if room in state.assets else HALL_C
+    supply_c = chw_coil_air(state.assets.get(PLANT), return_c)
+    return (1.0 if powered(state, design, supplier) else 0.0), supply_c
+
+
+def chw_coil_air(plant: AssetState | None, return_c: float) -> float:
+    """Air leaving a chilled-water coil that takes in air at `return_c`: COIL_APPROACH_K above
+    the plant's supply water with the flow its valve asks for, and less cooled by the share
+    of that flow the plant does not deliver. SUPPLY_C in a world without the plant."""
+    if plant is None:
+        return SUPPLY_C
+    coil = plant["chws_c"] + COIL_APPROACH_K
+    if return_c <= coil:
+        return return_c
+    return return_c - (return_c - coil) * plant["delivery"]
 
 
 def dehumidified(state: WorldState, design: PlantDesign, zone: str) -> bool:
@@ -323,12 +344,13 @@ def _supply(state: WorldState, zone: _Zone) -> tuple[float, float]:
     `supplier_air` over each."""
     assets = state.assets
     flow = supplied = 0.0
+    chw_c = chw_coil_air(assets.get(PLANT), assets[zone.id]["temp_c"])
     for supplier, share, flag in zone.supply:
         unit = assets.get(supplier)
         if unit is not None and "airflow" in unit:
             airflow, supply_c = unit["airflow"], unit["supply_c"]
         elif _live(state, flag):
-            airflow, supply_c = 1.0, SUPPLY_C
+            airflow, supply_c = 1.0, chw_c
         else:
             continue
         flow += share * airflow

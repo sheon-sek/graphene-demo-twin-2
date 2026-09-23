@@ -2,6 +2,7 @@
 
 from graphene_demo_twin.projection.electrical import electrical_bindings
 from graphene_demo_twin.projection.placeholder import placeholder_bindings, placeholder_quality
+from graphene_demo_twin.projection.plant import plant_bindings
 from graphene_demo_twin.projection.projector import (
     Binding,
     CoverageEntry,
@@ -31,6 +32,7 @@ __all__ = [
     "fallback_value",
     "placeholder_bindings",
     "placeholder_quality",
+    "plant_bindings",
     "site_bindings",
     "thermal_bindings",
     "type_default",

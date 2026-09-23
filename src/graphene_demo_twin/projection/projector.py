@@ -183,9 +183,13 @@ class Projector:
             if x != y and (typed := (self._typed(path, x), self._typed(path, y)))[0] != typed[1]:
                 found[path] = typed
 
+        bindings = self._bindings
         for path in paths:
-            if (binding := self._bindings.get(path)) is not None:
-                compare(path, binding.read(a), binding.read(b))
+            if (binding := bindings.get(path)) is not None:
+                read = binding.read
+                x, y = read(a), read(b)
+                if x != y:  # inline: most points agree, and this runs every preview step
+                    compare(path, x, y)
         for group, members in self._groups:
             if not members.isdisjoint(paths):
                 for path, x, y in zip(group.paths, group.read(a), group.read(b), strict=True):

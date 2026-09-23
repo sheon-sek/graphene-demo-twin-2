@@ -22,8 +22,9 @@ from graphene_demo_twin.plant_design import ConnectionKind
 from graphene_demo_twin.projection import Projector, Quality
 from graphene_demo_twin.sim import Event, EventError, Simulation, WorldState
 from graphene_demo_twin.sim.electrical import network
+from graphene_demo_twin.sim.plant import PLANT, plant_layout, plant_nodes
 from graphene_demo_twin.sim.site import SITE, load_class
-from graphene_demo_twin.sim.thermal import hot_aisle_sensors
+from graphene_demo_twin.sim.thermal import hot_aisle_sensors, zones
 from graphene_demo_twin.world import SETTLING_S, default_domains, default_projector
 
 START = 1_790_000_000
@@ -170,12 +171,19 @@ def test_a_fault_acts_on_the_chosen_asset_and_never_on_another_of_its_type(plant
             continue
         other = faulted.state.assets[crac]
         assert not any(k.startswith(("constraint.", "controller.")) for k in other), crac
-        # The HV room's unit answers only to the heat its transformers give off, which
-        # follows the power the whole site draws; every other unit is untouched.
+        # Every other unit keeps running as it was. It sees only the chilled water the
+        # plant supplies every hall, which the tripped unit's hall warms by millikelvin;
+        # the HV room's unit also answers to the heat its transformers give off, which
+        # follows the power the whole site draws.
+        assert other["running"] and not other["tripped"], crac
         if crac not in TRANSFORMER_ROOM:
-            assert other == base.state.assets[crac], crac
+            assert other["return_c"] == pytest.approx(
+                base.state.assets[crac]["return_c"], abs=0.02
+            ), crac
     for hall in ("DH01", "DH02", "DH04", "DH05", "DH08"):
-        assert faulted.state.assets[hall] == base.state.assets[hall], hall
+        assert faulted.state.assets[hall]["temp_c"] == pytest.approx(
+            base.state.assets[hall]["temp_c"], abs=0.02
+        ), hall
     assert list(faulted.state.faults) == [f"crac.compressor_trip@{CRAC3}"]
 
 
@@ -365,14 +373,19 @@ def _differs(a: WorldState, b: WorldState) -> bool:
 
 
 def _history(name: str) -> bool:
-    """Energy integrals, running averages, fuel burnt and engine hours remember what the fault
-    cost: the world recovers, its history does not."""
-    return name.startswith(("energy_kwh", "avg.")) or name in ("fuel_l", "fuel_pumped_l", "run_s")
+    """Energy integrals, running averages, fuel burnt, run hours, starts and the plant's last
+    staging command remember what the fault cost: the world recovers, its history does
+    not."""
+    return (
+        name.startswith(("energy_kwh", "avg."))
+        or name.endswith("run_s")
+        or name in ("fuel_l", "fuel_pumped_l", "starts", "starts_day", "last_command")
+    )
 
 
 def _history_point(asset_model, path: str) -> bool:
     point = asset_model.point(path)
-    rolling = path.endswith(("(Daily)", "(Monthly)", "(Annually)"))
+    rolling = path.endswith(("(Daily)", "(Monthly)", "(Annually)", "/Controls/Last Command"))
     return rolling or point.source_class is SourceClass.ENERGY_INTEGRAL
 
 
@@ -463,16 +476,31 @@ def test_a_preview_reports_the_propagation_diffs_and_alarms(plant_design, asset_
         if a.type_id in ("Temperature and Humidity", "Environment Monitoring")
     }
     assert sensors <= set(nodes)
-    # Beyond the hall and its sensors, only the power the site draws to cool it changes, and
-    # the electrical network that supplies it.
-    assert SITE in nodes
+    # Beyond the hall and its sensors, the power the site draws to cool it changes, and the
+    # electrical network that supplies it. Its chilled-water units take up more heat, so the
+    # chiller plant sees it, and through the water it supplies every zone the other halls,
+    # their sensors and their air units follow, after the plant.
+    assert SITE in nodes and PLANT in nodes
     supply = {*network(plant_design).meters, *network(plant_design).incomers}
     supply |= {*network(plant_design).ups, "G-UPSA", "G-UPSB", "L1-SUP"}  # UPS losses
     assert supply & set(nodes)
+    plant = {
+        PLANT,
+        *(n for leg in plant_layout(plant_design).legs for n in (*leg.valves, *leg.tanks)),
+    }
+    plant |= set(plant_nodes(plant_design)) | set(plant_layout(plant_design).bypass)
+    cooled = set(zones(plant_design))
     for node in set(nodes[2:]) - sensors - {SITE}:
-        assert load_class(plant_design, node) is not None or node in supply, node
-        if node in plant_design.assets:
-            assert plant_design.asset(node).room not in {"DH01", "DH02", "DH04"}, node
+        placed = plant_design.assets.get(node)
+        assert (
+            load_class(plant_design, node) is not None
+            or node in supply | plant | cooled
+            or (placed is not None and placed.room in cooled)
+        ), node
+    first = {a.node: a.first_at for a in preview.affected}
+    for hall in ("DH01", "DH02", "DH04"):
+        if hall in first:
+            assert first[hall] >= first[PLANT], hall
     assert all(a.first_at >= START + 30 for a in preview.affected)
     times = [a.first_at for a in preview.affected]
     assert times == sorted(times)
@@ -480,7 +508,9 @@ def test_a_preview_reports_the_propagation_diffs_and_alarms(plant_design, asset_
     diffs = {d.path: d for d in preview.diffs}
     assert f"{SENSOR}/Temp" in diffs
     assert diffs[f"{SENSOR}/Temp"].predicted > diffs[f"{SENSOR}/Temp"].base + 2
-    assert f"{CRAC1}/Supply Air Temperature" not in diffs
+    if f"{CRAC1}/Supply Air Temperature" in diffs:  # only through the chilled water
+        d = diffs[f"{CRAC1}/Supply Air Temperature"]
+        assert d.predicted == pytest.approx(d.base, abs=0.05)
     alarms = {a.path: a for a in preview.alarms}
     assert set(alarms) == {
         f"{CRAC3}/System Failure_Trip",

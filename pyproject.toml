@@ -26,6 +26,7 @@ packages = ["src/graphene_demo_twin"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["slow: simulates more than about ten minutes of sim time"]
 
 [tool.ruff]
 line-length = 100

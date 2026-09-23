@@ -28,6 +28,8 @@ SUPPORT_ZONES = ["G-HV", "G-UPSA", "G-UPSB", "G-BAT", "G-NOC", "L1-SUP", "L2-SUP
 CRAC5 = "CRAC/R_CRAC1"  # the DX unit serving DH05
 EM = "Environment Monitoring/Level 2/DH05/Environment Monitoring 8"
 TH = "Temperature and Humidity/Datahall 5/Sensor 36"
+CHW_COUPLING_C = 0.02
+"""Most another zone moves through the chilled water the plant supplies every zone (#21)."""
 
 
 def _sim(plant_design, seed: int = 7) -> Simulation:
@@ -160,12 +162,15 @@ def test_losing_cooling_in_dh05_raises_only_dh05(plant_design, projector):
     assert hot["temp_c"] > cool["temp_c"] + 5.0
     assert hot["cooling_kw"] < hot["heat_kw"]
     assert hot["delivered_fraction"] < 1.0
-    # No zone shares air with DH05 in the Plant Design, so no other hall moves at all. The
-    # support rooms see only the power the tripped unit no longer draws: the transformers in
-    # the HV room run a little cooler.
+    # No zone shares air with DH05 in the Plant Design. The other halls see only the chilled
+    # water DH05's units now warm a little more, which the plant holds within millikelvin;
+    # the support rooms see the power the tripped unit no longer draws too: the
+    # transformers in the HV room run a little cooler.
     for zone in zones(plant_design):
         if zone in HALLS and zone != "DH05":
-            assert sim.state.assets[zone] == base.state.assets[zone], zone
+            assert sim.state.assets[zone]["temp_c"] == pytest.approx(
+                base.state.assets[zone]["temp_c"], abs=CHW_COUPLING_C
+            ), zone
         elif zone != "DH05":
             assert sim.state.assets[zone]["temp_c"] == pytest.approx(
                 base.state.assets[zone]["temp_c"], abs=0.1
@@ -178,7 +183,7 @@ def test_losing_cooling_in_dh05_raises_only_dh05(plant_design, projector):
     for n in range(1, 9):
         if n != 5:
             view = f"Chiller System Control/Data Halls/DH{n} Temperature"
-            assert p.values[view] == q.values[view]
+            assert p.values[view] == pytest.approx(q.values[view], abs=CHW_COUPLING_C)
     for sensor, (hall, _) in {
         **cold_aisle_sensors(plant_design),
         **hot_aisle_sensors(plant_design),
@@ -189,7 +194,7 @@ def test_losing_cooling_in_dh05_raises_only_dh05(plant_design, projector):
             if hall == "DH05":
                 assert p.values[path] != q.values[path], path
             else:
-                assert p.values[path] == q.values[path], path
+                assert p.values[path] == pytest.approx(q.values[path], abs=0.05), path
     # Every hot-aisle and cold-aisle sensor in DH05 warms.
     for sensor, (hall, _) in hot_aisle_sensors(plant_design).items():
         if hall == "DH05":
@@ -216,7 +221,9 @@ def test_a_support_room_loses_cooling_on_its_own(plant_design):
     sim.advance(1800)
     assert sim.state.assets["G-UPSA"]["temp_c"] > base.state.assets["G-UPSA"]["temp_c"] + 2.0
     for hall in HALLS:
-        assert sim.state.assets[hall] == base.state.assets[hall], hall
+        assert sim.state.assets[hall]["temp_c"] == pytest.approx(
+            base.state.assets[hall]["temp_c"], abs=CHW_COUPLING_C
+        ), hall
 
 
 def test_delivered_fraction_is_the_share_of_demand_met_through_loss_and_recovery(plant_design):

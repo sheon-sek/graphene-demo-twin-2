@@ -112,7 +112,7 @@ def test_coverage_lists_every_point_once_with_its_source(asset_model, projector)
     assert report.entries[DASH_DH03_ENERGY].source is PointSource.PLANT_VIEW
     assert report.entries["BCPM/2L1/Rack ID"].source is PointSource.FALLBACK
     assert not report.entries["BCPM/2L1/Rack ID"].debt
-    assert report.entries["Chiller/R_C1/Input Power"].debt
+    assert report.entries["Cooling Towers Plant/R_P1_P1/Power"].debt  # P3 makeup water
     assert report.debt() == sum(e.debt for e in report.entries.values()) > 0
 
 
@@ -153,7 +153,7 @@ def test_a_fault_moves_only_the_points_downstream_of_it(asset_model, plant_desig
     base, faulted = projector.project(sim.state), projector.project(fork.state)
 
     assert faulted.values[HOT_AISLE_DH03] > base.values[HOT_AISLE_DH03] + 5.0
-    assert faulted.values[HOT_AISLE_DH01] == base.values[HOT_AISLE_DH01]
+    assert faulted.values[HOT_AISLE_DH01] == pytest.approx(base.values[HOT_AISLE_DH01], abs=0.05)
     changed = {p for p in base.values if base.values[p] != faulted.values[p]}
     # A tripped CRAC stops cooling the hall it supplies air to (its authored air connection):
     # only the unit's own points, the sensors placed in that hall and the site KPIs see it.
@@ -191,6 +191,25 @@ def test_a_fault_moves_only_the_points_downstream_of_it(asset_model, plant_desig
     # The transformers' losses in turn warm the HV room a touch, so its DX unit works a
     # little harder.
     downstream |= {pt.path for pt in asset_model.points_of("CRAC/G_CRAC4")}
+    # The hall's chilled-water units take up more of its heat, so the chiller plant sees it,
+    # and through the water it supplies every zone, the other halls move by millikelvin:
+    # their sensors, their Plant View temperatures and their DX units.
+    downstream |= {
+        p
+        for p in projector.coverage.entries
+        if p.startswith(
+            (
+                "Chiller/",
+                "Buffer Tank/",
+                "Cooling Towers Plant/",
+                "Chiller System Control/",
+                "Chiller_System/",
+                "Temperature and Humidity/",
+                "Environment Monitoring/",
+                "CRAC/",
+            )
+        )
+    }
     assert HOT_AISLE_DH03 in changed and f"{CRAC3}/System Failure_Trip" in changed
     assert changed <= downstream
     bound = {*projector.coverage.paths(PointSource.PHYSICS)}
