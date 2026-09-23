@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from '../lib/api';
 import { formatValue } from '../lib/format';
 import type { LiveStore } from '../lib/live';
@@ -6,7 +6,8 @@ import type { CommandInfo, Value } from '../lib/types';
 
 /**
  * Operator Commands on the selected asset (hand/auto, start/stop, setpoints), each written
- * to the Event Log. Current values are refetched whenever the Event Log grows or resets.
+ * to the Event Log. Current values are refetched whenever the Event Log grows or resets, and
+ * again on the next step, once a newly logged command has taken effect.
  */
 export function ControlTab({ live, node }: { live: LiveStore; node: string }) {
   useSyncExternalStore(
@@ -16,6 +17,9 @@ export function ControlTab({ live, node }: { live: LiveStore; node: string }) {
   const [commands, setCommands] = useState<CommandInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { eventCount, epoch } = live;
+  const logged = useRef({ count: eventCount, time: live.time });
+  if (logged.current.count !== eventCount) logged.current = { count: eventCount, time: live.time };
+  const applied = live.time > logged.current.time;
 
   useEffect(() => {
     let cancelled = false;
@@ -26,7 +30,7 @@ export function ControlTab({ live, node }: { live: LiveStore; node: string }) {
     return () => {
       cancelled = true;
     };
-  }, [node, eventCount, epoch]);
+  }, [node, eventCount, epoch, applied]);
 
   if (error) return <p className="error pad">{error}</p>;
   if (!commands) return <p className="hint pad">Loading…</p>;

@@ -6967,6 +6967,86 @@
    "sys": "Cooling"
   },
   {
+   "path": "~IT-DH01",
+   "type": "IT Load",
+   "unexported": true,
+   "room": "DH01",
+   "x": 18,
+   "y": 8,
+   "role": "IT equipment in DH01: draws the IT Load, all of it becomes heat in the hall",
+   "sys": "IT"
+  },
+  {
+   "path": "~IT-DH02",
+   "type": "IT Load",
+   "unexported": true,
+   "room": "DH02",
+   "x": 42,
+   "y": 8,
+   "role": "IT equipment in DH02: draws the IT Load, all of it becomes heat in the hall",
+   "sys": "IT"
+  },
+  {
+   "path": "~IT-DH03",
+   "type": "IT Load",
+   "unexported": true,
+   "room": "DH03",
+   "x": 66,
+   "y": 8,
+   "role": "IT equipment in DH03: draws the IT Load, all of it becomes heat in the hall",
+   "sys": "IT"
+  },
+  {
+   "path": "~IT-DH04",
+   "type": "IT Load",
+   "unexported": true,
+   "room": "DH04",
+   "x": 90,
+   "y": 8,
+   "role": "IT equipment in DH04: draws the IT Load, all of it becomes heat in the hall",
+   "sys": "IT"
+  },
+  {
+   "path": "~IT-DH05",
+   "type": "IT Load",
+   "unexported": true,
+   "room": "DH05",
+   "x": 18,
+   "y": 8,
+   "role": "IT equipment in DH05: draws the IT Load, all of it becomes heat in the hall",
+   "sys": "IT"
+  },
+  {
+   "path": "~IT-DH06",
+   "type": "IT Load",
+   "unexported": true,
+   "room": "DH06",
+   "x": 42,
+   "y": 8,
+   "role": "IT equipment in DH06: draws the IT Load, all of it becomes heat in the hall",
+   "sys": "IT"
+  },
+  {
+   "path": "~IT-DH07",
+   "type": "IT Load",
+   "unexported": true,
+   "room": "DH07",
+   "x": 66,
+   "y": 8,
+   "role": "IT equipment in DH07: draws the IT Load, all of it becomes heat in the hall",
+   "sys": "IT"
+  },
+  {
+   "path": "~IT-DH08",
+   "type": "IT Load",
+   "unexported": true,
+   "room": "DH08",
+   "x": 90,
+   "y": 8,
+   "role": "IT equipment in DH08: draws the IT Load, all of it becomes heat in the hall",
+   "sys": "IT"
+  },
+  {
    "path": "~P-CWS-01",
    "type": "Pump header view",
    "unexported": true,
@@ -6975,6 +7055,16 @@
    "y": 34,
    "role": "Condenser-water header (aggregate of R_CP5–8)",
    "sys": "Cooling"
+  },
+  {
+   "path": "~WX-01",
+   "type": "Weather Station",
+   "unexported": true,
+   "room": "R-AIR",
+   "x": 93,
+   "y": 41,
+   "role": "Rooftop weather station: the outdoor air the site rejects heat to",
+   "sys": "Environment"
   }
  ],
  "edges": [
@@ -8223,7 +8313,7 @@
   {
    "kind": "power",
    "a": "BCPM/1L1",
-   "b": "DH01",
+   "b": "~IT-DH01",
    "label": "IT load"
   },
   {
@@ -8241,7 +8331,7 @@
   {
    "kind": "power",
    "a": "BCPM/1L2",
-   "b": "DH01",
+   "b": "~IT-DH01",
    "label": "IT load"
   },
   {
@@ -8259,7 +8349,7 @@
   {
    "kind": "power",
    "a": "BCPM/1L3",
-   "b": "DH01",
+   "b": "~IT-DH01",
    "label": "IT load"
   },
   {
@@ -8277,7 +8367,7 @@
   {
    "kind": "power",
    "a": "BCPM/2L1",
-   "b": "DH02",
+   "b": "~IT-DH02",
    "label": "IT load"
   },
   {
@@ -8295,7 +8385,7 @@
   {
    "kind": "power",
    "a": "BCPM/2L2",
-   "b": "DH02",
+   "b": "~IT-DH02",
    "label": "IT load"
   },
   {
@@ -8313,7 +8403,7 @@
   {
    "kind": "power",
    "a": "BCPM/2L3",
-   "b": "DH02",
+   "b": "~IT-DH02",
    "label": "IT load"
   },
   {
@@ -8331,7 +8421,7 @@
   {
    "kind": "power",
    "a": "BCPM/3L1",
-   "b": "DH03",
+   "b": "~IT-DH03",
    "label": "IT load"
   },
   {
@@ -8349,7 +8439,7 @@
   {
    "kind": "power",
    "a": "BCPM/3L2",
-   "b": "DH03",
+   "b": "~IT-DH03",
    "label": "IT load"
   },
   {
@@ -8367,7 +8457,7 @@
   {
    "kind": "power",
    "a": "BCPM/3L3",
-   "b": "DH03",
+   "b": "~IT-DH03",
    "label": "IT load"
   },
   {
@@ -8385,7 +8475,7 @@
   {
    "kind": "power",
    "a": "BCPM/4L1",
-   "b": "DH04",
+   "b": "~IT-DH04",
    "label": "IT load"
   },
   {
@@ -8403,7 +8493,7 @@
   {
    "kind": "power",
    "a": "BCPM/4L2",
-   "b": "DH04",
+   "b": "~IT-DH04",
    "label": "IT load"
   },
   {
@@ -8421,7 +8511,7 @@
   {
    "kind": "power",
    "a": "BCPM/4L3",
-   "b": "DH04",
+   "b": "~IT-DH04",
    "label": "IT load"
   },
   {
@@ -8439,7 +8529,7 @@
   {
    "kind": "power",
    "a": "BCPM/5L1",
-   "b": "DH05",
+   "b": "~IT-DH05",
    "label": "IT load"
   },
   {
@@ -8457,7 +8547,7 @@
   {
    "kind": "power",
    "a": "BCPM/5L2",
-   "b": "DH05",
+   "b": "~IT-DH05",
    "label": "IT load"
   },
   {
@@ -8475,7 +8565,7 @@
   {
    "kind": "power",
    "a": "BCPM/5L3",
-   "b": "DH05",
+   "b": "~IT-DH05",
    "label": "IT load"
   },
   {
@@ -8493,7 +8583,7 @@
   {
    "kind": "power",
    "a": "BCPM/6L1",
-   "b": "DH06",
+   "b": "~IT-DH06",
    "label": "IT load"
   },
   {
@@ -8511,7 +8601,7 @@
   {
    "kind": "power",
    "a": "BCPM/6L2",
-   "b": "DH06",
+   "b": "~IT-DH06",
    "label": "IT load"
   },
   {
@@ -8529,7 +8619,7 @@
   {
    "kind": "power",
    "a": "BCPM/6L3",
-   "b": "DH06",
+   "b": "~IT-DH06",
    "label": "IT load"
   },
   {
@@ -8547,7 +8637,7 @@
   {
    "kind": "power",
    "a": "BCPM/7L1",
-   "b": "DH07",
+   "b": "~IT-DH07",
    "label": "IT load"
   },
   {
@@ -8565,7 +8655,7 @@
   {
    "kind": "power",
    "a": "BCPM/7L2",
-   "b": "DH07",
+   "b": "~IT-DH07",
    "label": "IT load"
   },
   {
@@ -8583,7 +8673,7 @@
   {
    "kind": "power",
    "a": "BCPM/7L3",
-   "b": "DH07",
+   "b": "~IT-DH07",
    "label": "IT load"
   },
   {
@@ -8601,7 +8691,7 @@
   {
    "kind": "power",
    "a": "BCPM/8L1",
-   "b": "DH08",
+   "b": "~IT-DH08",
    "label": "IT load"
   },
   {
@@ -8619,7 +8709,7 @@
   {
    "kind": "power",
    "a": "BCPM/8L2",
-   "b": "DH08",
+   "b": "~IT-DH08",
    "label": "IT load"
   },
   {
@@ -8637,7 +8727,7 @@
   {
    "kind": "power",
    "a": "BCPM/8L3",
-   "b": "DH08",
+   "b": "~IT-DH08",
    "label": "IT load"
   },
   {
@@ -9443,6 +9533,14 @@
    ]
   },
   {
+   "id": "~IT-DH01",
+   "name": "IT-DH01",
+   "type": "IT Load",
+   "observedBy": [
+    "Dashboard/Energy/Floors/Level 1/Data Halls/DH01"
+   ]
+  },
+  {
    "id": "~CB-002",
    "name": "CB-002",
    "type": "Cooling Block",
@@ -9456,6 +9554,14 @@
    "type": "Ceiling Cooling Units",
    "observedBy": [
     "Chiller_System/Ceiling Cooling Units/CCU-002"
+   ]
+  },
+  {
+   "id": "~IT-DH02",
+   "name": "IT-DH02",
+   "type": "IT Load",
+   "observedBy": [
+    "Dashboard/Energy/Floors/Level 1/Data Halls/DH02"
    ]
   },
   {
@@ -9475,6 +9581,14 @@
    ]
   },
   {
+   "id": "~IT-DH03",
+   "name": "IT-DH03",
+   "type": "IT Load",
+   "observedBy": [
+    "Dashboard/Energy/Floors/Level 1/Data Halls/DH03"
+   ]
+  },
+  {
    "id": "~CB-004",
    "name": "CB-004",
    "type": "Cooling Block",
@@ -9488,6 +9602,14 @@
    "type": "Ceiling Cooling Units",
    "observedBy": [
     "Chiller_System/Ceiling Cooling Units/CCU-004"
+   ]
+  },
+  {
+   "id": "~IT-DH04",
+   "name": "IT-DH04",
+   "type": "IT Load",
+   "observedBy": [
+    "Dashboard/Energy/Floors/Level 1/Data Halls/DH04"
    ]
   },
   {
@@ -9507,6 +9629,14 @@
    ]
   },
   {
+   "id": "~IT-DH05",
+   "name": "IT-DH05",
+   "type": "IT Load",
+   "observedBy": [
+    "Dashboard/Energy/Floors/Level 2/Data Halls/DH05"
+   ]
+  },
+  {
    "id": "~CB-006",
    "name": "CB-006",
    "type": "Cooling Block",
@@ -9520,6 +9650,14 @@
    "type": "Ceiling Cooling Units",
    "observedBy": [
     "Chiller_System/Ceiling Cooling Units/CCU-006"
+   ]
+  },
+  {
+   "id": "~IT-DH06",
+   "name": "IT-DH06",
+   "type": "IT Load",
+   "observedBy": [
+    "Dashboard/Energy/Floors/Level 2/Data Halls/DH06"
    ]
   },
   {
@@ -9539,6 +9677,14 @@
    ]
   },
   {
+   "id": "~IT-DH07",
+   "name": "IT-DH07",
+   "type": "IT Load",
+   "observedBy": [
+    "Dashboard/Energy/Floors/Level 2/Data Halls/DH07"
+   ]
+  },
+  {
    "id": "~CB-008",
    "name": "CB-008",
    "type": "Cooling Block",
@@ -9552,6 +9698,22 @@
    "type": "Ceiling Cooling Units",
    "observedBy": [
     "Chiller_System/Ceiling Cooling Units/CCU-008"
+   ]
+  },
+  {
+   "id": "~IT-DH08",
+   "name": "IT-DH08",
+   "type": "IT Load",
+   "observedBy": [
+    "Dashboard/Energy/Floors/Level 2/Data Halls/DH08"
+   ]
+  },
+  {
+   "id": "~WX-01",
+   "name": "WX-01",
+   "type": "Weather Station",
+   "observedBy": [
+    "Chiller System Control/Weather"
    ]
   },
   {
@@ -9702,6 +9864,11 @@
     "floor": "Level 1",
     "design_kW": 1000,
     "operating": "55–80 %",
+    "operating_pct": [
+     55,
+     80
+    ],
+    "liquid_fraction": 0.0,
     "note": ""
    },
    {
@@ -9709,6 +9876,11 @@
     "floor": "Level 1",
     "design_kW": 1000,
     "operating": "55–80 %",
+    "operating_pct": [
+     55,
+     80
+    ],
+    "liquid_fraction": 0.0,
     "note": ""
    },
    {
@@ -9716,6 +9888,11 @@
     "floor": "Level 1",
     "design_kW": 1000,
     "operating": "55–80 %",
+    "operating_pct": [
+     55,
+     80
+    ],
+    "liquid_fraction": 0.0,
     "note": ""
    },
    {
@@ -9723,6 +9900,11 @@
     "floor": "Level 1",
     "design_kW": 1000,
     "operating": "55–80 %",
+    "operating_pct": [
+     55,
+     80
+    ],
+    "liquid_fraction": 0.0,
     "note": ""
    },
    {
@@ -9730,6 +9912,11 @@
     "floor": "Level 2",
     "design_kW": 1000,
     "operating": "55–80 %",
+    "operating_pct": [
+     55,
+     80
+    ],
+    "liquid_fraction": 0.0,
     "note": ""
    },
    {
@@ -9737,6 +9924,11 @@
     "floor": "Level 2",
     "design_kW": 1000,
     "operating": "55–80 %",
+    "operating_pct": [
+     55,
+     80
+    ],
+    "liquid_fraction": 0.0,
     "note": ""
    },
    {
@@ -9744,6 +9936,11 @@
     "floor": "Level 2",
     "design_kW": 1000,
     "operating": "55–80 %",
+    "operating_pct": [
+     55,
+     80
+    ],
+    "liquid_fraction": 0.0,
     "note": ""
    },
    {
@@ -9751,6 +9948,11 @@
     "floor": "Level 2",
     "design_kW": 1200,
     "operating": "55–80 %",
+    "operating_pct": [
+     55,
+     80
+    ],
+    "liquid_fraction": 0.4,
     "note": "40 % liquid-cooled via CDU-01–03"
    }
   ],
@@ -9881,7 +10083,7 @@
  ],
  "counts": {
   "exported": 639,
-  "unexported": 18,
+  "unexported": 27,
   "edges": 406
  }
 }

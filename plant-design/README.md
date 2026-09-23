@@ -11,6 +11,7 @@ Rev 0.1 was approved on 2026-09-23 with review items A1–A14 accepted as drafte
 Key decisions the design encodes:
 
 - One chiller plant with four chillers. CH-004 is an Unexported Asset (ADR-0004).
+- The roof weather station (`~WX-01`, observed through `Chiller System Control/Weather`) and each Data Hall's IT equipment (`~IT-DH01`–`08`, observed through its `Dashboard/Energy/…/Data Halls/DHnn` folder) are Unexported Assets, added for #18. The BCPM branches feed the IT equipment, not the hall room. `basis.it` carries each hall's design kW, operating band and liquid-cooled share as numbers.
 - CRAC units are DX and do not depend on chilled water.
 - The electrical system is 2N at the MSBs. Each Data Hall has three UPS modules in a distributed-redundant arrangement, and BCPM nL1–3 meter their outputs.
 - Root `Breaker/`, `Line/` and `Smart Alarm Logic/` are Support Assets, not the site single-line diagram.

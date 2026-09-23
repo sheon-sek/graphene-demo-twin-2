@@ -122,6 +122,10 @@ for i, h in enumerate(HALLS, 1):
     ghost(f'~CCU-00{i}', f'CCU-00{i}', 'Ceiling Cooling Units', [f'Chiller_System/Ceiling Cooling Units/CCU-00{i}'])
     put(f'~CCU-00{i}', h, rx['x'] + 12, 15, f'Ceiling cooling units, {h}', 'Airside')
     link('chw', f'~CB-00{i}', f'~CCU-00{i}')
+    ghost(f'~IT-{h}', f'IT-{h}', 'IT Load', [f'Dashboard/Energy/Floors/{rx["floor"]}/Data Halls/{h}'])
+    put(f'~IT-{h}', h, rx['x'] + 18, 8, f'IT equipment in {h}: draws the IT Load, all of it becomes heat in the hall', 'IT')
+ghost('~WX-01', 'WX-01', 'Weather Station', ['Chiller System Control/Weather'])
+put('~WX-01', 'R-AIR', 93, 41, 'Rooftop weather station: the outdoor air the site rejects heat to', 'Environment')
 ghost('~P-CWS-01', 'P-CWS-01', 'Pump header view', ['Chiller System Control/Pumps/P-CWS-01'])
 put('~P-CWS-01', 'R-CHP', 36, 34, 'Condenser-water header (aggregate of R_CP5–8)', 'Cooling')
 
@@ -212,7 +216,7 @@ for h in range(1, 9):
         b = f'BCPM/{h}L{k}'
         r = rooms[f'DH0{h}']
         put(b, f'DH0{h}', r['x'] + 5 + (k - 1) * 7, 28, f'Branch circuit monitor, output of UPS {u} into DH0{h} racks', 'Electrical')
-        link('power', a, b); link('power', b, f'DH0{h}', 'IT load')
+        link('power', a, b); link('power', b, f'~IT-DH0{h}', 'IT load')
 put('UPS/UPS 25', 'L1-SUP', 41, 57, '100 kVA UPS for BMS control room & network', 'Electrical')
 DB = {18: ('L1 DB incomer (from ATS-DB)', None), 19: ('UPS 25 input', 'UPS/UPS 25'), 20: ('IPS panel', None), 21: ('RCMS panel', None),
       22: ('L1 lighting (1-phase)', None), 23: ('Water plant: transfer & booster pumps', None), 24: ('Fire pump & life safety', None)}
@@ -332,7 +336,7 @@ fire = {'Ground': {'Zone 1': 'HV intake, genset yard, diesel farm', 'Zone 2': 'U
 
 basis = dict(
   climate='Tropical (Kuala Lumpur / Singapore class): dry bulb 24–33 °C, wet bulb 24–27 °C, RH 60–95 %; daily cycle with a deterministic seasonal drift',
-  it=[dict(hall=h, floor='Level 1' if i < 4 else 'Level 2', design_kW=1200 if h == 'DH08' else 1000, operating='55–80 %', note='40 % liquid-cooled via CDU-01–03' if h == 'DH08' else '') for i, h in enumerate(HALLS)],
+  it=[dict(hall=h, floor='Level 1' if i < 4 else 'Level 2', design_kW=1200 if h == 'DH08' else 1000, operating='55–80 %', operating_pct=[55, 80], liquid_fraction=0.4 if h == 'DH08' else 0.0, note='40 % liquid-cooled via CDU-01–03' if h == 'DH08' else '') for i, h in enumerate(HALLS)],
   capacities=[
     ('Chillers', '4 × 3,500 kWr water-cooled centrifugal, 3 duty + 1 standby, CHW 14 / 20 °C'),
     ('Tower Groups', '4 groups × 5 cells, 1,000 kW rejection per cell at 27 °C WB; CW 32 / 37 °C; VFD fans'),

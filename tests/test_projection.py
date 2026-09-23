@@ -118,24 +118,24 @@ def test_placeholder_points_follow_the_hall_state(asset_model, plant_design, pro
     sim = _sim(plant_design)
     sim.advance(60)
     p = projector.project(sim.state)
-    halls = {n: s for n, s in sim.state.assets.items() if n.startswith("DH")}
+    it = {n: s for n, s in sim.state.assets.items() if n.startswith("~IT-")}
 
-    assert p.values[HOT_AISLE_DH03] == pytest.approx(halls["DH03"]["temp_c"], rel=1e-6)
-    assert p.values[DASH_DH03_ENERGY] == halls["DH03"]["it_energy_kwh"]
+    assert p.values[HOT_AISLE_DH03] == pytest.approx(sim.state.assets["DH03"]["temp_c"], rel=1e-6)
+    assert p.values[DASH_DH03_ENERGY] == it["~IT-DH03"]["energy_kwh"]
     assert p.values["Dashboard/Total IT Load"] == pytest.approx(
-        sum(s["it_load_kw"] for s in halls.values())
+        sum(s["power_kw"] for s in it.values())
     )
     assert p.values["Dashboard/Total IT Load 2"] == pytest.approx(
         p.values["Dashboard/Total IT Load"] / 1000, rel=1e-6
     )
     assert p.values["Dashboard/Energy/Floors/Level 1/Data Halls/IT Energy"] == pytest.approx(
-        sum(halls[h]["it_energy_kwh"] for h in ("DH01", "DH02", "DH03", "DH04"))
+        sum(it[f"~IT-DH0{i}"]["energy_kwh"] for i in (1, 2, 3, 4))
     )
     assert p.values["Dashboard/Energy/Building/Total IT Energy"] == pytest.approx(
-        sum(s["it_energy_kwh"] for s in halls.values())
+        sum(s["energy_kwh"] for s in it.values())
     )
     bcpm = [f"BCPM/3L{i}/Active Power" for i in (1, 2, 3)]
-    assert sum(p.values[b] for b in bcpm) == pytest.approx(halls["DH03"]["it_load_kw"], rel=1e-6)
+    assert sum(p.values[b] for b in bcpm) == pytest.approx(it["~IT-DH03"]["power_kw"], rel=1e-6)
 
 
 def test_a_fault_moves_only_the_points_downstream_of_it(plant_design, projector):
@@ -151,7 +151,7 @@ def test_a_fault_moves_only_the_points_downstream_of_it(plant_design, projector)
     assert faulted.values[HOT_AISLE_DH01] == base.values[HOT_AISLE_DH01]
     changed = {p for p in base.values if base.values[p] != faulted.values[p]}
     # A tripped CRAC stops cooling the hall it supplies air to (its authored air connection):
-    # only the unit's own points and the sensors placed in that hall see it.
+    # only the unit's own points, the sensors placed in that hall and the site KPIs see it.
     rooms = [
         n for n in plant_design.downstream(CRAC3, ConnectionKind.AIR) if plant_design.is_room(n)
     ]
@@ -164,9 +164,18 @@ def test_a_fault_moves_only_the_points_downstream_of_it(plant_design, projector)
         for a in plant_design.assets_in("DH03")
         if a.type_id == "Temperature and Humidity"
     }
+    # Its cold aisle warms too, and the site draws different power to cool it.
+    downstream |= {
+        p
+        for p in projector.coverage.entries
+        if p.startswith("Environment Monitoring/Level 1/DH03/")
+    }
+    downstream |= {p for p in projector.coverage.entries if p.startswith(("Dashboard/", "Other/"))}
     assert HOT_AISLE_DH03 in changed and f"{CRAC3}/System Failure_Trip" in changed
     assert changed <= downstream
-    assert changed < set(projector.coverage.paths(PointSource.PHYSICS))
+    bound = {*projector.coverage.paths(PointSource.PHYSICS)}
+    bound |= {*projector.coverage.paths(PointSource.PLANT_VIEW)}
+    assert changed < bound
 
 
 def test_non_finite_physics_values_are_bad_quality(asset_model, plant_design, projector):
@@ -188,7 +197,7 @@ def test_non_finite_values_are_bad_quality_for_boolean_points(asset_model, plant
     assert p.values[alarm] is False
 
 
-def test_branch_meters_split_the_load_of_the_hall_they_supply(asset_model, plant_design):
+def test_branch_meters_split_the_load_of_the_it_equipment_they_supply(asset_model, plant_design):
     """Load follows the authored power connections, not where a meter sits."""
     moved = replace(plant_design.asset("BCPM/3L1"), room="DH01")  # still feeds DH03 only
     design = PlantDesign(
@@ -198,16 +207,21 @@ def test_branch_meters_split_the_load_of_the_hall_they_supply(asset_model, plant
         [moved if a.path == moved.path else a for a in plant_design.assets.values()],
         plant_design.unexported.values(),
         plant_design.connections,
+        plant_design.it_basis.values(),
     )
-    assert design.upstream("DH03", ConnectionKind.POWER) == ("BCPM/3L1", "BCPM/3L2", "BCPM/3L3")
+    assert design.upstream("~IT-DH03", ConnectionKind.POWER) == (
+        "BCPM/3L1",
+        "BCPM/3L2",
+        "BCPM/3L3",
+    )
 
     projector = default_projector(asset_model, design)
     state = _sim(plant_design).state.copy()
-    state.assets["DH01"]["it_load_kw"] = 300.0
-    state.assets["DH03"]["it_load_kw"] = 900.0
+    state.assets["~IT-DH01"]["power_kw"] = 300.0
+    state.assets["~IT-DH03"]["power_kw"] = 900.0
     p = projector.project(state)
     for hall, meters in {"DH03": ("3L1", "3L2", "3L3"), "DH01": ("1L1", "1L2", "1L3")}.items():
-        load = state.assets[hall]["it_load_kw"]
+        load = state.assets[f"~IT-{hall}"]["power_kw"]
         for meter in meters:
             assert p.values[f"BCPM/{meter}/Active Power"] == pytest.approx(load / 3, rel=1e-6)
 

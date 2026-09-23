@@ -36,7 +36,10 @@ class Domain(Protocol):
     Domains hold no mutable state of their own: everything that evolves lives in WorldState,
     so forks, replay and Reset see all of it. They step in registration order, each reading
     what earlier domains wrote in the same step. A domain that carries out Operator Commands
-    declares them as `commands: Mapping[type_id, tuple[CommandSpec, ...]]`.
+    declares them as `commands: Mapping[type_id, tuple[CommandSpec, ...]]`. A domain whose
+    steady state derives from other domains' (site totals, running averages) may also define
+    `complete(state, ctx)`, called in registration order once every domain's initial state is
+    in place; it sets only its own variables.
     """
 
     def initial(self, ctx: StepContext) -> Mapping[str, AssetState]:
@@ -137,7 +140,11 @@ class Simulation:
                 if clash := owned.keys() & variables.keys():
                     raise ValueError(f"two domains own {node} variables {sorted(clash)}")
                 owned.update(variables)
-        return WorldState(start_time, assets)
+        state = WorldState(start_time, assets)
+        for domain in self.domains:
+            if (complete := getattr(domain, "complete", None)) is not None:
+                complete(state, ctx)
+        return state
 
     def _domain_for(self, event: Event) -> Domain:
         for domain in self.domains:

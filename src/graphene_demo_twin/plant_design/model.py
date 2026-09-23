@@ -77,6 +77,19 @@ class UnexportedAsset:
 
 
 @dataclass(frozen=True, slots=True)
+class ITBasis:
+    """The IT Load a Data Hall is designed for, from the Plant Design basis."""
+
+    hall: str
+    design_kw: float
+    operating_min: float
+    operating_max: float
+    """The band the hall normally runs in, as fractions of `design_kw`."""
+    liquid_fraction: float
+    """Share of the IT Load cooled by liquid (CDUs) rather than by the hall air."""
+
+
+@dataclass(frozen=True, slots=True)
 class Connection:
     """A directed physical connection: `source` supplies `target` (upstream to downstream)."""
 
@@ -98,6 +111,7 @@ class PlantDesign:
         assets: Iterable[PlacedAsset],
         unexported: Iterable[UnexportedAsset],
         connections: Iterable[Connection],
+        it_basis: Iterable[ITBasis] = (),
     ) -> None:
         self._version = version
         self._floors: tuple[Floor, ...] = tuple(floors)
@@ -107,6 +121,7 @@ class PlantDesign:
             {u.id: u for u in unexported}
         )
         self._connections: tuple[Connection, ...] = tuple(connections)
+        self._it_basis: Mapping[str, ITBasis] = MappingProxyType({b.hall: b for b in it_basis})
 
         self._floors_by_name = {f.name: f for f in self.floors}
         by_room: dict[str, list[PlacedAsset]] = {rid: [] for rid in self.rooms}
@@ -146,6 +161,11 @@ class PlantDesign:
     @property
     def connections(self) -> tuple[Connection, ...]:
         return self._connections
+
+    @property
+    def it_basis(self) -> Mapping[str, ITBasis]:
+        """IT Load design basis by Data Hall."""
+        return self._it_basis
 
     def floor(self, name: str) -> Floor:
         return self._floors_by_name[name]

@@ -52,8 +52,8 @@ def test_regenerating_the_design_matches_the_committed_json(tmp_path):
 def test_loads_floors_rooms_assets_and_connections(plant_design):
     assert [f.name for f in plant_design.floors] == ["Ground", "Level 1", "Level 2", "Roof"]
     assert len(plant_design.rooms) == 33
-    assert len(plant_design.assets) == 639 + 18
-    assert len(plant_design.unexported) == 18
+    assert len(plant_design.assets) == 639 + 27
+    assert len(plant_design.unexported) == 27
     assert len(plant_design.connections) == 406
 
 
@@ -100,6 +100,8 @@ def test_unexported_assets_are_the_ones_the_prd_fixes(plant_design):
         *(f"~CB-00{i}" for i in range(1, 9)),
         *(f"~CCU-00{i}" for i in range(1, 9)),
         "~P-CWS-01",
+        "~WX-01",  # the roof weather station
+        *(f"~IT-DH0{i}" for i in range(1, 9)),  # each hall's IT equipment
     }
 
 
@@ -200,11 +202,12 @@ def test_transitive_downstream_reaches_the_halls(plant_design):
 
 
 def test_rooms_are_graph_nodes(plant_design):
-    assert set(plant_design.upstream("DH01", ConnectionKind.POWER)) == {
+    assert set(plant_design.upstream("~IT-DH01", ConnectionKind.POWER)) == {
         "BCPM/1L1",
         "BCPM/1L2",
         "BCPM/1L3",
     }
+    assert plant_design.asset("~IT-DH01").room == "DH01"
     assert "CRAC/L1_CRAC1" in plant_design.upstream("DH01", ConnectionKind.AIR)
     assert plant_design.is_room("DH01")
     assert not plant_design.is_room("CRAC/L1_CRAC1")

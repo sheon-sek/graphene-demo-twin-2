@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from graphene_demo_twin.asset_model import SourceClass
 from graphene_demo_twin.faults import (
     STANDARD_CATALOG,
     FaultCatalog,
@@ -18,6 +19,7 @@ from graphene_demo_twin.faults import (
 )
 from graphene_demo_twin.projection import Projector, Quality
 from graphene_demo_twin.sim import Event, EventError, Simulation, WorldState
+from graphene_demo_twin.sim.site import SITE, load_class
 from graphene_demo_twin.world import SETTLING_S, default_domains, default_projector
 
 START = 1_790_000_000
@@ -28,7 +30,13 @@ SWITCH = "Network Topology/SERVER DISTRIBUTION SWITCH A"
 EWS = "Network Topology/EWS-A"
 
 # One target per catalog fault: the asset each fault is exercised on.
-TARGET = {"CRAC": CRAC3, "Temperature and Humidity": SENSOR, "Network Device": SWITCH}
+TARGET = {
+    "CRAC": CRAC3,
+    "Temperature and Humidity": SENSOR,
+    "Network Device": SWITCH,
+    "Weather Station": "~WX-01",
+    "IT Load": "~IT-DH03",
+}
 
 
 def _sim(plant_design, seed: int = 7) -> Simulation:
@@ -277,7 +285,7 @@ def test_clear_recovers_through_dynamics_rather_than_snapping_back(plant_design)
 
 @pytest.mark.parametrize("spec", list(STANDARD_CATALOG), ids=lambda s: s.id)
 def test_clearing_every_fault_returns_to_the_base_world_within_the_settling_time(
-    plant_design, projector, spec
+    plant_design, asset_model, projector, spec
 ):
     base, sim = _sim(plant_design), _sim(plant_design)
     target = TARGET[spec.asset_type]
@@ -296,6 +304,8 @@ def test_clearing_every_fault_returns_to_the_base_world_within_the_settling_time
     after, before = projector.project(sim.state), projector.project(base.state)
     assert after.degraded == before.degraded
     for path, value in before.values.items():
+        if _history_point(asset_model, path):
+            continue
         if isinstance(value, float):
             assert after.values[path] == pytest.approx(value, rel=2e-3, abs=0.02), path
         else:
@@ -306,12 +316,26 @@ def _differs(a: WorldState, b: WorldState) -> bool:
     return any(a.assets.get(n) != b.assets.get(n) for n in {*a.assets, *b.assets})
 
 
+def _history(name: str) -> bool:
+    """Energy integrals and running averages remember what the fault cost: the world
+    recovers, its history does not."""
+    return name.startswith(("energy_kwh", "avg."))
+
+
+def _history_point(asset_model, path: str) -> bool:
+    point = asset_model.point(path)
+    rolling = path.endswith(("(Daily)", "(Monthly)", "(Annually)"))
+    return rolling or point.source_class is SourceClass.ENERGY_INTEGRAL
+
+
 def assert_close(state: WorldState, base: WorldState) -> None:
     assert state.time == base.time
     assert state.assets.keys() == base.assets.keys()
     for node, variables in base.assets.items():
         assert state.assets[node].keys() == variables.keys(), node
         for name, value in variables.items():
+            if _history(name):
+                continue
             if isinstance(value, float):
                 assert state.assets[node][name] == pytest.approx(value, rel=2e-3, abs=0.02), (
                     node,
@@ -377,8 +401,17 @@ def test_a_preview_reports_the_propagation_diffs_and_alarms(plant_design, asset_
 
     nodes = [a.node for a in preview.affected]
     assert nodes[:2] == [CRAC3, "DH03"]
-    sensors = {a.path for a in plant_design.assets_in("DH03") if a.type_id.startswith("Temp")}
-    assert set(nodes[2:]) == sensors
+    sensors = {
+        a.path
+        for a in plant_design.assets_in("DH03")
+        if a.type_id in ("Temperature and Humidity", "Environment Monitoring")
+    }
+    assert sensors <= set(nodes)
+    # Beyond the hall and its sensors, only the power the site draws to cool it changes.
+    assert SITE in nodes
+    for node in set(nodes[2:]) - sensors - {SITE}:
+        assert load_class(plant_design, node) is not None, node
+        assert plant_design.asset(node).room not in {"DH01", "DH02", "DH04"}, node
     assert all(a.first_at >= START + 30 for a in preview.affected)
     times = [a.first_at for a in preview.affected]
     assert times == sorted(times)

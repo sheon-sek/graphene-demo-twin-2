@@ -3,6 +3,7 @@ import threading
 
 import pytest
 
+from graphene_demo_twin.asset_model import SourceClass
 from graphene_demo_twin.faults import FaultConflict, FaultError
 from graphene_demo_twin.sim import Event, EventError
 from graphene_demo_twin.twin import Frame, Twin
@@ -356,6 +357,11 @@ def test_clearing_all_faults_returns_the_live_world_to_the_base_world(
     faulted, clean = twin.tick(), base.tick()
     assert faulted.state.faults == {}
     for path, value in clean.projection.values.items():
+        point = asset_model.point(path)
+        if point.source_class is SourceClass.ENERGY_INTEGRAL or path.endswith(
+            ("(Daily)", "(Monthly)", "(Annually)")
+        ):
+            continue  # history remembers what the faults cost
         if isinstance(value, float):
             assert faulted.projection.values[path] == pytest.approx(value, rel=5e-3, abs=0.02)
         else:

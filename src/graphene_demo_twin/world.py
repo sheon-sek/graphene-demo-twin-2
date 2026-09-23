@@ -3,7 +3,12 @@
 from graphene_demo_twin.asset_model import AssetModel
 from graphene_demo_twin.faults import STANDARD_CATALOG, FaultCatalog, FaultDomain, Mechanism
 from graphene_demo_twin.plant_design import PlantDesign
-from graphene_demo_twin.projection import Projector, placeholder_bindings, placeholder_quality
+from graphene_demo_twin.projection import (
+    Projector,
+    placeholder_bindings,
+    placeholder_quality,
+    site_bindings,
+)
 from graphene_demo_twin.sim import (
     Domain,
     PlaceholderCracDomain,
@@ -11,17 +16,24 @@ from graphene_demo_twin.sim import (
     PlaceholderNetworkDomain,
     PlaceholderSensorDomain,
 )
+from graphene_demo_twin.sim.it_load import ITLoadDomain
+from graphene_demo_twin.sim.site import SitePowerDomain
+from graphene_demo_twin.sim.weather import WeatherDomain
 
 
 def default_domains(catalog: FaultCatalog = STANDARD_CATALOG) -> list[Domain]:
     """Faults first, so every model reads this step's fault levels; then the network, the
-    air suppliers, the halls they cool and the sensors that observe the halls."""
+    weather and IT Load that drive the site, the air suppliers, the halls they cool, the
+    sensors that observe the halls, and last the site's power totals over all of them."""
     return [
         FaultDomain(catalog),
         PlaceholderNetworkDomain(catalog.asset_types(Mechanism.QUALITY)),
+        WeatherDomain(),
+        ITLoadDomain(),
         PlaceholderCracDomain(),
         PlaceholderHallDomain(),
         PlaceholderSensorDomain(),
+        SitePowerDomain(),
     ]
 
 
@@ -34,6 +46,6 @@ def default_projector(
 ) -> Projector:
     return Projector(
         asset_model,
-        placeholder_bindings(asset_model, design),
+        placeholder_bindings(asset_model, design) + site_bindings(asset_model, design),
         placeholder_quality(asset_model, design, catalog.asset_types(Mechanism.QUALITY)),
     )

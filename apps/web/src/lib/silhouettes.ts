@@ -21,6 +21,8 @@ export const FAMILIES = [
   'leakSensor',
   'network',
   'rack',
+  'itRow',
+  'weatherMast',
   'generic',
 ] as const;
 export type Family = (typeof FAMILIES)[number];
@@ -44,6 +46,8 @@ const RULES: [RegExp, Family][] = [
   [/^Water Leak Cable Sensor$/, 'leakSensor'],
   [/^Network (Device|Switch)$/, 'network'],
   [/^(CDU|Production\/.*)$/, 'rack'],
+  [/^IT Load$/, 'itRow'],
+  [/^Weather Station$/, 'weatherMast'],
   [/^(BCPM|GPM96|GPQM96|GPQM144|GEM\d+.*)$/, 'meter'],
 ];
 
@@ -116,6 +120,10 @@ function build(family: Family): Part[] {
       return [box(0.6, 1.2, 0.6), box(0.62, 0.12, 0.62, 0, 0.9)];
     case 'rack':
       return [box(0.8, 2.1, 1.1)];
+    case 'itRow': // a row of IT racks
+      return [box(4.8, 2.1, 1.1), box(4.8, 0.1, 1.2, 0, 2.1)];
+    case 'weatherMast': // instrument box on a mast, wind vane on top
+      return [box(0.5, 0.5, 0.4, 0, 1.6), cylinder(0.05, 2.6), box(0.9, 0.06, 0.06, 0, 2.6)];
     case 'generic':
       return [box(0.8, 0.8, 0.8)];
   }

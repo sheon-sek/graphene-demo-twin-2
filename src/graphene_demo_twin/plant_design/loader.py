@@ -10,6 +10,7 @@ from graphene_demo_twin.plant_design.model import (
     Connection,
     ConnectionKind,
     Floor,
+    ITBasis,
     PlacedAsset,
     PlantDesign,
     Room,
@@ -145,6 +146,19 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
                 problems.append(f"{where}: {end} is not in the world")
         connections.append(Connection(kind, e["a"], e["b"], e["label"]))
 
+    it_basis: list[ITBasis] = []
+    for b in raw["basis"]["it"]:
+        room = rooms.get(b["hall"])
+        if room is None or room.kind != "hall":
+            problems.append(f"IT basis names a room that is not a Data Hall: {b['hall']}")
+        low, high = (p / 100.0 for p in b["operating_pct"])
+        if not 0.0 < low <= high <= 1.0 or not 0.0 <= b["liquid_fraction"] < 1.0:
+            problems.append(f"IT basis for {b['hall']} is out of range")
+        it_basis.append(ITBasis(b["hall"], float(b["design_kW"]), low, high, b["liquid_fraction"]))
+    halls = {r.id for r in rooms.values() if r.kind == "hall"}
+    if missing := sorted(halls - {b.hall for b in it_basis}):
+        problems.append(f"Data Halls without an IT basis: {missing}")
+
     if problems:
         raise PlantDesignError(problems)
     return PlantDesign(
@@ -154,6 +168,7 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
         assets=assets.values(),
         unexported=unexported.values(),
         connections=connections,
+        it_basis=it_basis,
     )
 
 

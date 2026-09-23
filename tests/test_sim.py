@@ -9,12 +9,13 @@ from graphene_demo_twin.sim import (
     EventError,
     LiveWorld,
     Noise,
-    PlaceholderHallDomain,
     Simulation,
     WhatIfFork,
     WorldState,
     state_hash,
 )
+from graphene_demo_twin.sim.it_load import ITLoadDomain
+from graphene_demo_twin.sim.site import SITE
 from graphene_demo_twin.world import default_domains
 
 START = 1_790_000_000
@@ -29,8 +30,8 @@ class FakeClock:
         return self.now
 
 
-class CountingDomain(PlaceholderHallDomain):
-    """The placeholder domain, counting how often the engine asks it to step."""
+class CountingDomain(ITLoadDomain):
+    """The IT Load domain, counting how often the engine asks it to step."""
 
     def __init__(self) -> None:
         self.steps = 0
@@ -132,7 +133,7 @@ def test_initial_state_is_steady_and_starts_at_the_start_time(plant_design):
     sim = _sim(plant_design)
     assert sim.time == START
     halls = [r.id for r in plant_design.rooms.values() if r.kind == "hall"]
-    nodes = {*plant_design.assets, *plant_design.rooms}
+    nodes = {*plant_design.assets, *plant_design.rooms, SITE}
     assert set(halls) <= sim.state.assets.keys() <= nodes
     assert sim.state.faults == {}
     before = {h: sim.state.assets[h]["temp_c"] for h in halls}
@@ -220,10 +221,10 @@ def test_clear_recovers_through_dynamics_rather_than_snapping_back(plant_design)
 def test_energy_integrals_accumulate_step_by_step(plant_design):
     sim = _sim(plant_design)
     for _ in range(100):
-        before = sim.state.assets["DH01"]["it_energy_kwh"]
+        before = sim.state.assets["~IT-DH01"]["energy_kwh"]
         sim.step()
-        hall = sim.state.assets["DH01"]
-        assert hall["it_energy_kwh"] == before + hall["it_load_kw"] / 3600.0
+        it = sim.state.assets["~IT-DH01"]
+        assert it["energy_kwh"] == before + it["power_kw"] / 3600.0
 
 
 def test_reaching_any_instant_never_reintegrates_history(plant_design):

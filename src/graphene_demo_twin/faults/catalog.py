@@ -318,6 +318,30 @@ STANDARD_CATALOG = FaultCatalog(
             "The device stops forwarding: it and everything downstream of it on the network "
             "lose quality.",
         ),
+        FaultSpec(
+            "weather.high_wet_bulb",
+            "High wet bulb",
+            "Weather Station",
+            FaultCategory.EXTERNAL,
+            "constraint.wet_bulb_rise_c",
+            4.0,
+            "°C",
+            "A humid spell raises the outdoor wet bulb above the season's: the towers reject "
+            "heat less readily, the chillers lift harder and PUE rises.",
+            default_severity=0.75,
+        ),
+        FaultSpec(
+            "it.load_surge",
+            "IT load surge",
+            "IT Load",
+            FaultCategory.EXTERNAL,
+            "constraint.load_surge",
+            0.35,
+            "fraction of design load",
+            "Tenant workload surges in one Data Hall, up to its design load. All of it becomes "
+            "heat in that hall, and the UPS and transformers carry more.",
+        ),
     ]
 )
-"""The P0 catalog, consumed by the stand-in device models in `sim.placeholder`."""
+"""The catalog, consumed by the device models in `sim` (the stand-ins in `sim.placeholder`
+until their P1 and P2 physics arrive)."""

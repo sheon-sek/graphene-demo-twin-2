@@ -70,7 +70,7 @@ def test_asset_detail_has_readings_and_direct_connections(client, asset_model):
     ]
     assert body["downstream"] == {"air": ["DH03"]}
     meter = client.get(f"/api/assets/{_url('BCPM/3L1')}").json()
-    assert meter["upstream"]["power"] and meter["downstream"]["power"] == ["DH03"]
+    assert meter["upstream"]["power"] and meter["downstream"]["power"] == ["~IT-DH03"]
     assert client.get("/api/assets/CRAC/L1_CRAC9").status_code == 404
 
 
