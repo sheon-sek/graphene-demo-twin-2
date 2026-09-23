@@ -68,6 +68,8 @@ PUMP_TYPE = "Chiller Pump"
 VALVE_TYPE = "Chiller Valve"
 TANK_TYPE = "Buffer Tank"
 TOWER_TYPE = "Cooling Tower"
+CONTROLLER_TYPE = "Chiller Plant Controller"
+"""The plant Controller (`PLANT`): the sequencer and the PIDs, and their setpoints."""
 
 CP = 4.186
 """Specific heat of water, kJ/(kg·K); a litre is a kilogram."""
@@ -181,9 +183,18 @@ OFF, OPENING, PUMPS, SOFT, RUNNING, RUNON, CLOSING = (
     "CLOSING VALVES",
 )
 """Steps of a chiller's start/stop sequence."""
+_COUNTS = frozenset({"min_chillers", "max_chillers"})
+"""Controller settings that count chillers: a commanded value rounds to a whole number."""
 _COMPRESSOR = frozenset({SOFT, RUNNING})
 _PUMPS = frozenset({PUMPS, SOFT, RUNNING, RUNON})
 _STARTING = frozenset({OPENING, PUMPS, SOFT})
+
+
+def _number(
+    name: str, label: str, lo: float, hi: float, unit: str = "", variable: str = ""
+) -> CommandSpec:
+    """A bounded numeric setting of the plant Controller."""
+    return CommandSpec(name, label, variable or name, "number", minimum=lo, maximum=hi, unit=unit)
 
 
 @dataclass(frozen=True, slots=True)
@@ -380,7 +391,20 @@ class ChillerPlantDomain:
             CommandSpec("run", "Start / stop (hand)", "hand_run", kind="switch"),
             CommandSpec("enable", "Enabled", "enabled", kind="switch"),
             CommandSpec("reset", "Reset trip", "reset", kind="switch"),
-        )
+        ),
+        CONTROLLER_TYPE: (
+            _number("min_chillers", "Minimum chillers", 0, 4),
+            _number("max_chillers", "Maximum chillers", 1, 4),
+            _number("load_limit", "Chiller load limit", 40, 100, "%", "load_limit_pct"),
+            _number("chws_sp", "CHWS temperature setpoint", 8, 18, "°C", "chws_sp_c"),
+            _number("cws_sp", "CWS temperature setpoint", 20, 35, "°C", "cws_sp_c"),
+            CommandSpec("dp_mode", "DP PID mode", "dp_mode", choices=("AUTO", "MANUAL")),
+            _number("dp_sp", "DP setpoint", MIN_DP_KPA, 200, "kPa", "dp_sp_kpa"),
+            _number("dp_manual", "DP PID manual output", 0, 100, "%", "dp_manual_pct"),
+            CommandSpec("bp_mode", "Bypass PID mode", "bp_mode", choices=("AUTO", "MANUAL")),
+            _number("bp_sp", "Bypass DP setpoint", 20, 150, "kPa", "bp_sp_kpa"),
+            _number("bp_manual", "Bypass PID manual output", 0, 100, "%", "bp_manual_pct"),
+        ),
     }
 
     def initial(self, ctx: StepContext) -> dict[str, AssetState]:
@@ -523,13 +547,17 @@ class ChillerPlantDomain:
         return (
             event.kind == "command"
             and placed is not None
-            and placed.type_id == CHILLER_TYPE
-            and command_problem(self.commands[CHILLER_TYPE], event.params) is None
+            and placed.type_id in self.commands
+            and command_problem(self.commands[placed.type_id], event.params) is None
         )
 
     def apply(self, event: Event, state: WorldState) -> None:
-        spec = next(c for c in self.commands[CHILLER_TYPE] if c.name == event.params["command"])
-        state.assets[event.target][spec.variable] = event.params["value"]
+        name, value = event.params["command"], event.params["value"]
+        specs = self.commands[CONTROLLER_TYPE if event.target == PLANT else CHILLER_TYPE]
+        spec = next(c for c in specs if c.name == name)
+        if spec.variable in _COUNTS:
+            value = round(value)
+        state.assets[event.target][spec.variable] = value
 
     def step(self, state: WorldState, ctx: StepContext) -> None:
         design = ctx.design
@@ -1073,12 +1101,24 @@ def _priority(layout: Layout, lead: str) -> list[str]:
 
 
 def _available(state: WorldState, design: PlantDesign, leg: Leg) -> bool:
-    """Whether the sequencer may run this chiller: in auto, enabled, not tripped, supplied."""
-    c = state.assets[leg.chiller]
+    """Whether the sequencer may run this chiller: in auto, enabled, not tripped, and its
+    leg able to run: the chiller and both its pumps supplied and untripped, and none of its
+    valves stuck short of open."""
+    a = state.assets
+    c = a[leg.chiller]
     if c["mode"] != "auto" or not c["enabled"] or c["trip"]:
         return False
-    flag = _supply_flags(design)[leg.chiller]
-    return flag is None or state.assets.get(flag, _LIVE).get("live", True)
+    flags = _supply_flags(design)
+    for node in (leg.chiller, leg.chw_pump, leg.cw_pump):
+        flag = flags[node]
+        if flag is not None and not a.get(flag, _LIVE).get("live", True):
+            return False
+    for pump in (leg.chw_pump, leg.cw_pump):
+        if a[pump].get("constraint.trip", 0.0) >= 0.5:
+            return False
+    return not any(
+        a[v].get("constraint.stuck", 0.0) >= 0.5 and a[v]["pos_pct"] < 95.0 for v in leg.valves
+    )
 
 
 def _stage(state: WorldState, design: PlantDesign, layout: Layout, p: AssetState, dt: float):

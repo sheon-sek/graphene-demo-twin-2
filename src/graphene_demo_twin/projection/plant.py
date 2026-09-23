@@ -272,6 +272,12 @@ def _supervisor(layout) -> Iterable[Binding]:
         yield Binding(f"{CSC}/{member}", read)
 
 
+def _run_request(c: dict[str, Scalar]) -> bool:
+    """The run request the chiller's sequence follows: the sequencer's in auto, the
+    operator's in hand."""
+    return c["run_cmd"] if c["mode"] == "auto" else c["hand_run"] and c["enabled"]
+
+
 def _mean_running_hz(s: WorldState, pumps: list[str]) -> float:
     running = [s.assets[p]["hz"] for p in pumps if s.assets[p]["running"]]
     return sum(running) / len(running) if running else 0.0
@@ -296,8 +302,8 @@ def _leg(leg: Leg, i: int) -> Iterable[Binding]:
         "Chiller On_Off Status": _fn(c, _on_off),
         "Commands/Requested Mode": mode,
         "Commands/Reset": _var(c, "reset"),
-        "Commands/Start": _var(c, "run_cmd"),
-        "Commands/Stop": _fn(c, lambda x: not x["run_cmd"]),
+        "Commands/Start": _fn(c, _run_request),
+        "Commands/Stop": _fn(c, lambda x: not _run_request(x)),
         "Cooling Load": _var(c, "cooling_kw"),
         "Current State": _fn(c, _current_state),
         "Electrical Power": _var(c, "power_kw"),

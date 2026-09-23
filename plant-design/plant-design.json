@@ -7135,6 +7135,16 @@
    "sys": "Cooling"
   },
   {
+   "path": "~PLC-01",
+   "type": "Chiller Plant Controller",
+   "unexported": true,
+   "room": "R-CHP",
+   "x": 20,
+   "y": 56,
+   "role": "Chiller plant Controller: the sequencer, the DP and bypass PIDs and their setpoints",
+   "sys": "Cooling"
+  },
+  {
    "path": "~WX-01",
    "type": "Weather Station",
    "unexported": true,
@@ -10691,6 +10701,14 @@
    ]
   },
   {
+   "id": "~PLC-01",
+   "name": "PLC-01",
+   "type": "Chiller Plant Controller",
+   "observedBy": [
+    "Chiller System Control/Controls"
+   ]
+  },
+  {
    "id": "~P-CWS-01",
    "name": "P-CWS-01",
    "type": "Pump header view",
@@ -11069,7 +11087,7 @@
  ],
  "counts": {
   "exported": 639,
-  "unexported": 27,
+  "unexported": 28,
   "edges": 554,
   "shafts": 5
  }

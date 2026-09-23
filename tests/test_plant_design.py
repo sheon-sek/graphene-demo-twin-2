@@ -54,8 +54,8 @@ def test_regenerating_the_design_matches_the_committed_json(tmp_path):
 def test_loads_floors_rooms_assets_and_connections(plant_design):
     assert [f.name for f in plant_design.floors] == ["Ground", "Level 1", "Level 2", "Roof"]
     assert len(plant_design.rooms) == 33
-    assert len(plant_design.assets) == 639 + 27
-    assert len(plant_design.unexported) == 27
+    assert len(plant_design.assets) == 639 + 28
+    assert len(plant_design.unexported) == 28
     assert len(plant_design.connections) == 554
 
 
@@ -103,6 +103,7 @@ def test_unexported_assets_are_the_ones_the_prd_fixes(plant_design):
         *(f"~CCU-00{i}" for i in range(1, 9)),
         "~P-CWS-01",
         "~WX-01",  # the roof weather station
+        "~PLC-01",  # the chiller plant Controller, which takes supervisory commands
         *(f"~IT-DH0{i}" for i in range(1, 9)),  # each hall's IT equipment
     }
 

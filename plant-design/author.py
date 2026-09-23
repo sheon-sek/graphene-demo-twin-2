@@ -137,6 +137,8 @@ for i, h in enumerate(HALLS, 1):
     put(f'~IT-{h}', h, rx['x'] + 18, 8, f'IT equipment in {h}: draws the IT Load, all of it becomes heat in the hall', 'IT')
 ghost('~WX-01', 'WX-01', 'Weather Station', ['Chiller System Control/Weather'])
 put('~WX-01', 'R-AIR', 93, 41, 'Rooftop weather station: the outdoor air the site rejects heat to', 'Environment')
+ghost('~PLC-01', 'PLC-01', 'Chiller Plant Controller', ['Chiller System Control/Controls'])
+put('~PLC-01', 'R-CHP', 20, 56, 'Chiller plant Controller: the sequencer, the DP and bypass PIDs and their setpoints', 'Cooling')
 ghost('~P-CWS-01', 'P-CWS-01', 'Pump header view', ['Chiller System Control/Pumps/P-CWS-01'])
 put('~P-CWS-01', 'R-CHP', 36, 34, 'Condenser-water header (aggregate of R_CP5–8)', 'Cooling')
 
