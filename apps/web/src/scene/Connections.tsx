@@ -1,6 +1,7 @@
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { BoxGeometry, Color, InstancedMesh, Matrix4, MeshBasicMaterial } from 'three';
-import { connectionsAround } from '../lib/graph';
+import { causalPath, connectionsAround } from '../lib/graph';
+import type { LiveStore } from '../lib/live';
 import { STOREY_M } from '../lib/layout';
 import { LAYERS, RISERS, layerOf, routeConnection, type Layer, type Vec3 } from '../lib/routing';
 import type { World } from '../lib/world';
@@ -8,6 +9,7 @@ import { useConsole } from '../store';
 import {
   DIMMED_COLOR,
   DOWNSTREAM_COLOR,
+  FAULT_COLOR,
   KIND_COLOR,
   LAYER_COLOR,
   UPSTREAM_COLOR,
@@ -32,9 +34,21 @@ const matrix = new Matrix4();
 const color = new Color();
 const dim = new Color(DIMMED_COLOR);
 
-/** Plant Design connections, routed orthogonally and drawn as one instanced mesh per layer. */
-export function Connections({ world }: { world: World }) {
+/**
+ * Plant Design connections, routed orthogonally and drawn as one instanced mesh per layer. The
+ * selection's upstream and downstream chains light up, and so does the causal path downstream
+ * of every injected fault.
+ */
+export function Connections({ world, live }: { world: World; live: LiveStore }) {
   const explode = useConsole((s) => s.explode);
+  const targets = useSyncExternalStore(
+    (l) => live.subscribe(l),
+    () => live.faultTargets,
+  );
+  const faulted = useMemo(
+    () => new Set(causalPath(world.design, targets ? targets.split('\n') : [])),
+    [world, targets],
+  );
   const byLayer = useMemo(() => {
     const out = Object.fromEntries(LAYERS.map((l) => [l, [] as Segment[]])) as Record<
       Layer,
@@ -57,6 +71,7 @@ export function Connections({ world }: { world: World }) {
           world={world}
           layer={layer}
           segments={byLayer[layer]}
+          faulted={faulted}
         />
       ))}
       <Risers world={world} />
@@ -64,7 +79,17 @@ export function Connections({ world }: { world: World }) {
   );
 }
 
-function LayerRuns({ world, layer, segments }: { world: World; layer: Layer; segments: Segment[] }) {
+function LayerRuns({
+  world,
+  layer,
+  segments,
+  faulted,
+}: {
+  world: World;
+  layer: Layer;
+  segments: Segment[];
+  faulted: Set<number>;
+}) {
   const mesh = useRef<InstancedMesh>(null);
   const material = useMemo(() => new MeshBasicMaterial({ toneMapped: false }), []);
   const selected = useConsole((s) => s.selected);
@@ -82,7 +107,7 @@ function LayerRuns({ world, layer, segments }: { world: World; layer: Layer; seg
     const ceiling = cutaway === null ? Infinity : world.layout.elevation(cutaway + 1, explode) - 0.5;
     const t = THICKNESS[layer];
     segments.forEach(({ connection, a: from, b: to }, i) => {
-      const lit = up.has(connection) || down.has(connection);
+      const lit = up.has(connection) || down.has(connection) || faulted.has(connection);
       const hidden = (!visible && !lit) || Math.min(from[1], to[1]) >= ceiling;
       // A riser that climbs past the cut-away ceiling stops there.
       const a: Vec3 = [from[0], Math.min(from[1], ceiling), from[2]];
@@ -99,7 +124,8 @@ function LayerRuns({ world, layer, segments }: { world: World; layer: Layer; seg
       mesh.current!.setMatrixAt(i, matrix);
 
       const kind = world.design.connections[connection].kind;
-      if (up.has(connection)) color.set(UPSTREAM_COLOR);
+      if (faulted.has(connection)) color.set(FAULT_COLOR);
+      else if (up.has(connection)) color.set(UPSTREAM_COLOR);
       else if (down.has(connection)) color.set(DOWNSTREAM_COLOR);
       else if (around) color.set(KIND_COLOR[kind]).lerp(dim, 0.7);
       else color.set(KIND_COLOR[kind]);
@@ -109,7 +135,7 @@ function LayerRuns({ world, layer, segments }: { world: World; layer: Layer; seg
     m.instanceMatrix.needsUpdate = true;
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
     m.computeBoundingSphere();
-  }, [world, layer, segments, around, visible, cutaway, explode]);
+  }, [world, layer, segments, around, faulted, visible, cutaway, explode]);
 
   return (
     <instancedMesh

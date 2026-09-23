@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { AssetTree } from './components/AssetTree';
+import { BottomBar } from './components/BottomBar';
 import { Inspector } from './components/Inspector';
 import { Layers, Legend } from './components/Legend';
 import { SearchBox } from './components/SearchBox';
@@ -22,14 +23,15 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.plantDesign(), api.assets(), api.points()])
-      .then(([design, assets, points]) => {
+    Promise.all([api.plantDesign(), api.assets(), api.points(), api.faultCatalog()])
+      .then(([design, assets, points, catalog]) => {
         if (!cancelled)
           setWorld(
             buildWorld(
               design,
               assets.map((a) => a.path),
               points,
+              catalog,
             ),
           );
       })
@@ -71,6 +73,7 @@ export function App() {
         <Hovered />
       </main>
       <Inspector world={world} live={live} />
+      <BottomBar world={world} live={live} />
       <StatusBar stream={stream} perf={perf} />
     </div>
   );

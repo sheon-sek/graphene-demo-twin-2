@@ -1,14 +1,17 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { locate } from '../actions';
+import { formatValue } from '../lib/format';
 import { neighbours } from '../lib/graph';
 import type { LiveStore } from '../lib/live';
 import { sparklinePath } from '../lib/sparkline';
 import { assetStatus } from '../lib/status';
-import type { Value } from '../lib/types';
 import type { World } from '../lib/world';
 import { useConsole } from '../store';
+import { ControlTab } from './ControlTab';
+import { FaultsTab } from './FaultsTab';
 
-type Tab = 'Points' | 'Connections';
+const TABS = ['Points', 'Connections', 'Control', 'Faults'] as const;
+type Tab = (typeof TABS)[number];
 
 /** Right-hand inspector for the selected asset. */
 export function Inspector({ world, live }: { world: World; live: LiveStore }) {
@@ -40,17 +43,16 @@ export function Inspector({ world, live }: { world: World; live: LiveStore }) {
         )}
       </header>
       <div role="tablist" className="tabs">
-        {(['Points', 'Connections'] as Tab[]).map((t) => (
+        {TABS.map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}>
             {t}
           </button>
         ))}
       </div>
-      {tab === 'Points' ? (
-        <PointsTab world={world} live={live} node={selected} />
-      ) : (
-        <ConnectionsTab world={world} node={selected} />
-      )}
+      {tab === 'Points' && <PointsTab world={world} live={live} node={selected} />}
+      {tab === 'Connections' && <ConnectionsTab world={world} node={selected} />}
+      {tab === 'Control' && <ControlTab key={selected} live={live} node={selected} />}
+      {tab === 'Faults' && <FaultsTab key={selected} world={world} live={live} node={selected} />}
     </aside>
   );
 }
@@ -94,7 +96,7 @@ function PointsTab({ world, live, node }: { world: World; live: LiveStore; node:
           return (
             <tr key={p.path} aria-label={name} title={`${p.path} (${p.sourceClass})`}>
               <td className="name">{name}</td>
-              <td className="value">{reading ? format(reading.value) : '…'}</td>
+              <td className="value">{reading ? formatValue(reading.value) : '…'}</td>
               <td>
                 {reading && <span className={`quality ${reading.quality}`}>{reading.quality}</span>}
               </td>
@@ -142,10 +144,4 @@ function ConnectionsTab({ world, node }: { world: World; node: string }) {
       {section('Downstream', 'down', downstream)}
     </div>
   );
-}
-
-function format(value: Value): string {
-  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : String(+value.toFixed(3));
-  if (value === null) return '—';
-  return String(value);
 }

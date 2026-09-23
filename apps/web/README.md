@@ -14,9 +14,17 @@ pnpm e2e        # Playwright: builds nothing; starts `serve` on dist/ and drives
 
 ## What reads what
 
-- `/api/plant-design`, `/api/assets` and `/api/coverage/points` are loaded once into a `World` (`src/lib/world.ts`). The `World` holds the layout, the instanced scene model, the Asset Model tree and the search index.
-- `/api/stream` feeds a `LiveStore` (`src/lib/live.ts`). The store keeps the latest reading of every point and a 120-sample history for sparklines. A new snapshot, which the server sends after a Reset or a reconnect, replaces everything.
+- `/api/plant-design`, `/api/assets`, `/api/coverage/points` and `/api/faults/catalog` are loaded once into a `World` (`src/lib/world.ts`). The `World` holds the layout, the instanced scene model, the Asset Model tree, the search index and the fault catalog.
+- `/api/stream` feeds a `LiveStore` (`src/lib/live.ts`). The store keeps the latest reading of every point, a 120-sample history for sparklines, and the active faults, which every frame carries in full. A new snapshot, which the server sends after a Reset or a reconnect, replaces everything.
+- The Event Log timeline refetches `/api/events` whenever a frame reports a new Event Log length or epoch. The Control tab refetches `/api/commands/{path}` for the same reason.
 - Asset colours come from `assetStatus` (`src/lib/status.ts`). They are a first-pass reading of an asset's points: bad quality, alarm bits, warning bits, uncertain quality, and run feedback.
+
+## Faults and Operator Commands
+
+- The inspector's Faults tab lists the catalog for the selected asset's type. The operator sets severity, onset (step or ramp) and duration (until cleared or auto-clear), previews the fault for 15, 30 or 60 minutes in a What-if Fork (`POST /api/faults/preview`), and injects it on exactly that asset. The preview shows the affected nodes in propagation order, the alarm bits that would change and the point diffs at the end of the window.
+- The Control tab gives the asset's Operator Commands (hand/auto, start/stop, setpoints). Each one becomes an Event Log entry.
+- The bottom bar lists the active faults, each with its own Clear, the alarm bits that are set, the Event Log timeline, and Reset, which asks for confirmation in the page.
+- A faulted asset carries a pulsing red ring and beacon, apart from its state colour. The connections downstream of it along the Plant Design (its causal path) are drawn red, and that takes priority over the selection's upstream and downstream lighting.
 
 ## Drawing conventions
 

@@ -34,6 +34,8 @@ export const UPSTREAM_COLOR = '#22d3ee';
 export const DOWNSTREAM_COLOR = '#f472b6';
 export const DIMMED_COLOR = '#1c232c';
 export const SELECTED_COLOR = '#ffffff';
+/** Injected faults and their causal path: no connection kind or chain is drawn red. */
+export const FAULT_COLOR = '#ff2a2a';
 
 export const ROOM_COLOR: Record<string, string> = {
   hall: '#1b2636',

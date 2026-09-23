@@ -16,16 +16,32 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from graphene_demo_twin.asset_model import AssetModel
+from graphene_demo_twin.faults import (
+    CLEAR,
+    INJECT,
+    STANDARD_CATALOG,
+    FaultCatalog,
+    FaultConflict,
+    FaultError,
+    FaultParams,
+    FaultPreview,
+    fault_key,
+    preview_fault,
+)
 from graphene_demo_twin.plant_design import PlantDesign
-from graphene_demo_twin.projection import Binding, Projection, Projector, placeholder_bindings
+from graphene_demo_twin.projection import Binding, Projection, Projector
 from graphene_demo_twin.sim import (
+    COMMAND,
+    CommandSpec,
     Domain,
     Event,
+    EventError,
     LiveWorld,
-    PlaceholderHallDomain,
     WhatIfFork,
     WorldState,
+    command_problem,
 )
+from graphene_demo_twin.world import default_domains, default_projector
 
 MAX_FORKS = 8
 """What-if Forks kept at once; creating one more drops the oldest."""
@@ -109,18 +125,26 @@ class Twin:
         *,
         seed: int = 0,
         clock: Callable[[], float] = time.time,
+        catalog: FaultCatalog = STANDARD_CATALOG,
         domains: Iterable[Domain] | None = None,
         bindings: Iterable[Binding] | None = None,
         max_forks: int = MAX_FORKS,
     ) -> None:
         self.asset_model = asset_model
         self.design = design
+        self.catalog = catalog
         self._clock = clock
-        if domains is None:
-            domains = [PlaceholderHallDomain()]
-        if bindings is None:
-            bindings = placeholder_bindings(asset_model, design)
-        self.projector = Projector(asset_model, bindings)
+        domains = default_domains(catalog) if domains is None else list(domains)
+        self.projector = (
+            default_projector(asset_model, design, catalog)
+            if bindings is None
+            else Projector(asset_model, bindings)
+        )
+        self.commands: dict[str, tuple[CommandSpec, ...]] = {}
+        """Operator Commands by asset type, as the domains that carry them out declare."""
+        for domain in domains:
+            for type_id, specs in getattr(domain, "commands", {}).items():
+                self.commands[type_id] = self.commands.get(type_id, ()) + tuple(specs)
         self.live = LiveWorld(design, domains, seed, clock)
         self.forks = ForkRegistry(self.live.fork, max_forks)
         self._lock = threading.RLock()
@@ -150,6 +174,51 @@ class Twin:
         next step. Raises EventError if no domain accepts it."""
         with self._lock:
             return self.live.submit(kind, target, params)
+
+    def inject_fault(self, target: str, fault: str, params: Mapping[str, Any]) -> Event:
+        """Log a fault injection on exactly `target`. Raises FaultError if the fault does not
+        apply to that asset or its parameters are bad, FaultConflict if it is already active
+        or already logged to start."""
+        normal = {"fault": fault, **FaultParams.parse(params).as_params()}
+        with self._lock:
+            self._check_fault(INJECT, target, normal)
+            if self._fault_live(target, fault):
+                raise FaultConflict(f"{fault} is already active on {target}")
+            return self.live.submit(INJECT, target, normal)
+
+    def clear_fault(self, target: str, fault: str) -> Event:
+        """Log a Clear of one active fault; raises FaultConflict if it is not active."""
+        with self._lock:
+            self._check_fault(CLEAR, target, {"fault": fault})
+            if not self._fault_live(target, fault):
+                raise FaultConflict(f"{fault} is not active on {target}")
+            return self.live.submit(CLEAR, target, {"fault": fault})
+
+    def preview_fault(
+        self, target: str, fault: str, params: Mapping[str, Any], seconds: int
+    ) -> FaultPreview:
+        """Fault Preview from the Live World as it is now; the Live World is untouched."""
+        return preview_fault(
+            self.live.fork(),
+            self.projector,
+            self.asset_model,
+            target,
+            fault,
+            FaultParams.parse(params),
+            seconds,
+            self.catalog,
+        )
+
+    def command(self, target: str, command: str, value: Any) -> Event:
+        """Log an Operator Command on `target`; raises EventError if it cannot take it."""
+        placed = self.design.assets.get(target)
+        specs = self.commands.get(placed.type_id, ()) if placed else ()
+        if not specs:
+            raise EventError(f"{target} takes no Operator Commands")
+        params = {"command": command, "value": value}
+        if (reason := command_problem(specs, params)) is not None:
+            raise EventError(reason)
+        return self.submit(COMMAND, target, params)
 
     def reset(self) -> Frame:
         """Rebuild the Live World from its initial state, drop every fork, and publish."""
@@ -193,6 +262,21 @@ class Twin:
             now = self._clock()
             await sleep(math.floor(now) + 1 - now)
             self.tick()
+
+    def _check_fault(self, kind: str, target: str, params: Mapping[str, Any]) -> None:
+        if (reason := self.catalog.check(Event(0, kind, target, params), self.design)) is not None:
+            raise FaultError(reason)
+
+    def _fault_live(self, target: str, fault: str) -> bool:
+        """Whether the fault is active in the Live World after every logged event so far,
+        including those that take effect on the next step."""
+        self.live.catch_up()
+        active = fault_key(target, fault) in self.live.state.faults
+        for event in self.live.events:
+            if event.at >= self.live.time and event.target == target:
+                if event.params.get("fault") == fault:
+                    active = event.kind == INJECT
+        return active
 
     def _publish(self) -> Frame:
         self._frame = self._project()

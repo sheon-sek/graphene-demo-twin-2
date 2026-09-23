@@ -51,3 +51,15 @@ export function connectionsAround(
   const downstream = walk(true).filter((i) => !upstream.includes(i));
   return { upstream, downstream };
 }
+
+/**
+ * The causal path of the active faults: every connection downstream of a faulted asset, as
+ * indices into `design.connections`. Faults propagate only along Plant Design connections.
+ */
+export function causalPath(design: PlantDesign, targets: Iterable<string>): number[] {
+  const found = new Set<number>();
+  for (const target of targets) {
+    for (const i of connectionsAround(design, target).downstream) found.add(i);
+  }
+  return [...found].sort((a, b) => a - b);
+}

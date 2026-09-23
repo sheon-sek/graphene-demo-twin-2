@@ -15,6 +15,7 @@ from graphene_demo_twin.sim import (
     WorldState,
     state_hash,
 )
+from graphene_demo_twin.world import default_domains
 
 START = 1_790_000_000
 """An arbitrary whole-second sim start time (2026-09-21)."""
@@ -39,18 +40,37 @@ class CountingDomain(PlaceholderHallDomain):
         super().step(state, ctx)
 
 
+CRAC = {  # the CRAC serving each Data Hall
+    "DH01": "CRAC/L1_CRAC1",
+    "DH02": "CRAC/L1_CRAC2",
+    "DH03": "CRAC/L1_CRAC3",
+    "DH04": "CRAC/L1_CRAC4",
+    "DH05": "CRAC/R_CRAC1",
+    "DH06": "CRAC/R_CRAC2",
+    "DH07": "CRAC/R_CRAC3",
+    "DH08": "CRAC/R_CRAC4",
+}
+FAN_FAILURE = {"fault": "crac.fan_failure"}
+
+
 def _sim(plant_design, seed: int = 7, start: int = START, domains=None) -> Simulation:
-    return Simulation(plant_design, domains or [PlaceholderHallDomain()], seed, start)
+    return Simulation(plant_design, domains or default_domains(), seed, start)
 
 
-def _inject(at: int, hall: str = "DH03", severity: float = 0.6) -> Event:
-    return Event(
-        at, "fault.inject", hall, {"fault": "placeholder.cooling_loss", "severity": severity}
-    )
+def _live(plant_design, seed: int, clock) -> LiveWorld:
+    return LiveWorld(plant_design, default_domains(), seed=seed, clock=clock)
+
+
+def _inject(at: int, hall: str = "DH03", severity: float = 1.0) -> Event:
+    return Event(at, "fault.inject", CRAC[hall], {**FAN_FAILURE, "severity": severity})
 
 
 def _clear(at: int, hall: str = "DH03") -> Event:
-    return Event(at, "fault.clear", hall, {"fault": "placeholder.cooling_loss"})
+    return Event(at, "fault.clear", CRAC[hall], FAN_FAILURE)
+
+
+def _key(hall: str) -> str:
+    return f"crac.fan_failure@{CRAC[hall]}"
 
 
 def _trajectory(sim: Simulation, steps: int, every: int = 1) -> list[str]:
@@ -95,6 +115,14 @@ def test_state_hash_covers_time_values_and_types():
     assert state_hash(s) != state_hash(WorldState(10, {"DH01": {"t": 1.0 + 1e-15, "on": True}}))
     assert state_hash(s) != state_hash(WorldState(10, {"DH01": {"t": 1, "on": True}}))
     assert state_hash(s) != state_hash(WorldState(10, {"DH01": {"t": 1.0, "on": 1}}))
+    faulted = WorldState(10, {"DH01": {"t": 1.0, "on": True}}, {"f@a": {"level": 0.5}})
+    assert state_hash(faulted) != state_hash(s)
+    assert state_hash(faulted) != state_hash(
+        WorldState(10, {"DH01": {"t": 1.0, "on": True}}, {"f@a": {"level": 0.25}})
+    )
+    copy = faulted.copy()
+    copy.faults["f@a"]["level"] = 1.0
+    assert faulted.faults["f@a"]["level"] == 0.5
 
 
 # ---- Stepping
@@ -104,7 +132,9 @@ def test_initial_state_is_steady_and_starts_at_the_start_time(plant_design):
     sim = _sim(plant_design)
     assert sim.time == START
     halls = [r.id for r in plant_design.rooms.values() if r.kind == "hall"]
-    assert sorted(sim.state.assets) == sorted(halls)
+    nodes = {*plant_design.assets, *plant_design.rooms}
+    assert set(halls) <= sim.state.assets.keys() <= nodes
+    assert sim.state.faults == {}
     before = {h: sim.state.assets[h]["temp_c"] for h in halls}
     sim.advance(600)
     assert sim.time == START + 600
@@ -138,9 +168,9 @@ def test_events_apply_at_their_sim_time_in_log_order(plant_design):
     sim.schedule(_inject(START + 5, severity=0.2))
     sim.schedule(_inject(START + 5, severity=0.9))
     sim.advance(5)
-    assert sim.state.assets["DH03"]["cooling_loss"] == 0.0
+    assert sim.state.faults == {}
     sim.step()
-    assert sim.state.assets["DH03"]["cooling_loss"] == 0.9
+    assert sim.state.faults[_key("DH03")]["level"] == 0.9
     assert [e.params["severity"] for e in sim.events] == [0.2, 0.9]
 
 
@@ -152,7 +182,7 @@ def test_events_cannot_be_scheduled_in_the_past_or_for_unknown_mechanisms(plant_
     with pytest.raises(EventError, match="no domain"):
         sim.schedule(Event(START + 10, "fault.inject", "DH03", {"fault": "nope"}))
     with pytest.raises(EventError, match="no domain"):
-        sim.schedule(_inject(START + 10, hall="CR-01"))
+        sim.schedule(Event(START + 10, "fault.inject", "CRAC/L1_CRAC9", FAN_FAILURE))
     sim.schedule(_inject(START + 10))  # the current instant is still open
 
 
@@ -202,7 +232,7 @@ def test_reaching_any_instant_never_reintegrates_history(plant_design):
 
 def test_live_world_is_locked_to_wall_clock_at_1x(plant_design):
     clock = FakeClock(START + 0.9)
-    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=1, clock=clock)
+    live = _live(plant_design, 1, clock)
     assert live.time == START
     clock.now = START + 1.0
     assert live.catch_up() == 1
@@ -217,24 +247,24 @@ def test_live_world_is_locked_to_wall_clock_at_1x(plant_design):
 
 def test_live_world_submit_stamps_operator_actions_with_the_current_sim_time(plant_design):
     clock = FakeClock()
-    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=1, clock=clock)
+    live = _live(plant_design, 1, clock)
     clock.now += 30
-    event = live.submit("fault.inject", "DH02", {"fault": "placeholder.cooling_loss"})
+    event = live.submit("fault.inject", CRAC["DH02"], FAN_FAILURE)
     assert event.at == START + 30
     assert live.events == (event,)
     clock.now += 1
     live.catch_up()
-    assert live.state.assets["DH02"]["cooling_loss"] == 1.0
+    assert live.state.faults[_key("DH02")]["level"] == 1.0
 
 
 def test_live_world_matches_an_offline_replay_of_its_event_log(plant_design):
     clock = FakeClock()
-    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=5, clock=clock)
+    live = _live(plant_design, 5, clock)
     for dt in (13, 400, 17, 900):
         clock.now += dt
-        live.submit("fault.inject", "DH05", {"fault": "placeholder.cooling_loss"})
+        live.submit("fault.inject", CRAC["DH05"], FAN_FAILURE)
         clock.now += dt
-        live.submit("fault.clear", "DH05", {"fault": "placeholder.cooling_loss"})
+        live.submit("fault.clear", CRAC["DH05"], FAN_FAILURE)
     clock.now += 100
     live.catch_up()
 
@@ -247,20 +277,21 @@ def test_live_world_matches_an_offline_replay_of_its_event_log(plant_design):
 
 def test_reset_is_indistinguishable_from_a_fresh_process(plant_design):
     clock = FakeClock()
-    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=9, clock=clock)
+    live = _live(plant_design, 9, clock)
     halls = ["DH01", "DH04", "DH06", "DH08"]
     for i in range(36):  # six hours of inject/clear cycles
         clock.now += 300
-        live.submit("fault.inject", halls[i % 4], {"fault": "placeholder.cooling_loss"})
+        live.submit("fault.inject", CRAC[halls[i % 4]], FAN_FAILURE)
+        live.submit("command", CRAC[halls[i % 4]], {"command": "setpoint", "value": 17.0 + i % 3})
         clock.now += 300
         if i % 3:
-            live.submit("fault.clear", halls[i % 4], {"fault": "placeholder.cooling_loss"})
+            live.submit("fault.clear", CRAC[halls[i % 4]], FAN_FAILURE)
     clock.now += 0.5
     live.catch_up()
     assert live.events
 
     live.reset()
-    fresh = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=9, clock=clock)
+    fresh = _live(plant_design, 9, clock)
     assert live.events == fresh.events == ()
     assert live.time == fresh.time
     assert live.state == fresh.state
@@ -277,9 +308,9 @@ def test_reset_is_indistinguishable_from_a_fresh_process(plant_design):
 
 def test_a_fork_without_hypothetical_events_tracks_the_live_world_exactly(plant_design):
     clock = FakeClock()
-    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=2, clock=clock)
+    live = _live(plant_design, 2, clock)
     clock.now += 120
-    live.submit("fault.inject", "DH01", {"fault": "placeholder.cooling_loss"})
+    live.submit("fault.inject", CRAC["DH01"], FAN_FAILURE)
     fork = live.fork()
     assert isinstance(fork, WhatIfFork)
     assert fork.forked_at == live.time
@@ -291,7 +322,7 @@ def test_a_fork_without_hypothetical_events_tracks_the_live_world_exactly(plant_
 
 def test_a_fork_is_paused_between_calls_and_isolated_from_the_live_world(plant_design):
     clock = FakeClock()
-    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=2, clock=clock)
+    live = _live(plant_design, 2, clock)
     clock.now += 60
     live.catch_up()
     fork = live.fork()
@@ -302,19 +333,19 @@ def test_a_fork_is_paused_between_calls_and_isolated_from_the_live_world(plant_d
 
     fork.schedule(_inject(fork.time, "DH07"))
     fork.advance(600)
-    assert fork.state.assets["DH07"]["cooling_loss"] > 0
+    assert fork.state.faults[_key("DH07")]["level"] > 0
     assert live.events == ()
-    assert live.state.assets["DH07"]["cooling_loss"] == 0.0
+    assert live.state.faults == {}
 
-    live.submit("fault.inject", "DH02", {"fault": "placeholder.cooling_loss"})
+    live.submit("fault.inject", CRAC["DH02"], FAN_FAILURE)
     assert len(fork.events) == 1
 
 
 def test_a_60_minute_fork_runs_in_under_3_s_and_leaves_the_live_world_untouched(plant_design):
     clock = FakeClock()
-    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=11, clock=clock)
+    live = _live(plant_design, 11, clock)
     clock.now += 3600
-    live.submit("fault.inject", "DH04", {"fault": "placeholder.cooling_loss"})
+    live.submit("fault.inject", CRAC["DH04"], FAN_FAILURE)
     before = live.state_hash()
 
     started = time.perf_counter()
@@ -331,7 +362,7 @@ def test_a_60_minute_fork_runs_in_under_3_s_and_leaves_the_live_world_untouched(
 
 def test_live_world_run_steps_once_per_wall_clock_second(plant_design):
     clock = FakeClock(START + 0.5)
-    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=1, clock=clock)
+    live = _live(plant_design, 1, clock)
     ticks: list[int] = []
     stop = asyncio.Event()
     delays: list[float] = []

@@ -28,9 +28,12 @@ SAMPLE = [
     "BCPM/2L1/Rack ID",
     "Lift Monitoring System/Lift 1/Moving Until",
     "Device Card Abbreviation",
+    "CRAC/L1_CRAC3/Supply Air Temperature",
+    "CRAC/L1_CRAC3/Loss of Signal Alarm",
 ]
 """Physics, Plant View and fallback points across data types and path shapes."""
-COOLING_LOSS = {"fault": "placeholder.cooling_loss", "severity": 0.8}
+TRIP = {"target": "CRAC/L1_CRAC3", "fault": "crac.compressor_trip"}
+COMM_LOSS = {"target": "CRAC/L1_CRAC3", "fault": "crac.comm_loss"}
 
 
 class FakeClock:
@@ -139,10 +142,9 @@ def test_every_surface_observes_the_same_live_world_step(asset_model, plant_desi
                 assert snapshot["data"]["state"]["DH03"] == twin.frame.state.assets["DH03"]
                 seen = {p: v["value"] for p, v in snapshot["data"]["points"].items()}
 
-                await http.post(
-                    "/api/events",
-                    json={"kind": "fault.inject", "target": "DH03", "params": COOLING_LOSS},
-                )
+                assert snapshot["data"]["faults"] == []
+                assert (await http.post("/api/faults", json=TRIP)).status_code == 201
+                assert (await http.post("/api/faults", json=COMM_LOSS)).status_code == 201
                 for elapsed in (1, 2, 30):
                     clock.now = START + 0.25 + elapsed
                     frame = twin.tick()
@@ -153,7 +155,11 @@ def test_every_surface_observes_the_same_live_world_step(asset_model, plant_desi
                     assert delta["event"] == "delta"
                     assert delta["data"]["time"] == t
                     assert delta["data"]["seq"] == frame.seq
-                    assert delta["data"]["events"] == 1
+                    assert delta["data"]["events"] == 2
+                    assert [f["fault"] for f in delta["data"]["faults"]] == [
+                        "crac.compressor_trip",
+                        "crac.comm_loss",
+                    ]
                     assert HOT_AISLE_DH03 in delta["data"]["points"]
                     assert "temp_c" in delta["data"]["state"]["DH03"]
                     for p, v in delta["data"]["points"].items():
@@ -170,18 +176,25 @@ def test_every_surface_observes_the_same_live_world_step(asset_model, plant_desi
                         assert point["value"] == seen[path] == value, path
                         assert point["timestamp"] == iso(t)
                         # ... and so does OPC UA, stamped with the same sim second.
-                        dv = await nodes[path].read_data_value()
+                        # Quality too: a CRAC with lost communication reads Bad everywhere.
+                        dv = await nodes[path].read_data_value(raise_on_bad_status=False)
+                        quality = frame.projection.quality(path).value
+                        assert point["quality"] == quality, path
+                        assert dv.StatusCode.name == quality.capitalize(), path
                         opc_value = dv.Value.Value
                         if isinstance(opc_value, datetime):
                             opc_value = int(opc_value.astimezone(UTC).timestamp() * 1000)
-                        assert opc_value == value, path
+                        if quality != "bad":  # a Bad value may arrive empty
+                            assert opc_value == value, path
                         assert dv.SourceTimestamp.astimezone(UTC).timestamp() == t
 
                     rest_state = (await http.get("/api/state/DH03")).json()
                     assert rest_state["time"] == t
                     assert rest_state["state"] == frame.state.assets["DH03"]
 
-                # The fault is visible, and the same, on every surface.
+                # The faults are visible, and the same, on every surface.
+                assert seen["CRAC/L1_CRAC3/Loss of Signal Alarm"] is True
+                assert frame.projection.quality(SAMPLE[-2]).value == "bad"
                 assert seen[HOT_AISLE_DH03] > snapshot["data"]["points"][HOT_AISLE_DH03]["value"]
 
                 # Reset starts a new epoch, which SSE announces with a fresh snapshot.

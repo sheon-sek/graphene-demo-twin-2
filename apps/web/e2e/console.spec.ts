@@ -140,3 +140,68 @@ test('the Points tab streams live values with quality, time and sparkline', asyn
     .poll(async () => (await temp.locator('svg path').getAttribute('d'))?.includes('L'))
     .toBe(true);
 });
+
+test('a fault is previewed, injected on the chosen asset, marked and cleared', async ({ page }) => {
+  await open(page);
+  const box = page.getByRole('searchbox');
+  await box.fill('CRAC/L1_CRAC3');
+  await box.press('Enter');
+  await expect(page.locator('.inspector h2')).toHaveText('CRAC/L1_CRAC3');
+
+  await page.getByRole('tab', { name: 'Faults' }).click();
+  await page.getByRole('radio', { name: /Compressor trip/ }).click();
+  await page.getByRole('button', { name: 'Preview 15 min' }).click();
+  const preview = page.getByRole('region', { name: 'Fault Preview' });
+  const affected = preview.getByRole('list', { name: 'Affected assets' }).getByRole('listitem');
+  await expect(affected.first()).toContainText('L1_CRAC3');
+  await expect(affected.nth(1)).toContainText('DH03');
+  await expect(preview.getByRole('list', { name: 'Alarm changes' })).toContainText(
+    'System Failure_Trip',
+  );
+
+  await page.getByRole('button', { name: 'Inject' }).click();
+  const active = page.getByRole('region', { name: 'Active faults', exact: true });
+  await expect(active).toContainText('Compressor trip · L1_CRAC3');
+  await expect(page.getByRole('region', { name: 'Event Log' })).toContainText('fault.inject');
+  await expect(page.getByRole('region', { name: 'Alarms' })).toContainText(
+    'L1_CRAC3 · System Failure_Trip',
+  );
+  // The chosen CRAC, never the first one of its type (v1 #7).
+  const faults = await (await page.request.get('/api/faults')).json();
+  expect(faults.faults.map((f: { target: string }) => f.target)).toEqual(['CRAC/L1_CRAC3']);
+  await settle(page);
+  await capture(page, 'fault-injected');
+
+  await active.getByRole('button', { name: 'Clear Compressor trip on CRAC/L1_CRAC3' }).click();
+  await expect(active).toContainText('None');
+  await expect(page.getByRole('region', { name: 'Event Log' })).toContainText('fault.clear');
+});
+
+test('Operator Commands and Reset go through the Event Log', async ({ page }) => {
+  // Tests share one twin: start from an empty Event Log.
+  await page.request.post('/api/reset', { data: { confirm: true } });
+  await open(page);
+  const box = page.getByRole('searchbox');
+  await box.fill('CRAC/L1_CRAC1');
+  await box.press('Enter');
+  await page.getByRole('tab', { name: 'Control' }).click();
+  const mode = page.getByRole('group', { name: 'Hand / auto' });
+  await mode.getByRole('button', { name: 'hand' }).click();
+  await expect(mode.getByRole('button', { name: 'hand' })).toHaveAttribute('aria-pressed', 'true');
+  const run = page.getByRole('group', { name: 'Start / stop (hand)' });
+  await run.getByRole('button', { name: 'Stop' }).click();
+  await page.getByRole('tab', { name: 'Points' }).click();
+  await expect(page.getByRole('row', { name: 'On_Off', exact: true }).locator('.value')).toHaveText(
+    '0',
+  );
+  const log = page.getByRole('region', { name: 'Event Log' });
+  await expect(log.locator('li')).toHaveCount(2);
+
+  await page.getByRole('button', { name: 'Reset…' }).click();
+  await expect(page.getByRole('alertdialog')).toContainText('2 events');
+  await page.getByRole('button', { name: 'Confirm reset' }).click();
+  await expect(log.locator('li')).toHaveCount(0);
+  await expect(page.getByRole('row', { name: 'On_Off', exact: true }).locator('.value')).toHaveText(
+    '1',
+  );
+});

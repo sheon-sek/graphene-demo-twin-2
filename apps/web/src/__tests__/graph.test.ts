@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { connectionsAround, neighbours } from '../lib/graph';
+import { causalPath, connectionsAround, neighbours } from '../lib/graph';
 import { plantDesign } from './fixtures';
 
 const design = plantDesign();
@@ -43,5 +43,18 @@ describe('upstream and downstream of a selection', () => {
   it('is empty for nodes outside the design', () => {
     expect(connectionsAround(design, 'Dashboard/Nope')).toEqual({ upstream: [], downstream: [] });
     expect(neighbours(design, 'Dashboard/Nope')).toEqual({ upstream: {}, downstream: {} });
+  });
+});
+
+describe('the causal path of injected faults', () => {
+  it('follows Plant Design connections downstream of each faulted asset', () => {
+    const crac = causalPath(design, ['CRAC/L1_CRAC3']);
+    expect(crac.map((i) => [edge(i).source, edge(i).target])).toEqual([
+      ['CRAC/L1_CRAC3', 'DH03'],
+    ]);
+    const both = causalPath(design, ['CRAC/L1_CRAC3', 'Network Topology/SERVER DISTRIBUTION SWITCH A']);
+    expect(both).toContain(crac[0]);
+    expect(both.map((i) => edge(i).kind).filter((k) => k === 'net').length).toBe(7);
+    expect(causalPath(design, [])).toEqual([]);
   });
 });

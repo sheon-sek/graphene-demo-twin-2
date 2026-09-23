@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 type Scalar = float | int | bool | str | None
 type AssetState = dict[str, Scalar]
@@ -15,10 +15,16 @@ class WorldState:
     """Sim time in whole seconds since the Unix epoch; the OPC UA SourceTimestamp."""
     assets: dict[str, AssetState]
     """AssetState keyed by Plant Design node: an asset path, `~<name>` or a room id."""
+    faults: dict[str, dict[str, Scalar]] = field(default_factory=dict)
+    """The active faults, keyed `<fault>@<asset>`: what was injected, when, and its level now."""
 
     def copy(self) -> "WorldState":
-        """An independent copy; AssetState values are scalars, so one level deep suffices."""
-        return WorldState(self.time, {node: dict(s) for node, s in self.assets.items()})
+        """An independent copy; every value is a scalar, so one level deep suffices."""
+        return WorldState(
+            self.time,
+            {node: dict(s) for node, s in self.assets.items()},
+            {key: dict(f) for key, f in self.faults.items()},
+        )
 
 
 def state_hash(state: WorldState) -> str:
@@ -28,6 +34,10 @@ def state_hash(state: WorldState) -> str:
         variables = state.assets[node]
         for name in sorted(variables):
             h.update(f"{json.dumps(node)}.{json.dumps(name)}={_encode(variables[name])}\n".encode())
+    for key in sorted(state.faults):
+        fault = state.faults[key]
+        for name in sorted(fault):
+            h.update(f"!{json.dumps(key)}.{json.dumps(name)}={_encode(fault[name])}\n".encode())
     return h.hexdigest()
 
 

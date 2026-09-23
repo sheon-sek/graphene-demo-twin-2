@@ -1,4 +1,4 @@
-import type { Frame, Reading, Value } from './types';
+import type { ActiveFault, Frame, Reading, Value } from './types';
 
 /**
  * The Live World as the console sees it over `/api/stream`: the latest reading of every point
@@ -11,6 +11,10 @@ export class LiveStore {
   time = 0;
   timestamp = '';
   eventCount = 0;
+  /** Active faults in injection order. */
+  faults: ActiveFault[] = [];
+  /** The assets with an active fault, one per line: a cheap value to subscribe to. */
+  faultTargets = '';
   /** Bumped once per applied frame; lets React subscribe cheaply. */
   version = 0;
 
@@ -45,6 +49,8 @@ export class LiveStore {
     this.time = frame.time;
     this.timestamp = frame.timestamp;
     this.eventCount = frame.events;
+    this.faults = frame.faults ?? [];
+    this.faultTargets = [...new Set(this.faults.map((f) => f.target))].join('\n');
     this.version++;
     for (const listener of this.listeners) listener();
   }

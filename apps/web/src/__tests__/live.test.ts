@@ -73,3 +73,27 @@ describe('sparkline', () => {
     expect(sparklinePath([], 10, 20)).toBe('');
   });
 });
+
+describe('active faults over SSE', () => {
+  it('takes the full fault list from every frame', () => {
+    const live = new LiveStore(4);
+    const fault = {
+      key: 'crac.compressor_trip@CRAC/L1_CRAC3',
+      fault: 'crac.compressor_trip',
+      name: 'Compressor trip',
+      category: 'equipment' as const,
+      target: 'CRAC/L1_CRAC3',
+      severity: 1,
+      level: 1,
+      since: 1_790_000_000,
+      rampMin: 0,
+      until: null,
+    };
+    live.apply('snapshot', { ...frame(1, {}), faults: [fault] });
+    expect(live.faults).toEqual([fault]);
+    expect(live.faultTargets).toBe('CRAC/L1_CRAC3');
+    live.apply('delta', { ...frame(2, {}), faults: [] });
+    expect(live.faults).toEqual([]);
+    expect(live.faultTargets).toBe('');
+  });
+});

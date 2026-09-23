@@ -5,6 +5,7 @@ import { Assets } from './Assets';
 import { Building } from './Building';
 import { CameraRig, ExplodeDriver } from './CameraRig';
 import { Connections } from './Connections';
+import { FaultMarkers } from './FaultMarkers';
 import { Probe, type Perf } from './Probe';
 
 export function Scene({
@@ -27,7 +28,8 @@ export function Scene({
       <directionalLight position={[80, 160, 60]} intensity={1.6} />
       <Building world={world} />
       <Assets world={world} live={live} />
-      <Connections world={world} />
+      <FaultMarkers world={world} live={live} />
+      <Connections world={world} live={live} />
       <ExplodeDriver />
       <CameraRig world={world} />
       <Probe world={world} onPerf={onPerf} />

@@ -9,7 +9,8 @@ from graphene_demo_twin.twin import Twin
 START = 1_790_000_000
 HOT_AISLE_DH03 = "Temperature and Humidity/Datahall 3/Sensor 17/Temp"
 COLON_PATH = "Genset/Genset 2/AC Voltage: L2-N"
-COOLING_LOSS = {"fault": "placeholder.cooling_loss", "severity": 0.8}
+CRAC3 = "CRAC/L1_CRAC3"
+TRIP = {"fault": "crac.compressor_trip"}
 
 
 class FakeClock:
@@ -126,25 +127,26 @@ def test_plant_design_graph(client, plant_design):
 
 def test_operator_actions_append_to_the_event_log(client, twin):
     created = client.post(
-        "/api/events", json={"kind": "fault.inject", "target": "DH03", "params": COOLING_LOSS}
+        "/api/events", json={"kind": "fault.inject", "target": CRAC3, "params": TRIP}
     )
     assert created.status_code == 201
     assert created.json()["at"] == START
     log = client.get("/api/events").json()
     assert [(e["kind"], e["target"], e["params"]) for e in log["events"]] == [
-        ("fault.inject", "DH03", COOLING_LOSS)
+        ("fault.inject", CRAC3, TRIP)
     ]
     assert len(twin.live.events) == 1
 
     rejected = client.post(
-        "/api/events", json={"kind": "fault.inject", "target": "DH99", "params": COOLING_LOSS}
+        "/api/events",
+        json={"kind": "fault.inject", "target": "CRAC/L1_CRAC9", "params": TRIP},
     )
     assert rejected.status_code == 422
-    assert "DH99" in rejected.json()["detail"]
+    assert "L1_CRAC9" in rejected.json()["detail"]
 
 
 def test_reset_needs_confirmation_and_clears_the_log(client, twin):
-    event = {"kind": "fault.inject", "target": "DH03", "params": COOLING_LOSS}
+    event = {"kind": "fault.inject", "target": CRAC3, "params": TRIP}
     assert client.post("/api/events", json=event).status_code == 201
     assert client.post("/api/reset", json={}).status_code == 422
     assert client.post("/api/reset", json={"confirm": False}).status_code == 422
@@ -165,7 +167,7 @@ def test_forks_create_advance_and_read(client, twin, clock):
 
     event = client.post(
         f"/api/forks/{fork['id']}/events",
-        json={"kind": "fault.inject", "target": "DH03", "params": COOLING_LOSS},
+        json={"kind": "fault.inject", "target": CRAC3, "params": TRIP},
     )
     assert event.status_code == 201
     advanced = client.post(f"/api/forks/{fork['id']}/advance", json={"seconds": 3600}).json()
@@ -194,7 +196,7 @@ def test_fork_requests_are_validated(client):
     assert client.post(advance, json={"seconds": 7 * 86_400}).status_code == 422
     bad_event = client.post(
         f"/api/forks/{fork['id']}/events",
-        json={"kind": "fault.inject", "target": "DH03", "params": COOLING_LOSS, "at": 1},
+        json={"kind": "fault.inject", "target": CRAC3, "params": TRIP, "at": 1},
     )
     assert bad_event.status_code == 422
     assert client.post("/api/forks/fork-999/advance", json={"seconds": 1}).status_code == 404
@@ -227,3 +229,98 @@ def test_a_placeholder_page_stands_in_for_an_unbuilt_console(client):
     page = client.get("/")
     assert page.status_code == 200
     assert "not built" in page.text
+
+
+# ---- Faults and Operator Commands
+
+
+def test_the_fault_catalog_is_served_per_asset_type(client):
+    every = client.get("/api/faults/catalog").json()
+    assert {f["category"] for f in every} == {
+        "equipment",
+        "sensor",
+        "communication",
+        "control",
+        "external",
+    }
+    crac = client.get("/api/faults/catalog", params={"type": "CRAC"}).json()
+    assert crac and all(f["assetType"] == "CRAC" for f in crac)
+    trip = next(f for f in crac if f["id"] == "crac.compressor_trip")
+    assert trip["mechanism"] == "physical_constraint"
+    assert {"name", "description", "variable", "span", "unit", "defaultSeverity"} <= trip.keys()
+
+
+def test_faults_are_injected_listed_and_cleared_on_the_chosen_asset(client, twin, clock):
+    body = {"target": CRAC3, "fault": "crac.compressor_trip", "params": {"severity": 0.8}}
+    created = client.post("/api/faults", json=body)
+    assert created.status_code == 201
+    assert created.json()["target"] == CRAC3
+    assert created.json()["params"]["severity"] == 0.8
+    assert client.post("/api/faults", json=body).status_code == 409
+
+    clock.now += 2
+    twin.tick()
+    active = client.get("/api/faults").json()["faults"]
+    assert [(f["target"], f["fault"], f["level"]) for f in active] == [
+        (CRAC3, "crac.compressor_trip", 0.8)
+    ]
+    assert active[0]["key"] == f"crac.compressor_trip@{CRAC3}"
+    assert active[0]["category"] == "equipment"
+    assert client.get("/api/state").json()["faults"].keys() == {active[0]["key"]}
+
+    clear = {"target": CRAC3, "fault": "crac.compressor_trip"}
+    assert client.post("/api/faults/clear", json=clear).status_code == 201
+    assert client.post("/api/faults/clear", json=clear).status_code == 409
+    kinds = [e["kind"] for e in client.get("/api/events").json()["events"]]
+    assert kinds == ["fault.inject", "fault.clear"]
+
+
+def test_bad_fault_requests_are_rejected(client):
+    sensor = "Temperature and Humidity/Datahall 3/Sensor 17"
+    wrong_type = client.post("/api/faults", json={"target": sensor, "fault": "crac.fan_failure"})
+    assert wrong_type.status_code == 422
+    assert "applies to CRAC" in wrong_type.json()["detail"]
+    bad = {"target": CRAC3, "fault": "crac.fan_failure", "params": {"severity": 7}}
+    assert client.post("/api/faults", json=bad).status_code == 422
+    unknown = {"target": CRAC3, "fault": "crac.meltdown"}
+    assert client.post("/api/faults", json=unknown).status_code == 422
+
+
+def test_a_fault_preview_runs_in_a_fork(client, twin):
+    body = {"target": CRAC3, "fault": "crac.compressor_trip", "params": {}, "minutes": 15}
+    preview = client.post("/api/faults/preview", json=body).json()
+    assert preview["minutes"] == 15
+    assert preview["end"] - preview["start"] == 900
+    assert [a["node"] for a in preview["affected"]][:2] == [CRAC3, "DH03"]
+    assert preview["affected"][0]["afterS"] >= 1
+    assert {a["path"] for a in preview["alarms"]} >= {f"{CRAC3}/System Failure_Trip"}
+    diff = next(d for d in preview["diffs"] if d["path"] == HOT_AISLE_DH03)
+    assert diff["predicted"] > diff["base"]
+    assert {"node", "baseQuality", "predictedQuality"} <= diff.keys()
+    assert twin.live.events == ()
+
+    assert client.post("/api/faults/preview", json={**body, "minutes": 20}).status_code == 422
+    wrong = {**body, "target": "Temperature and Humidity/Datahall 3/Sensor 17"}
+    assert client.post("/api/faults/preview", json=wrong).status_code == 422
+
+
+def test_operator_commands_are_listed_and_logged(client, twin, clock):
+    commands = client.get(f"/api/commands/{_url(CRAC3)}").json()
+    assert commands["target"] == CRAC3
+    by_name = {c["name"]: c for c in commands["commands"]}
+    assert by_name["mode"]["value"] == "auto" and by_name["mode"]["choices"] == ["auto", "hand"]
+    assert by_name["run"]["kind"] == "switch"
+    assert (by_name["setpoint"]["minimum"], by_name["setpoint"]["maximum"]) == (14.0, 28.0)
+
+    sent = client.post("/api/commands", json={"target": CRAC3, "command": "mode", "value": "hand"})
+    assert sent.status_code == 201
+    assert sent.json()["kind"] == "command"
+    bad = {"target": CRAC3, "command": "setpoint", "value": 99}
+    assert client.post("/api/commands", json=bad).status_code == 422
+    clock.now += 1
+    twin.tick()
+    assert client.get(f"/api/commands/{_url(CRAC3)}").json()["commands"][0]["value"] == "hand"
+
+    sensor = _url("Temperature and Humidity/Datahall 3/Sensor 17")
+    assert client.get(f"/api/commands/{sensor}").json()["commands"] == []
+    assert client.get("/api/commands/CRAC/L1_CRAC9").status_code == 404

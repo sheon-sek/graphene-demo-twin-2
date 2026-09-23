@@ -87,4 +87,96 @@ export interface Frame {
   timestamp: string;
   events: number;
   points: Record<string, Reading>;
+  /** Every active fault, in injection order. */
+  faults?: ActiveFault[];
+}
+
+export type FaultCategory = 'equipment' | 'sensor' | 'communication' | 'control' | 'external';
+
+/** A `/api/faults/catalog` entry: a failure mechanism bound to one asset type. */
+export interface FaultSpec {
+  id: string;
+  name: string;
+  assetType: string;
+  category: FaultCategory;
+  mechanism: string;
+  variable: string;
+  span: number;
+  unit: string;
+  description: string;
+  defaultSeverity: number;
+}
+
+/** Event params of a fault injection; see FaultParams in the twin. */
+export interface FaultParams {
+  severity: number;
+  /** 0 is a step onset. */
+  ramp_min: number;
+  /** Null acts until cleared. */
+  auto_clear_min: number | null;
+}
+
+/** One active fault, as every stream frame and `/api/faults` carry it. */
+export interface ActiveFault {
+  key: string;
+  fault: string;
+  name: string;
+  category: FaultCategory;
+  target: string;
+  severity: number;
+  /** Current level: rises from 0 to `severity` over the ramp. */
+  level: number;
+  since: number;
+  rampMin: number;
+  /** Sim time it clears itself, or null. */
+  until: number | null;
+}
+
+export interface FaultPreview {
+  target: string;
+  fault: string;
+  params: FaultParams;
+  minutes: number;
+  start: number;
+  end: number;
+  timestamp: string;
+  /** Plant Design nodes in propagation order. */
+  affected: { node: string; firstAt: number; afterS: number; hops: number | null }[];
+  diffs: {
+    path: string;
+    node: string | null;
+    base: Value;
+    predicted: Value;
+    baseQuality: Quality;
+    predictedQuality: Quality;
+  }[];
+  alarms: {
+    path: string;
+    node: string | null;
+    base: Value;
+    predicted: Value;
+    firstAt: number;
+    afterS: number;
+  }[];
+}
+
+/** An Operator Command an asset takes, with its current value. */
+export interface CommandInfo {
+  name: string;
+  label: string;
+  kind: 'choice' | 'switch' | 'number';
+  choices: string[];
+  minimum: number | null;
+  maximum: number | null;
+  unit: string;
+  value: Value;
+}
+
+/** An Event Log entry. */
+export interface LoggedEvent {
+  at: number;
+  timestamp: string;
+  kind: string;
+  target: string;
+  params: Record<string, unknown>;
 }

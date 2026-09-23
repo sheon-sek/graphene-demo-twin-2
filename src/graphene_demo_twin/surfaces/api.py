@@ -17,9 +17,16 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from graphene_demo_twin.faults import (
+    PREVIEW_MINUTES,
+    FaultCatalog,
+    FaultConflict,
+    FaultPreview,
+    FaultSpec,
+)
 from graphene_demo_twin.plant_design import ConnectionKind
 from graphene_demo_twin.projection import PointSource, Projection
-from graphene_demo_twin.sim import Event, EventError, WorldState
+from graphene_demo_twin.sim import CommandSpec, Event, EventError, WorldState
 from graphene_demo_twin.twin import ForkSession, Frame, Twin
 
 CONSOLE_DIR = Path(__file__).resolve().parents[3] / "apps" / "web" / "dist"
@@ -40,6 +47,29 @@ class ForkEventIn(EventIn):
 
 class AdvanceIn(BaseModel):
     seconds: int = Field(ge=1, le=MAX_FORK_ADVANCE_S)
+
+
+class FaultIn(BaseModel):
+    target: str
+    """Export path of the asset the fault acts on: exactly this asset, never another."""
+    fault: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    """`{severity?, ramp_min?, auto_clear_min?}`; see FaultParams."""
+
+
+class ClearIn(BaseModel):
+    target: str
+    fault: str
+
+
+class PreviewIn(FaultIn):
+    minutes: Literal[PREVIEW_MINUTES]
+
+
+class CommandIn(BaseModel):
+    target: str
+    command: str
+    value: Any
 
 
 class ResetIn(BaseModel):
@@ -244,6 +274,60 @@ def create_app(twin: Twin, console_dir: Path | None = CONSOLE_DIR) -> FastAPI:
         except EventError as e:
             raise HTTPException(422, str(e)) from None
 
+    def rejected(e: EventError) -> HTTPException:
+        return HTTPException(409 if isinstance(e, FaultConflict) else 422, str(e))
+
+    @app.get("/api/faults/catalog")
+    def fault_catalog(type: str | None = None) -> list[dict[str, Any]]:
+        return [spec_json(s) for s in twin.catalog if type is None or s.asset_type == type]
+
+    @app.get("/api/faults")
+    def active_faults() -> dict[str, Any]:
+        frame = twin.frame
+        return {"time": frame.time, "faults": faults_json(frame.state, twin.catalog)}
+
+    @app.post("/api/faults", status_code=status.HTTP_201_CREATED)
+    async def inject_fault(body: FaultIn) -> dict[str, Any]:
+        try:
+            return event_json(twin.inject_fault(body.target, body.fault, body.params))
+        except EventError as e:
+            raise rejected(e) from None
+
+    @app.post("/api/faults/clear", status_code=status.HTTP_201_CREATED)
+    async def clear_fault(body: ClearIn) -> dict[str, Any]:
+        try:
+            return event_json(twin.clear_fault(body.target, body.fault))
+        except EventError as e:
+            raise rejected(e) from None
+
+    @app.post("/api/faults/preview")
+    async def preview(body: PreviewIn) -> dict[str, Any]:
+        try:
+            result = await asyncio.to_thread(
+                twin.preview_fault, body.target, body.fault, body.params, body.minutes * 60
+            )
+        except EventError as e:
+            raise rejected(e) from None
+        return preview_json(result, body.minutes)
+
+    @app.get("/api/commands/{path:path}")
+    def list_commands(path: str) -> dict[str, Any]:
+        placed = design.assets.get(path)
+        if placed is None:
+            raise HTTPException(404, f"unknown asset: {path}")
+        state = twin.frame.state.assets.get(path, {})
+        return {
+            "target": path,
+            "commands": [command_json(c, state) for c in twin.commands.get(placed.type_id, ())],
+        }
+
+    @app.post("/api/commands", status_code=status.HTTP_201_CREATED)
+    async def send_command(body: CommandIn) -> dict[str, Any]:
+        try:
+            return event_json(twin.command(body.target, body.command, body.value))
+        except EventError as e:
+            raise rejected(e) from None
+
     @app.post("/api/reset")
     async def reset(body: ResetIn) -> dict[str, Any]:
         frame = twin.reset()
@@ -338,12 +422,12 @@ def create_app(twin: Twin, console_dir: Path | None = CONSOLE_DIR) -> FastAPI:
     async def stream() -> AsyncIterator[ServerSentEvent]:
         """1 Hz frames: a full `snapshot` first and after every Reset, `delta` otherwise."""
         sent = twin.frame
-        yield frame_event("snapshot", sent, None)
+        yield frame_event("snapshot", sent, None, twin.catalog)
         while (frame := await twin.next_frame(sent.seq)) is not None:
             if frame.epoch != sent.epoch:
-                yield frame_event("snapshot", frame, None)
+                yield frame_event("snapshot", frame, None, twin.catalog)
             else:
-                yield frame_event("delta", frame, sent)
+                yield frame_event("delta", frame, sent, twin.catalog)
             sent = frame
 
     if console_dir is not None and (console_dir / "index.html").is_file():
@@ -376,10 +460,110 @@ def event_json(event: Event) -> dict[str, Any]:
 
 
 def state_json(state: WorldState) -> dict[str, Any]:
-    return {"time": state.time, "timestamp": iso(state.time), "assets": state.assets}
+    return {
+        "time": state.time,
+        "timestamp": iso(state.time),
+        "assets": state.assets,
+        "faults": state.faults,
+    }
 
 
-def frame_event(kind: str, frame: Frame, previous: Frame | None) -> ServerSentEvent:
+def spec_json(spec: FaultSpec) -> dict[str, Any]:
+    return {
+        "id": spec.id,
+        "name": spec.name,
+        "assetType": spec.asset_type,
+        "category": spec.category.value,
+        "mechanism": spec.mechanism.value,
+        "variable": spec.variable,
+        "span": spec.span,
+        "unit": spec.unit,
+        "description": spec.description,
+        "defaultSeverity": spec.default_severity,
+    }
+
+
+def faults_json(state: WorldState, catalog: FaultCatalog) -> list[dict[str, Any]]:
+    """The active faults in the order they were injected."""
+    out = []
+    for key, f in state.faults.items():
+        spec = catalog.get(f["fault"])
+        out.append(
+            {
+                "key": key,
+                "fault": f["fault"],
+                "name": spec.name,
+                "category": spec.category.value,
+                "target": f["target"],
+                "severity": f["severity"],
+                "level": f["level"],
+                "since": f["since"],
+                "rampMin": f["ramp_s"] / 60,
+                "until": f["until"],
+            }
+        )
+    return out
+
+
+def preview_json(preview: FaultPreview, minutes: int) -> dict[str, Any]:
+    return {
+        "target": preview.target,
+        "fault": preview.fault,
+        "params": preview.params.as_params(),
+        "minutes": minutes,
+        "start": preview.start,
+        "end": preview.end,
+        "timestamp": iso(preview.end),
+        "affected": [
+            {
+                "node": a.node,
+                "firstAt": a.first_at,
+                "afterS": a.first_at - preview.start,
+                "hops": a.hops,
+            }
+            for a in preview.affected
+        ],
+        "diffs": [
+            {
+                "path": d.path,
+                "node": d.node,
+                "base": d.base,
+                "predicted": d.predicted,
+                "baseQuality": d.base_quality.value,
+                "predictedQuality": d.predicted_quality.value,
+            }
+            for d in preview.diffs
+        ],
+        "alarms": [
+            {
+                "path": a.path,
+                "node": a.node,
+                "base": a.base,
+                "predicted": a.predicted,
+                "firstAt": a.first_at,
+                "afterS": a.first_at - preview.start,
+            }
+            for a in preview.alarms
+        ],
+    }
+
+
+def command_json(spec: CommandSpec, state: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "name": spec.name,
+        "label": spec.label,
+        "kind": spec.kind,
+        "choices": list(spec.choices),
+        "minimum": spec.minimum,
+        "maximum": spec.maximum,
+        "unit": spec.unit,
+        "value": state.get(spec.variable),
+    }
+
+
+def frame_event(
+    kind: str, frame: Frame, previous: Frame | None, catalog: FaultCatalog
+) -> ServerSentEvent:
     """A frame as an SSE event; a delta holds only what changed since `previous`."""
     projection = frame.projection
     if previous is None:
@@ -404,15 +588,18 @@ def frame_event(kind: str, frame: Frame, previous: Frame | None) -> ServerSentEv
             for p in paths
         },
         "state": state,
+        "faults": faults_json(frame.state, catalog),
     }
     return ServerSentEvent(event=kind, id=str(frame.seq), raw_data=json.dumps(payload))
 
 
 def _state_delta(before: WorldState, after: WorldState) -> dict[str, dict[str, Any]]:
+    """Changed and new variables with their values; removed ones as null."""
     delta: dict[str, dict[str, Any]] = {}
-    for node, variables in after.assets.items():
-        old = before.assets.get(node, {})
-        changed = {k: v for k, v in variables.items() if old.get(k, _MISSING) != v}
+    for node in {*before.assets, *after.assets}:
+        old, new = before.assets.get(node, {}), after.assets.get(node, {})
+        changed = {k: v for k, v in new.items() if old.get(k, _MISSING) != v}
+        changed.update((k, None) for k in old.keys() - new.keys())
         if changed:
             delta[node] = changed
     return delta

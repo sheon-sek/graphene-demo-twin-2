@@ -1,6 +1,6 @@
 """Projection: the mapping of world state onto point paths, one typed value per point."""
 
-from graphene_demo_twin.projection.placeholder import placeholder_bindings
+from graphene_demo_twin.projection.placeholder import placeholder_bindings, placeholder_quality
 from graphene_demo_twin.projection.projector import (
     Binding,
     CoverageEntry,
@@ -8,6 +8,7 @@ from graphene_demo_twin.projection.projector import (
     PointSource,
     Projection,
     Projector,
+    QualityBinding,
 )
 from graphene_demo_twin.projection.values import Quality, coerce, fallback_value, type_default
 
@@ -19,8 +20,10 @@ __all__ = [
     "Projection",
     "Projector",
     "Quality",
+    "QualityBinding",
     "coerce",
     "fallback_value",
     "placeholder_bindings",
+    "placeholder_quality",
     "type_default",
 ]

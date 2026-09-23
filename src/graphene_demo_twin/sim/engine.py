@@ -35,7 +35,8 @@ class Domain(Protocol):
 
     Domains hold no mutable state of their own: everything that evolves lives in WorldState,
     so forks, replay and Reset see all of it. They step in registration order, each reading
-    what earlier domains wrote in the same step.
+    what earlier domains wrote in the same step. A domain that carries out Operator Commands
+    declares them as `commands: Mapping[type_id, tuple[CommandSpec, ...]]`.
     """
 
     def initial(self, ctx: StepContext) -> Mapping[str, AssetState]:

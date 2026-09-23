@@ -1,6 +1,12 @@
 import { LAYERS } from '../lib/routing';
 import { useConsole } from '../store';
-import { DOWNSTREAM_COLOR, LAYER_COLOR, STATUS_COLOR, UPSTREAM_COLOR } from '../scene/palette';
+import {
+  DOWNSTREAM_COLOR,
+  FAULT_COLOR,
+  LAYER_COLOR,
+  STATUS_COLOR,
+  UPSTREAM_COLOR,
+} from '../scene/palette';
 
 /** Connection layer toggles. */
 export function Layers() {
@@ -45,6 +51,10 @@ export function Legend() {
       <span>
         <i style={{ background: DOWNSTREAM_COLOR }} />
         downstream
+      </span>
+      <span>
+        <i className="pulse" style={{ background: FAULT_COLOR }} />
+        injected fault · causal path
       </span>
     </div>
   );

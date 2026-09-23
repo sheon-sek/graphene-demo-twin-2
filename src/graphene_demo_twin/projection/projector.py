@@ -37,6 +37,15 @@ class Binding:
 
 
 @dataclass(frozen=True, slots=True)
+class QualityBinding:
+    """Drives the quality of `paths` from world state (communication loss), leaving their
+    values to their own bindings."""
+
+    paths: tuple[str, ...]
+    read: Callable[[WorldState], Quality]
+
+
+@dataclass(frozen=True, slots=True)
 class CoverageEntry:
     path: str
     source: PointSource
@@ -84,7 +93,12 @@ class Projector:
     """Projects WorldState onto the Asset Model. Bound points are recomputed every step; every
     other point keeps its Compatibility Fallback, flagged in the coverage report."""
 
-    def __init__(self, asset_model: AssetModel, bindings: Iterable[Binding]) -> None:
+    def __init__(
+        self,
+        asset_model: AssetModel,
+        bindings: Iterable[Binding],
+        quality: Iterable[QualityBinding] = (),
+    ) -> None:
         self._data_types = {p.path: p.data_type for p in asset_model.points.values()}
         self._bindings: dict[str, Binding] = {}
         for b in bindings:
@@ -93,6 +107,10 @@ class Projector:
             if b.path in self._bindings:
                 raise ValueError(f"point bound twice: {b.path}")
             self._bindings[b.path] = b
+        self._quality = tuple(quality)
+        for q in self._quality:
+            if missing := [p for p in q.paths if p not in asset_model.points]:
+                raise ValueError(f"quality bound to points not in the Asset Model: {missing}")
         self._template: dict[str, Scalar] = {
             p.path: type_default(p.data_type) if p.path in self._bindings else fallback_value(p)
             for p in asset_model.points.values()
@@ -113,6 +131,12 @@ class Projector:
             except ValueError:
                 values[path] = type_default(data_type)
                 degraded[path] = Quality.BAD
+        for q in self._quality:
+            quality = q.read(state)
+            if quality is not Quality.GOOD:
+                for path in q.paths:
+                    if degraded.get(path) is not Quality.BAD:
+                        degraded[path] = quality
         return Projection(state.time, MappingProxyType(values), MappingProxyType(degraded))
 
     def _source(self, path: str) -> PointSource:
