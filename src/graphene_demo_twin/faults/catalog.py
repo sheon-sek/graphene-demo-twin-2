@@ -237,6 +237,48 @@ class FaultCatalog:
         return None
 
 
+def _sensor_faults(prefix: str, asset_type: str, aisle: str) -> tuple[FaultSpec, ...]:
+    """The observation faults of a hall temperature sensor: the air it hangs in is unchanged,
+    so its reading disagrees with the zone and with the sensors around it."""
+    return (
+        FaultSpec(
+            f"{prefix}.offset",
+            "Sensor offset",
+            asset_type,
+            FaultCategory.SENSOR,
+            "observation.offset_c",
+            5.0,
+            "°C",
+            f"The temperature element reads high by a fixed amount (a bad calibration or a "
+            f"loose termination); the {aisle} air itself is unchanged.",
+            default_severity=0.6,
+        ),
+        FaultSpec(
+            f"{prefix}.drift",
+            "Sensor drift",
+            asset_type,
+            FaultCategory.SENSOR,
+            "observation.drift_c_per_h",
+            4.0,
+            "°C per hour",
+            f"The temperature element drifts further high the longer the fault acts, until it "
+            f"saturates; Clear recalibrates it. The {aisle} air itself is unchanged.",
+            default_severity=0.5,
+        ),
+        FaultSpec(
+            f"{prefix}.stuck",
+            "Stuck reading",
+            asset_type,
+            FaultCategory.SENSOR,
+            "observation.stuck",
+            1.0,
+            "stuck",
+            "The sensor freezes on its last temperature and humidity readings (once the level "
+            "passes half).",
+        ),
+    )
+
+
 STANDARD_CATALOG = FaultCatalog(
     [
         FaultSpec(
@@ -307,27 +349,8 @@ STANDARD_CATALOG = FaultCatalog(
             "The unit stops answering BMS polls: its points go uncertain, then bad at half "
             "severity, and the supervisor raises Loss of Signal.",
         ),
-        FaultSpec(
-            "th.drift",
-            "Sensor drift",
-            "Temperature and Humidity",
-            FaultCategory.SENSOR,
-            "observation.bias_c",
-            6.0,
-            "°C",
-            "The temperature element drifts high; the room itself is unchanged.",
-            default_severity=0.5,
-        ),
-        FaultSpec(
-            "th.stuck",
-            "Stuck reading",
-            "Temperature and Humidity",
-            FaultCategory.SENSOR,
-            "observation.stuck",
-            1.0,
-            "stuck",
-            "The sensor freezes on its last reading (once the level passes half).",
-        ),
+        *_sensor_faults("th", "Temperature and Humidity", "hot-aisle"),
+        *_sensor_faults("em", "Environment Monitoring", "cold-aisle"),
         FaultSpec(
             "th.comm_loss",
             "Communication loss",

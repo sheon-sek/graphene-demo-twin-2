@@ -39,7 +39,9 @@ class Domain(Protocol):
     declares them as `commands: Mapping[type_id, tuple[CommandSpec, ...]]`. A domain whose
     steady state derives from other domains' (site totals, running averages) may also define
     `complete(state, ctx)`, called in registration order once every domain's initial state is
-    in place; it sets only its own variables.
+    in place, and then once more in the same order, so a steady state may also derive from
+    domains registered after it (a room's heat balance from the losses the electrical network
+    works out). It sets only its own variables, from the state as it finds it.
     """
 
     def initial(self, ctx: StepContext) -> Mapping[str, AssetState]:
@@ -141,9 +143,10 @@ class Simulation:
                     raise ValueError(f"two domains own {node} variables {sorted(clash)}")
                 owned.update(variables)
         state = WorldState(start_time, assets)
-        for domain in self.domains:
-            if (complete := getattr(domain, "complete", None)) is not None:
-                complete(state, ctx)
+        for _ in range(2):
+            for domain in self.domains:
+                if (complete := getattr(domain, "complete", None)) is not None:
+                    complete(state, ctx)
         return state
 
     def _domain_for(self, event: Event) -> Domain:

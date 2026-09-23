@@ -23,6 +23,7 @@ from graphene_demo_twin.projection import Projector, Quality
 from graphene_demo_twin.sim import Event, EventError, Simulation, WorldState
 from graphene_demo_twin.sim.electrical import network
 from graphene_demo_twin.sim.site import SITE, load_class
+from graphene_demo_twin.sim.thermal import hot_aisle_sensors
 from graphene_demo_twin.world import SETTLING_S, default_domains, default_projector
 
 START = 1_790_000_000
@@ -36,6 +37,7 @@ EWS = "Network Topology/EWS-A"
 TARGET = {
     "CRAC": CRAC3,
     "Temperature and Humidity": SENSOR,
+    "Environment Monitoring": "Environment Monitoring/Level 1/DH03/Environment Monitoring 5",
     "Network Device": SWITCH,
     "Weather Station": "~WX-01",
     "IT Load": "~IT-DH03",
@@ -164,8 +166,14 @@ def test_a_fault_acts_on_the_chosen_asset_and_never_on_another_of_its_type(plant
     assert faulted.state.assets["DH03"]["temp_c"] > base.state.assets["DH03"]["temp_c"] + 1
     cracs = [a.path for a in plant_design.assets.values() if a.type_id == "CRAC"]
     for crac in cracs:
-        if crac != CRAC3:
-            assert faulted.state.assets[crac] == base.state.assets[crac], crac
+        if crac == CRAC3:
+            continue
+        other = faulted.state.assets[crac]
+        assert not any(k.startswith(("constraint.", "controller.")) for k in other), crac
+        # The HV room's unit answers only to the heat its transformers give off, which
+        # follows the power the whole site draws; every other unit is untouched.
+        if crac not in TRANSFORMER_ROOM:
+            assert other == base.state.assets[crac], crac
     for hall in ("DH01", "DH02", "DH04", "DH05", "DH08"):
         assert faulted.state.assets[hall] == base.state.assets[hall], hall
     assert list(faulted.state.faults) == [f"crac.compressor_trip@{CRAC3}"]
@@ -249,7 +257,7 @@ def test_a_control_fault_misleads_the_controller_without_any_alarm(plant_design,
 
 def test_sensor_faults_corrupt_the_observation_but_not_the_world(plant_design, projector):
     base, drift, stuck = _sim(plant_design), _sim(plant_design), _sim(plant_design)
-    drift.schedule(_inject(START, SENSOR, "th.drift", severity=0.5))
+    drift.schedule(_inject(START, SENSOR, "th.offset", severity=0.6))
     stuck.schedule(_inject(START, SENSOR, "th.stuck"))
     stuck.schedule(_inject(START, CRAC3, "crac.compressor_trip"))
     base.schedule(_inject(START, CRAC3, "crac.compressor_trip"))
@@ -258,11 +266,14 @@ def test_sensor_faults_corrupt_the_observation_but_not_the_world(plant_design, p
 
     assert drift.state.assets["DH03"] == _sim_at(plant_design, 900).state.assets["DH03"]
     reading = projector.project(drift.state).values[f"{SENSOR}/Temp"]
-    assert reading == pytest.approx(drift.state.assets["DH03"]["temp_c"] + 3.0, abs=1e-4)
+    _, spot = hot_aisle_sensors(plant_design)[SENSOR]
+    assert reading == pytest.approx(drift.state.assets["DH03"]["temp_c"] + spot + 3.0, abs=1e-4)
 
     assert stuck.state.assets["DH03"] == base.state.assets["DH03"]  # the hall still warms
     held = projector.project(stuck.state).values[f"{SENSOR}/Temp"]
-    assert held == pytest.approx(24.0, abs=0.5)
+    assert held == pytest.approx(
+        projector.project(_sim(plant_design).state).values[f"{SENSOR}/Temp"]
+    )
     assert base.state.assets["DH03"]["temp_c"] > held + 2
 
 
@@ -340,7 +351,8 @@ def test_clearing_every_fault_returns_to_the_base_world_within_the_settling_time
         if _history_point(asset_model, path):
             continue
         if isinstance(value, float):
-            assert after.values[path] == pytest.approx(value, rel=2e-3, abs=0.02), path
+            rel = 2e-2 if asset_model.point(path).asset in TRANSFORMER_ROOM else 2e-3
+            assert after.values[path] == pytest.approx(value, rel=rel, abs=0.02), path
         elif isinstance(value, int) and not isinstance(value, bool):
             # a rounded kW figure may land either side of a rounding boundary
             assert after.values[path] == pytest.approx(value, rel=2e-3, abs=1), path
@@ -364,16 +376,24 @@ def _history_point(asset_model, path: str) -> bool:
     return rolling or point.source_class is SourceClass.ENERGY_INTEGRAL
 
 
+TRANSFORMER_ROOM = {"G-HV", "CRAC/G_CRAC4", "PAHU/G_PAHU4", "FWU/G_FWU4"}
+"""The HV room and its air units. They answer to the transformers' losses, which follow what
+the whole site draws, including UPS batteries still recharging after an outage long after
+the rest of the world has settled; a 1 kW change moves the room's DX unit by a tenth of a
+point of compressor capacity."""
+
+
 def assert_close(state: WorldState, base: WorldState) -> None:
     assert state.time == base.time
     assert state.assets.keys() == base.assets.keys()
     for node, variables in base.assets.items():
         assert state.assets[node].keys() == variables.keys(), node
+        rel = 2e-2 if node in TRANSFORMER_ROOM else 2e-3
         for name, value in variables.items():
             if _history(name):
                 continue
             if isinstance(value, float):
-                assert state.assets[node][name] == pytest.approx(value, rel=2e-3, abs=0.02), (
+                assert state.assets[node][name] == pytest.approx(value, rel=rel, abs=0.02), (
                     node,
                     name,
                 )

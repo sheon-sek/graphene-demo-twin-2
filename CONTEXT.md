@@ -40,6 +40,10 @@ _Avoid_: virtual asset, helper tag
 One of the eight IT rooms DH01–DH08 (DH01–04 on Level 1, DH05–08 on Level 2); each is its own thermal zone.
 _Avoid_: Hall-A, Hall-B, datahall, room
 
+**Thermal Zone**:
+A room whose air the simulation integrates as one volume with thermal inertia: every Data Hall, and every support room that has airside units. Heat comes in from what dissipates in the room and leaves through the cooling its air suppliers deliver; zones share heat only along authored air connections.
+_Avoid_: hall model, room loop
+
 **Cooling Block**:
 The chilled-water branch serving one Data Hall (CB-001…CB-008), with its own valves, flow meter and supply/return temperatures.
 _Avoid_: hall loop, CHW zone

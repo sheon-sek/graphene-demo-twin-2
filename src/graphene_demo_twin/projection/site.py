@@ -3,11 +3,9 @@
 `Chiller System Control/Weather` observes the roof weather station. The `Dashboard` and `Other`
 Plant Views observe the site's power flow: every figure is a sum or ratio over the same
 step's consumer powers and energy integrals, so PUE, loads and the energy breakdown can never
-disagree with each other. `Environment Monitoring/<floor>/<hall>` aggregates summarise that
-hall's own cold-aisle sensors.
+disagree with each other.
 """
 
-import statistics
 from collections.abc import Callable, Iterable
 
 from graphene_demo_twin.asset_model import AssetModel
@@ -15,7 +13,6 @@ from graphene_demo_twin.plant_design import PlantDesign
 from graphene_demo_twin.projection.projector import Binding
 from graphene_demo_twin.sim import Scalar, WorldState
 from graphene_demo_twin.sim.it_load import it_equipment
-from graphene_demo_twin.sim.placeholder import cold_aisle_sensors, halls
 from graphene_demo_twin.sim.site import (
     KW_PER_RT,
     SITE,
@@ -62,7 +59,6 @@ def site_bindings(asset_model: AssetModel, design: PlantDesign) -> list[Binding]
         *_it_load(asset_model, design),
         *_dashboard(design),
         *_other(asset_model),
-        *_hall_aggregates(asset_model, design),
     ]
     missing = [b.path for b in bindings if b.path not in asset_model.points]
     if missing:
@@ -182,20 +178,6 @@ def _other(asset_model: AssetModel) -> Iterable[Binding]:
     yield Binding(f"{OTHER}/Maintenance Due", lambda s: s.time * 1000 >= schedule)
 
 
-def _hall_aggregates(asset_model: AssetModel, design: PlantDesign) -> Iterable[Binding]:
-    """Each cold-aisle sensor's reading, and its hall's average and maximum over them."""
-    by_hall: dict[str, list[str]] = {h: [] for h in halls(design)}
-    for sensor, (hall, _) in cold_aisle_sensors(design).items():
-        by_hall[hall].append(sensor)
-        yield Binding(f"{sensor}/Temperature", _var(sensor, "temp_c"))
-        yield Binding(f"{sensor}/Humidity", _var(sensor, "rh_pct"))
-    for hall, sensors in by_hall.items():
-        folder = f"Environment Monitoring/{design.room(hall).floor}/{hall}"
-        for name, var in (("Temp", "temp_c"), ("Humidity", "rh_pct")):
-            yield Binding(f"{folder}/Avg Cold Aisle {name}", _over(sensors, var, statistics.fmean))
-            yield Binding(f"{folder}/Max Cold Aisle {name}", _over(sensors, var, max))
-
-
 def _read(node: str, read: Callable[[dict[str, Scalar]], Scalar]) -> Callable[[WorldState], Scalar]:
     return lambda s: read(s.assets[node])
 
@@ -218,8 +200,3 @@ def _ratio(num: str, den: str, den_scale: float = 1.0) -> Callable[[WorldState],
         return site[num] / denominator if denominator else float("nan")
 
     return read
-
-
-def _over(nodes: list[str], name: str, reduce: Callable) -> Callable[[WorldState], float]:
-    nodes = tuple(nodes)
-    return lambda s: reduce([s.assets[n][name] for n in nodes])

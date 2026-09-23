@@ -5,13 +5,9 @@ from graphene_demo_twin.sim.engine import STEP_S, Domain, Simulation, StepContex
 from graphene_demo_twin.sim.events import Event, EventError
 from graphene_demo_twin.sim.live import LiveWorld
 from graphene_demo_twin.sim.noise import Noise
-from graphene_demo_twin.sim.placeholder import (
-    PlaceholderCracDomain,
-    PlaceholderHallDomain,
-    PlaceholderNetworkDomain,
-    PlaceholderSensorDomain,
-)
+from graphene_demo_twin.sim.placeholder import PlaceholderCracDomain, PlaceholderNetworkDomain
 from graphene_demo_twin.sim.state import AssetState, Scalar, WorldState, state_hash
+from graphene_demo_twin.sim.thermal import ThermalZoneDomain, ZoneSensorDomain
 
 __all__ = [
     "COMMAND",
@@ -24,14 +20,14 @@ __all__ = [
     "LiveWorld",
     "Noise",
     "PlaceholderCracDomain",
-    "PlaceholderHallDomain",
     "PlaceholderNetworkDomain",
-    "PlaceholderSensorDomain",
     "Scalar",
     "Simulation",
     "StepContext",
+    "ThermalZoneDomain",
     "WhatIfFork",
     "WorldState",
+    "ZoneSensorDomain",
     "command_problem",
     "state_hash",
 ]

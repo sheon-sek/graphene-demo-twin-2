@@ -13,6 +13,7 @@ from graphene_demo_twin.projection.projector import (
     QualityBinding,
 )
 from graphene_demo_twin.projection.site import site_bindings
+from graphene_demo_twin.projection.thermal import thermal_bindings
 from graphene_demo_twin.projection.values import Quality, coerce, fallback_value, type_default
 
 __all__ = [
@@ -31,5 +32,6 @@ __all__ = [
     "placeholder_bindings",
     "placeholder_quality",
     "site_bindings",
+    "thermal_bindings",
     "type_default",
 ]

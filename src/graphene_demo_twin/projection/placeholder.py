@@ -8,7 +8,7 @@ from graphene_demo_twin.plant_design import PlantDesign
 from graphene_demo_twin.projection.projector import Binding, QualityBinding
 from graphene_demo_twin.projection.values import Quality
 from graphene_demo_twin.sim import Scalar, WorldState
-from graphene_demo_twin.sim.placeholder import CRAC_TYPE, assets_of, comm_nodes, hall_sensors
+from graphene_demo_twin.sim.placeholder import CRAC_TYPE, assets_of, comm_nodes
 
 CRAC_POINTS: dict[str, Callable[[dict[str, Scalar]], Scalar]] = {
     "Auto_Manual": lambda s: 1 if s["mode"] == "auto" else 0,
@@ -35,14 +35,11 @@ communication is lost."""
 
 
 def placeholder_bindings(asset_model: AssetModel, design: PlantDesign) -> list[Binding]:
-    """Temperature sensors in each Data Hall report their own reading, and every CRAC
-    reports its unit state."""
+    """Every CRAC reports its unit state."""
     bindings: list[Binding] = []
     for crac in assets_of(design, CRAC_TYPE):
         for member, read in CRAC_POINTS.items():
             bindings.append(Binding(f"{crac}/{member}", _read(crac, read)))
-    for sensor in hall_sensors(design):
-        bindings.append(Binding(f"{sensor}/Temp", _var(sensor, "temp_c")))
     missing = [b.path for b in bindings if b.path not in asset_model.points]
     if missing:
         raise ValueError(f"placeholder bindings name points not in the Asset Model: {missing}")
@@ -77,10 +74,3 @@ def _read(node: str, read: Callable[[dict[str, Scalar]], Scalar]) -> Callable[[W
         return read(state.assets[node])
 
     return project
-
-
-def _var(node: str, name: str, scale: float = 1.0) -> Callable[[WorldState], float]:
-    def read(state: WorldState) -> float:
-        return state.assets[node][name] * scale
-
-    return read

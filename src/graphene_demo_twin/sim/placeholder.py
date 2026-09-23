@@ -1,9 +1,9 @@
 """Stand-in P0 models that give the fault framework something causal to act on.
 
-Data Hall air temperature, DX CRAC units with their Controller, hall temperature sensors and
-control-network reachability, all reduced to what a fault needs to propagate along the Plant
-Design. P1 thermal zones (#20) and P2 airside replace them; the variable contract they read
-from faults (`constraint.*`, `observation.*`, `quality.*`, `controller.*`) stays.
+DX CRAC units with their Controller, and control-network reachability, reduced to what a
+fault needs to propagate along the Plant Design. P2 airside and P4 comm quality replace them;
+the variable contract they read from faults (`constraint.*`, `quality.*`, `controller.*`)
+stays.
 """
 
 import functools
@@ -14,97 +14,8 @@ from graphene_demo_twin.sim.commands import CommandSpec, command_problem
 from graphene_demo_twin.sim.electrical import powered
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
-from graphene_demo_twin.sim.it_load import it_equipment, it_heat_kw, it_utilisation
 from graphene_demo_twin.sim.state import AssetState, WorldState
-from graphene_demo_twin.sim.weather import (
-    outdoor_air,
-    saturation_kpa,
-    site_air,
-)
-
-SUPPLY_C = 18.0
-"""Supply air temperature every air supplier delivers at steady state."""
-HALL_C = 24.0
-"""Steady-state Data Hall air temperature (supply plus the design air temperature rise)."""
-
-CRAC_TYPE = "CRAC"
-SENSOR_TYPE = "Temperature and Humidity"
-COLD_AISLE_SENSOR_TYPE = "Environment Monitoring"
-COLD_AISLE_SPREAD_C = 0.6
-"""Largest difference between one cold-aisle spot and the aisle's mean."""
-AIR_WEIGHT = {CRAC_TYPE: 3.0}
-"""Share of a hall's cooling per air supplier type, relative to 1 for any other supplier."""
-
-
-class PlaceholderHallDomain:
-    """Per Data Hall: a first-order air temperature and the moisture in it. All of the IT
-    Load becomes heat in the hall; the air suppliers connected to it in the Plant Design
-    remove it in proportion to their airflow and supply temperature. The fresh-air handlers
-    hold its dew point low, a little above it on humid days.
-    """
-
-    NOMINAL_UTILISATION = 0.675
-    """Share of design IT Load at which the hall sits at HALL_C with full cooling."""
-    TAU_S = 600.0
-    """Thermal time constant with full cooling."""
-    DEW_TAU_S = TAU_S
-    DEW_POINT_C = 11.0
-    """Hall dew point the fresh-air handlers hold on a day with a 24.35 °C outdoor dew point."""
-    DEW_LEAK = 0.2
-    """How much of an outdoor dew point change leaks into the halls."""
-    RECIRCULATION = 0.15
-    """Share of hot-aisle air that reaches the cold aisle."""
-    settling_s = int(6 * TAU_S)
-    """Time for a disturbance to die out to within 0.25 %."""
-
-    def initial(self, ctx: StepContext) -> dict[str, AssetState]:
-        air = outdoor_air(ctx.noise, ctx.time)
-        states = {}
-        for hall in halls(ctx.design):
-            heat = sum(
-                b.design_kw * it_utilisation(ctx.noise, b, ctx.time)
-                for n, b in it_equipment(ctx.design).items()
-                if ctx.design.asset(n).room == hall
-            )
-            temp = SUPPLY_C + heat / ua_kw_per_k(ctx.design, hall)
-            states[hall] = {
-                "it_heat_kw": heat,
-                "temp_c": temp,
-                "cooling_kw": heat,
-                "cold_aisle_c": SUPPLY_C + self.RECIRCULATION * (temp - SUPPLY_C),
-                "dew_point_c": self._dew_target(air.dew_point_c),
-            }
-        return states
-
-    def handles(self, event: Event, design: PlantDesign) -> bool:
-        return False
-
-    def apply(self, event: Event, state: WorldState) -> None:
-        raise AssertionError("no events")
-
-    def step(self, state: WorldState, ctx: StepContext) -> None:
-        outdoor = site_air(state, ctx.design)["dew_point_c"]
-        for hall in halls(ctx.design):
-            s = state.assets[hall]
-            temp = s["temp_c"]
-            heat = it_heat_kw(state, ctx.design, hall)
-            ua = ua_kw_per_k(ctx.design, hall)
-            cooling = flow = supply = 0.0
-            for supplier, share in air_suppliers(ctx.design, hall):
-                airflow, supply_c = supplier_air(state, supplier)
-                cooling += share * airflow * (temp - supply_c)
-                flow += share * airflow
-                supply += share * airflow * supply_c
-            mixed = supply / flow if flow > 0.0 else temp
-            s["it_heat_kw"] = heat
-            s["cooling_kw"] = cooling * ua
-            s["temp_c"] = temp + (heat - cooling * ua) * ctx.dt / (ua * self.TAU_S)
-            s["cold_aisle_c"] = mixed + self.RECIRCULATION * (s["temp_c"] - mixed)
-            dew = s["dew_point_c"]
-            s["dew_point_c"] = dew + (self._dew_target(outdoor) - dew) * ctx.dt / self.DEW_TAU_S
-
-    def _dew_target(self, outdoor_dew_c: float) -> float:
-        return self.DEW_POINT_C + self.DEW_LEAK * (outdoor_dew_c - 24.35)
+from graphene_demo_twin.sim.thermal import CRAC_TYPE, HALL_C, SUPPLY_C, served_room
 
 
 class PlaceholderCracDomain:
@@ -216,42 +127,6 @@ class PlaceholderCracDomain:
             )
 
 
-class PlaceholderSensorDomain:
-    """Sensors in the Data Halls. Temperature and Humidity sensors read their hall's air
-    temperature through whatever observation corruption a sensor fault applies; Environment
-    Monitoring sensors read the cold aisle where they hang (a fixed offset per spot) and its
-    relative humidity."""
-
-    settling_s = 0
-
-    def initial(self, ctx: StepContext) -> dict[str, AssetState]:
-        states: dict[str, AssetState] = {s: {"temp_c": HALL_C} for s in hall_sensors(ctx.design)}
-        for sensor in cold_aisle_sensors(ctx.design):
-            states[sensor] = {"temp_c": HALL_C, "rh_pct": 50.0}
-        return states
-
-    def handles(self, event: Event, design: PlantDesign) -> bool:
-        return False
-
-    def apply(self, event: Event, state: WorldState) -> None:
-        raise AssertionError("no events")
-
-    def step(self, state: WorldState, ctx: StepContext) -> None:
-        for sensor, hall in hall_sensors(ctx.design).items():
-            s = state.assets[sensor]
-            if s.get("observation.stuck", 0.0) >= 0.5:
-                continue  # frozen on its last reading
-            s["temp_c"] = state.assets[hall]["temp_c"] + s.get("observation.bias_c", 0.0)
-        vapour: dict[str, float] = {}  # each hall's vapour pressure, shared by its sensors
-        for sensor, (hall, offset) in cold_aisle_sensors(ctx.design).items():
-            h = state.assets[hall]
-            s = state.assets[sensor]
-            s["temp_c"] = h["cold_aisle_c"] + offset
-            if hall not in vapour:
-                vapour[hall] = saturation_kpa(h["dew_point_c"])
-            s["rh_pct"] = 100.0 * vapour[hall] / saturation_kpa(s["temp_c"])
-
-
 class PlaceholderNetworkDomain:
     """Reachability over the control network: an asset whose communication is lost, and
     every node downstream of it over `net` connections, reports `comm` uncertain or bad.
@@ -292,72 +167,8 @@ class PlaceholderNetworkDomain:
 
 
 @functools.cache
-def halls(design: PlantDesign) -> tuple[str, ...]:
-    return tuple(r.id for r in design.rooms.values() if r.kind == "hall")
-
-
-@functools.cache
 def assets_of(design: PlantDesign, type_id: str) -> tuple[str, ...]:
     return tuple(a.path for a in design.assets.values() if a.type_id == type_id and a.room)
-
-
-@functools.cache
-def air_suppliers(design: PlantDesign, room: str) -> tuple[tuple[str, float], ...]:
-    """The units supplying air to `room` and each one's share of its cooling."""
-    suppliers = design.upstream(room, ConnectionKind.AIR)
-    weights = [AIR_WEIGHT.get(_type_of(design, n), 1.0) for n in suppliers]
-    total = sum(weights)
-    return tuple((n, w / total) for n, w in zip(suppliers, weights, strict=True))
-
-
-@functools.cache
-def served_room(design: PlantDesign, unit: str) -> str | None:
-    rooms = [n for n in design.downstream(unit, ConnectionKind.AIR) if design.is_room(n)]
-    return rooms[0] if rooms else None
-
-
-@functools.cache
-def hall_sensors(design: PlantDesign) -> dict[str, str]:
-    """Temperature sensor → the Data Hall it sits in."""
-    in_halls = set(halls(design))
-    return {
-        a.path: a.room
-        for a in design.assets.values()
-        if a.type_id == SENSOR_TYPE and a.room in in_halls
-    }
-
-
-@functools.cache
-def cold_aisle_sensors(design: PlantDesign) -> dict[str, tuple[str, float]]:
-    """Environment Monitoring sensor → the Data Hall it sits in and how much warmer its spot
-    in the cold aisle runs than the aisle's mean, fixed by where it is placed: supply air
-    enters the aisles from the hall's east wall, where its air units stand, and warms (mixing
-    with recirculated air) towards the far, west end."""
-    in_halls = set(halls(design))
-    sensors = {}
-    for a in design.assets.values():
-        if a.type_id != COLD_AISLE_SENSOR_TYPE or a.room not in in_halls:
-            continue
-        room = design.room(a.room)
-        from_supply = min(max((room.x + room.w - a.x) / room.w, 0.0), 1.0)
-        sensors[a.path] = (a.room, COLD_AISLE_SPREAD_C * (2.0 * from_supply - 1.0))
-    return sensors
-
-
-@functools.cache
-def ua_kw_per_k(design: PlantDesign, hall: str) -> float:
-    """Heat a hall's air suppliers remove per kelvin of hall air above supply, at full flow."""
-    nominal = design.it_basis[hall].design_kw * PlaceholderHallDomain.NOMINAL_UTILISATION
-    return nominal / (HALL_C - SUPPLY_C)
-
-
-def supplier_air(state: WorldState, supplier: str) -> tuple[float, float]:
-    """(airflow as a fraction of nominal, supply temperature) of an air supplier; a unit
-    not modelled yet is steady at full flow and SUPPLY_C."""
-    unit = state.assets.get(supplier)
-    if unit is not None and "airflow" in unit:
-        return unit["airflow"], unit["supply_c"]
-    return 1.0, SUPPLY_C
 
 
 @functools.cache
@@ -369,8 +180,3 @@ def comm_nodes(design: PlantDesign, fault_types: frozenset[str]) -> tuple[str, .
         if c.kind is ConnectionKind.NET:
             nodes += (c.source, c.target)
     return tuple(dict.fromkeys(nodes))
-
-
-def _type_of(design: PlantDesign, node: str) -> str:
-    placed = design.assets.get(node)
-    return "" if placed is None else placed.type_id

@@ -16,6 +16,7 @@ from graphene_demo_twin.projection import (
 )
 from graphene_demo_twin.sim import Event, Simulation, WorldState
 from graphene_demo_twin.sim.electrical import network
+from graphene_demo_twin.sim.thermal import hot_aisle_sensors
 from graphene_demo_twin.world import default_domains, default_projector
 
 START = 1_790_000_000
@@ -121,7 +122,10 @@ def test_placeholder_points_follow_the_hall_state(asset_model, plant_design, pro
     p = projector.project(sim.state)
     it = {n: s for n, s in sim.state.assets.items() if n.startswith("~IT-")}
 
-    assert p.values[HOT_AISLE_DH03] == pytest.approx(sim.state.assets["DH03"]["temp_c"], rel=1e-6)
+    _, spot = hot_aisle_sensors(plant_design)[HOT_AISLE_DH03.removesuffix("/Temp")]
+    assert p.values[HOT_AISLE_DH03] == pytest.approx(
+        sim.state.assets["DH03"]["temp_c"] + spot, rel=1e-6
+    )
     assert p.values[DASH_DH03_ENERGY] == it["~IT-DH03"]["energy_kwh"]
     assert p.values["Dashboard/Total IT Load"] == pytest.approx(
         sum(s["power_kw"] for s in it.values())
@@ -161,15 +165,21 @@ def test_a_fault_moves_only_the_points_downstream_of_it(asset_model, plant_desig
         p for p in projector.coverage.paths(PointSource.PHYSICS) if p.startswith(f"{CRAC3}/")
     }
     downstream |= {
-        f"{a.path}/Temp"
+        f"{a.path}/{member}"
         for a in plant_design.assets_in("DH03")
         if a.type_id == "Temperature and Humidity"
+        for member in ("Temp", "Humidity")
     }
-    # Its cold aisle warms too, and the site draws different power to cool it.
+    # Its cold aisle warms too, its hall's Plant View follows, and the site draws different
+    # power to cool it.
     downstream |= {
         p
         for p in projector.coverage.entries
         if p.startswith("Environment Monitoring/Level 1/DH03/")
+    }
+    downstream |= {
+        "Chiller System Control/Data Halls/DH3 Temperature",
+        "Chiller System Control/Data Halls/Current Heat Load",
     }
     downstream |= {p for p in projector.coverage.entries if p.startswith(("Dashboard/", "Other/"))}
     # So does the electrical network that supplies that power: its meters, UPS and
@@ -178,6 +188,9 @@ def test_a_fault_moves_only_the_points_downstream_of_it(asset_model, plant_desig
     downstream |= {
         pt.path for n in (*net.meters, *net.incomers, *net.ups) for pt in asset_model.points_of(n)
     }
+    # The transformers' losses in turn warm the HV room a touch, so its DX unit works a
+    # little harder.
+    downstream |= {pt.path for pt in asset_model.points_of("CRAC/G_CRAC4")}
     assert HOT_AISLE_DH03 in changed and f"{CRAC3}/System Failure_Trip" in changed
     assert changed <= downstream
     bound = {*projector.coverage.paths(PointSource.PHYSICS)}

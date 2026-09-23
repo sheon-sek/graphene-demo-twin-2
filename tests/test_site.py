@@ -11,8 +11,8 @@ from graphene_demo_twin.plant_design import PLANT_DESIGN_PATH, parse_plant_desig
 from graphene_demo_twin.projection import PointSource, Projector
 from graphene_demo_twin.sim import Event, Noise, Simulation
 from graphene_demo_twin.sim.it_load import IT_TYPE, it_utilisation
-from graphene_demo_twin.sim.placeholder import COLD_AISLE_SPREAD_C, cold_aisle_sensors
 from graphene_demo_twin.sim.site import SITE, LoadClass, load_class
+from graphene_demo_twin.sim.thermal import COLD_AISLE_SPREAD_C, cold_aisle_sensors
 from graphene_demo_twin.sim.weather import (
     LOCAL_OFFSET_S,
     WEATHER_STATION,

@@ -9,7 +9,7 @@ IT power the sum over the IT equipment, so PUE and every energy total come from 
 Two domains share the work around the electrical network (`sim.electrical`). SiteLoadDomain
 steps before it: until the chiller plant and airside (P2), water (P3) and building services
 (P4) are modelled, it is their stand-in, working out each non-IT load from the state the other
-domains have reached this step (CRAC units, hall cooling, outdoor air) with simple plant curves,
+domains have reached (CRAC units, the zones' air, outdoor air) with simple plant curves,
 and nothing draws while its supply is dead. The electrical network adds the UPS and transformer
 losses, and SitePowerDomain steps last to total everything up.
 """
@@ -30,16 +30,16 @@ from graphene_demo_twin.sim.electrical import (
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
 from graphene_demo_twin.sim.it_load import IT_TYPE
-from graphene_demo_twin.sim.placeholder import (
+from graphene_demo_twin.sim.placeholder import assets_of
+from graphene_demo_twin.sim.state import AssetState, WorldState
+from graphene_demo_twin.sim.thermal import (
     CRAC_TYPE,
     air_suppliers,
-    assets_of,
-    halls,
     served_room,
     supplier_air,
     ua_kw_per_k,
+    zones,
 )
-from graphene_demo_twin.sim.state import AssetState, WorldState
 from graphene_demo_twin.sim.weather import DAY_S, LOCAL_OFFSET_S, enthalpy_kj_per_kg, site_air
 
 SITE = "site"
@@ -94,8 +94,6 @@ FAN_KW = {"PAHU": 11.0, "FCU": 2.2, "FWU": 3.0, "Ceiling Cooling Units": 7.5}
 """Nominal fan power of the air units the airside (P2) does not model yet."""
 CRAC_FAN_KW = 15.0
 """CRAC EC fan power at full speed; it follows the cube of speed."""
-CRAC_SUPPORT_KW = 60.0
-"""Cooling a CRAC outside the Data Halls delivers at full compressor load."""
 FRESH_AIR_KG_S = 2.0
 """Outdoor air each primary air handler brings in and dehumidifies on its chilled-water coil."""
 OFF_COIL_C = 12.5
@@ -144,7 +142,8 @@ OUTDOOR_W_M2 = 1.0
 class SiteLoadDomain:
     """The draw of every consumer the electrical network does not model itself, other than the
     IT equipment: cooling, heat rejection, ventilation, lighting and building services. It must
-    step after the CRAC and hall domains and before the electrical network."""
+    step after the CRAC domain and before the electrical network; it reads the zones' air as
+    the previous step left it, as the zones do when they work out their cooling."""
 
     settling_s = 0
 
@@ -208,12 +207,12 @@ class SiteLoadDomain:
             enthalpy_kj_per_kg(dry, dew, hpa) - enthalpy_kj_per_kg(OFF_COIL_C, OFF_COIL_C, hpa)
         )
         chw_load += max(fresh, 0.0) * sum(fed(u) for u in assets_of(design, "PAHU"))
-        for hall in halls(design):
-            temp = state.assets[hall]["temp_c"]
-            for supplier, share in air_suppliers(design, hall):
+        for zone in zones(design):
+            temp = state.assets[zone]["temp_c"]
+            for supplier, share in air_suppliers(design, zone):
                 if supplier not in assets_of(design, CRAC_TYPE) and fed(supplier):
-                    airflow, supply_c = supplier_air(state, supplier)
-                    chw_load += share * airflow * (temp - supply_c) * ua_kw_per_k(design, hall)
+                    airflow, supply_c = supplier_air(state, design, supplier)
+                    chw_load += share * airflow * (temp - supply_c) * ua_kw_per_k(design, zone)
         chw_load = max(chw_load, 0.0)
 
         # Chiller plant: duty chillers staged on load, lift set by the towers' wet bulb.
@@ -339,14 +338,12 @@ def _crac_cooling_kw(state: WorldState, design: PlantDesign, crac: str) -> float
     """Heat a CRAC unit takes out of the room it serves."""
     s = state.assets[crac]
     room = served_room(design, crac)
-    if room in design.it_basis:
-        share = dict(air_suppliers(design, room))[crac]
-        hall = state.assets[room]
-        removed = (
-            share * s["airflow"] * (hall["temp_c"] - s["supply_c"]) * ua_kw_per_k(design, room)
-        )
-        return max(removed, 0.0)
-    return CRAC_SUPPORT_KW * s["compressor_pct"] / 100.0
+    if room is None:
+        return 0.0
+    share = dict(air_suppliers(design, room))[crac]
+    zone = state.assets[room]
+    removed = share * s["airflow"] * (zone["temp_c"] - s["supply_c"]) * ua_kw_per_k(design, room)
+    return max(removed, 0.0)
 
 
 class _Plant:
