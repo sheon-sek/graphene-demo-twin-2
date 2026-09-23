@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "graphene-demo-twin"
+version = "0.2.0"
+description = "Deterministic virtual datacenter projected onto the Graphene Asset Model"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "ruff>=0.6,<1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/graphene_demo_twin"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# The approved Plant Design authoring script (rev 0.1) is kept as reviewed, not restyled.
+extend-exclude = ["plant-design/author.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
