@@ -10503,7 +10503,8 @@
    "name": "IT-DH01",
    "type": "IT Load",
    "observedBy": [
-    "Dashboard/Energy/Floors/Level 1/Data Halls/DH01"
+    "Dashboard/Energy/Floors/Level 1/Data Halls/DH01",
+    "Environment Monitoring/Level 1/DH01"
    ]
   },
   {
@@ -10527,7 +10528,8 @@
    "name": "IT-DH02",
    "type": "IT Load",
    "observedBy": [
-    "Dashboard/Energy/Floors/Level 1/Data Halls/DH02"
+    "Dashboard/Energy/Floors/Level 1/Data Halls/DH02",
+    "Environment Monitoring/Level 1/DH02"
    ]
   },
   {
@@ -10551,7 +10553,8 @@
    "name": "IT-DH03",
    "type": "IT Load",
    "observedBy": [
-    "Dashboard/Energy/Floors/Level 1/Data Halls/DH03"
+    "Dashboard/Energy/Floors/Level 1/Data Halls/DH03",
+    "Environment Monitoring/Level 1/DH03"
    ]
   },
   {
@@ -10575,7 +10578,8 @@
    "name": "IT-DH04",
    "type": "IT Load",
    "observedBy": [
-    "Dashboard/Energy/Floors/Level 1/Data Halls/DH04"
+    "Dashboard/Energy/Floors/Level 1/Data Halls/DH04",
+    "Environment Monitoring/Level 1/DH04"
    ]
   },
   {
@@ -10599,7 +10603,8 @@
    "name": "IT-DH05",
    "type": "IT Load",
    "observedBy": [
-    "Dashboard/Energy/Floors/Level 2/Data Halls/DH05"
+    "Dashboard/Energy/Floors/Level 2/Data Halls/DH05",
+    "Environment Monitoring/Level 2/DH05"
    ]
   },
   {
@@ -10623,7 +10628,8 @@
    "name": "IT-DH06",
    "type": "IT Load",
    "observedBy": [
-    "Dashboard/Energy/Floors/Level 2/Data Halls/DH06"
+    "Dashboard/Energy/Floors/Level 2/Data Halls/DH06",
+    "Environment Monitoring/Level 2/DH06"
    ]
   },
   {
@@ -10647,7 +10653,8 @@
    "name": "IT-DH07",
    "type": "IT Load",
    "observedBy": [
-    "Dashboard/Energy/Floors/Level 2/Data Halls/DH07"
+    "Dashboard/Energy/Floors/Level 2/Data Halls/DH07",
+    "Environment Monitoring/Level 2/DH07"
    ]
   },
   {
@@ -10671,7 +10678,8 @@
    "name": "IT-DH08",
    "type": "IT Load",
    "observedBy": [
-    "Dashboard/Energy/Floors/Level 2/Data Halls/DH08"
+    "Dashboard/Energy/Floors/Level 2/Data Halls/DH08",
+    "Environment Monitoring/Level 2/DH08"
    ]
   },
   {

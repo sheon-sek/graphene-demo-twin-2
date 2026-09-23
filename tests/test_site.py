@@ -1,14 +1,17 @@
 """P1 site physics: weather, IT Load and the site KPIs derived from world state (#18)."""
 
+import json
 import math
 import statistics
 
 import pytest
 
 from graphene_demo_twin.asset_model import SourceClass
+from graphene_demo_twin.plant_design import PLANT_DESIGN_PATH, parse_plant_design
 from graphene_demo_twin.projection import PointSource, Projector
 from graphene_demo_twin.sim import Event, Noise, Simulation
 from graphene_demo_twin.sim.it_load import IT_TYPE, it_utilisation
+from graphene_demo_twin.sim.placeholder import COLD_AISLE_SPREAD_C, cold_aisle_sensors
 from graphene_demo_twin.sim.site import SITE, LoadClass, load_class
 from graphene_demo_twin.sim.weather import (
     LOCAL_OFFSET_S,
@@ -16,6 +19,7 @@ from graphene_demo_twin.sim.weather import (
     outdoor_air,
     relative_humidity,
     wet_bulb,
+    with_wet_bulb_rise,
 )
 from graphene_demo_twin.world import default_domains, default_projector
 
@@ -63,6 +67,7 @@ def test_weather_and_it_load_are_unexported_assets_observed_through_plant_views(
         assert node.type_id == IT_TYPE and node.unexported and node.room == hall
         assert plant_design.unexported[IT[hall]].observed_by == (
             f"Dashboard/Energy/Floors/{FLOOR[hall]}/Data Halls/{hall}",
+            f"Environment Monitoring/{FLOOR[hall]}/{hall}",
         )
         # The hall's three branch circuits feed its IT equipment.
         n = hall[-1]
@@ -168,7 +173,11 @@ def test_high_wet_bulb_raises_the_outdoor_wet_bulb_and_costs_energy(plant_design
     for s in (base, sim):
         s.advance(600)
     hot, clean = sim.state.assets[WEATHER_STATION], base.state.assets[WEATHER_STATION]
-    assert hot["wet_bulb_c"] == pytest.approx(clean["wet_bulb_c"] + 0.75 * 4.0, abs=1e-6)
+    assert hot["wet_bulb_c"] == pytest.approx(
+        min(clean["wet_bulb_c"] + 0.75 * 4.0, clean["dry_bulb_c"]), abs=1e-6
+    )
+    assert hot["wet_bulb_c"] > clean["wet_bulb_c"] + 1.0
+    assert hot["dry_bulb_c"] == clean["dry_bulb_c"]
     assert hot["dry_bulb_c"] >= hot["wet_bulb_c"] >= hot["dew_point_c"] > clean["dew_point_c"]
     assert hot["rh_pct"] == pytest.approx(relative_humidity(hot["dry_bulb_c"], hot["dew_point_c"]))
     # The towers reject heat to wetter air: the plant works harder, the IT does not change.
@@ -182,10 +191,48 @@ def test_high_wet_bulb_raises_the_outdoor_wet_bulb_and_costs_energy(plant_design
         > projector.project(base.state).values[f"{DASH}/PUE"]
     )
 
-    sim.schedule(_clear(sim.time, WEATHER_STATION, "weather.high_wet_bulb"))
+
+def test_clearing_high_wet_bulb_lets_the_humid_air_disperse_gradually(plant_design):
+    base, sim = _sim(plant_design), _sim(plant_design)
+    sim.schedule(_inject(START, WEATHER_STATION, "weather.high_wet_bulb", severity=0.75))
     for s in (base, sim):
-        s.advance(1)
-    assert sim.state.assets[WEATHER_STATION] == base.state.assets[WEATHER_STATION]
+        s.advance(600)
+
+    def excess() -> float:
+        return (
+            sim.state.assets[WEATHER_STATION]["wet_bulb_c"]
+            - base.state.assets[WEATHER_STATION]["wet_bulb_c"]
+        )
+
+    held = excess()
+    assert held > 1.0
+    sim.schedule(_clear(sim.time, WEATHER_STATION, "weather.high_wet_bulb"))
+    trail = []
+    for _ in range(15):
+        for s in (base, sim):
+            s.advance(120)
+        trail.append(excess())
+    # No snap back: the humid spell fades through its own dynamics, monotonically.
+    assert trail[0] > 0.7 * held
+    assert all(a > b > 0.0 for a, b in zip(trail, trail[1:], strict=False))
+    for s in (base, sim):
+        s.advance(6 * 3600)
+    assert abs(excess()) < 1e-3
+    assert sim.state.assets[WEATHER_STATION]["dry_bulb_c"] == pytest.approx(
+        base.state.assets[WEATHER_STATION]["dry_bulb_c"]
+    )
+
+
+def test_high_wet_bulb_makes_the_air_more_humid_not_hotter():
+    noise = Noise(7)
+    for t in range(START, START + DAY, 1800):
+        air = outdoor_air(noise, t)
+        for rise in (0.5, 3.0, 12.0):
+            humid = with_wet_bulb_rise(air, rise)
+            assert humid.dry_bulb_c == air.dry_bulb_c
+            assert humid.wet_bulb_c == pytest.approx(min(air.wet_bulb_c + rise, air.dry_bulb_c))
+            assert air.dew_point_c < humid.dew_point_c <= humid.wet_bulb_c + 1e-9
+            assert humid.rh_pct <= 100.0 + 1e-9
 
 
 # ---- IT Load
@@ -444,6 +491,31 @@ def test_hall_aggregates_summarise_that_halls_cold_aisle_sensors(plant_design, p
         )
         assert p.values[f"{folder}/Max Cold Aisle Humidity"] == pytest.approx(max(rhs), abs=1e-4)
         assert 15 < min(temps) and max(temps) < 30 and 30 < min(rhs) and max(rhs) < 80, hall
+
+
+def test_a_cold_aisle_sensor_reads_its_authored_spot(plant_design):
+    spots = cold_aisle_sensors(plant_design)
+    by_position: dict[tuple[float, float], set[float]] = {}
+    for sensor, (hall, offset) in spots.items():
+        a, room = plant_design.asset(sensor), plant_design.room(hall)
+        by_position.setdefault((a.x - room.x, a.y - room.y), set()).add(offset)
+    # The same spot in any hall runs the same amount warm, whatever the sensor is called,
+    # and the aisle warms away from the air-unit (east) wall.
+    assert all(len(offsets) == 1 for offsets in by_position.values())
+    along = {x: next(iter(o)) for (x, _), o in by_position.items()}
+    xs = sorted(along)
+    assert all(along[a] > along[b] for a, b in zip(xs, xs[1:], strict=False))
+    assert all(abs(o) <= COLD_AISLE_SPREAD_C for _, o in spots.values())
+
+
+def test_moving_a_cold_aisle_sensor_changes_its_reading(asset_model):
+    raw = json.loads(PLANT_DESIGN_PATH.read_text(encoding="utf-8"))
+    sensor = "Environment Monitoring/Level 1/DH01/Environment Monitoring 3"
+    before = cold_aisle_sensors(parse_plant_design(raw, asset_model))[sensor][1]
+    placed = next(a for a in raw["assets"] if a["path"] == sensor)
+    placed["x"] = 3
+    after = cold_aisle_sensors(parse_plant_design(raw, asset_model))[sensor][1]
+    assert after > before
 
 
 def test_the_p1_kpis_have_a_causal_source(projector, asset_model):

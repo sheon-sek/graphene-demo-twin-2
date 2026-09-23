@@ -22,6 +22,9 @@ PLANT_DESIGN_PATH = Path(__file__).resolve().parents[3] / "plant-design" / "plan
 
 PLANT_VIEWS: tuple[str, ...] = ("Chiller System Control", "Chiller_System", "Dashboard")
 """Export folders that observe physical assets modelled elsewhere (ADR-0004)."""
+HALL_AGGREGATES = "Environment Monitoring"
+"""Each Data Hall's folder here (`Environment Monitoring/<floor>/<hall>`) also observes: its
+loose points, outside any sensor's UDT instance, aggregate the hall (cold aisle, IT Load)."""
 
 
 class PlantDesignError(ValueError):
@@ -73,7 +76,7 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
         unexported[u["id"]] = UnexportedAsset(
             id=u["id"], name=u["name"], type_id=u["type"], observed_by=tuple(u["observedBy"])
         )
-        problems += _check_observed_by(unexported[u["id"]], asset_model)
+        problems += _check_observed_by(unexported[u["id"]], asset_model, rooms)
 
     assets: dict[str, PlacedAsset] = {}
     for a in raw["assets"]:
@@ -147,17 +150,19 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
                 problems.append(f"{where}: {end} is not in the world")
         connections.append(Connection(kind, e["a"], e["b"], e["label"]))
 
-    it_basis: list[ITBasis] = []
+    it_basis: dict[str, ITBasis] = {}
     for b in raw["basis"]["it"]:
         room = rooms.get(b["hall"])
         if room is None or room.kind != "hall":
             problems.append(f"IT basis names a room that is not a Data Hall: {b['hall']}")
-        low, high = (p / 100.0 for p in b["operating_pct"])
-        if not 0.0 < low <= high <= 1.0 or not 0.0 <= b["liquid_fraction"] < 1.0:
+        if b["hall"] in it_basis:
+            problems.append(f"duplicate IT basis for {b['hall']}")
+        if (basis := _it_basis(b)) is None:
             problems.append(f"IT basis for {b['hall']} is out of range")
-        it_basis.append(ITBasis(b["hall"], float(b["design_kW"]), low, high, b["liquid_fraction"]))
+        else:
+            it_basis.setdefault(b["hall"], basis)
     halls = {r.id for r in rooms.values() if r.kind == "hall"}
-    if missing := sorted(halls - {b.hall for b in it_basis}):
+    if missing := sorted(halls - it_basis.keys()):
         problems.append(f"Data Halls without an IT basis: {missing}")
     shafts, shaft_problems = _parse_shafts(raw["shafts"], floor_names, rooms)
     problems += shaft_problems
@@ -172,7 +177,7 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
         assets=assets.values(),
         unexported=unexported.values(),
         connections=connections,
-        it_basis=it_basis,
+        it_basis=it_basis.values(),
         shafts=shafts,
     )
 
@@ -245,16 +250,36 @@ def _check_floor_changes(
     return problems
 
 
+def _it_basis(b: dict[str, Any]) -> ITBasis | None:
+    """One hall's IT basis, or None unless its design power is finite and positive, its
+    operating band a finite range within (0, 100] % and its liquid share in [0, 1)."""
+    design, band, liquid = b["design_kW"], b["operating_pct"], b["liquid_fraction"]
+    if not (_is_finite_number(design) and design > 0.0):
+        return None
+    if not (isinstance(band, list) and len(band) == 2 and all(map(_is_finite_number, band))):
+        return None
+    low, high = (p / 100.0 for p in band)
+    if not 0.0 < low <= high <= 1.0:
+        return None
+    if not (_is_finite_number(liquid) and 0.0 <= liquid < 1.0):
+        return None
+    return ITBasis(b["hall"], float(design), low, high, float(liquid))
+
+
 def _is_finite_number(value: Any) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
 
 
-def _check_observed_by(asset: UnexportedAsset, asset_model: AssetModel) -> list[str]:
+def _check_observed_by(
+    asset: UnexportedAsset, asset_model: AssetModel, rooms: dict[str, Room]
+) -> list[str]:
     if not asset.observed_by:
         return [f"unexported asset {asset.id} names no Plant View paths it is observed through"]
     problems = []
     for folder in asset.observed_by:
-        if not any(folder == v or folder.startswith(f"{v}/") for v in PLANT_VIEWS):
+        if folder.startswith(f"{HALL_AGGREGATES}/"):
+            problems += _check_hall_aggregate(asset, folder, asset_model, rooms)
+        elif not any(folder == v or folder.startswith(f"{v}/") for v in PLANT_VIEWS):
             problems.append(
                 f"unexported asset {asset.id} is observed outside a Plant View: {folder}"
             )
@@ -263,3 +288,21 @@ def _check_observed_by(asset: UnexportedAsset, asset_model: AssetModel) -> list[
                 f"unexported asset {asset.id} is observed through {folder}, which has no points"
             )
     return problems
+
+
+def _check_hall_aggregate(
+    asset: UnexportedAsset, folder: str, asset_model: AssetModel, rooms: dict[str, Room]
+) -> list[str]:
+    parts = folder.split("/")
+    room = rooms.get(parts[-1]) if len(parts) == 3 else None
+    if room is None or room.kind != "hall" or room.floor != parts[1]:
+        return [f"unexported asset {asset.id} is observed through {folder}, not a Data Hall"]
+    if not any(
+        path.startswith(f"{folder}/") and "/" not in path[len(folder) + 1 :] and p.asset is None
+        for path, p in asset_model.points.items()
+    ):
+        return [
+            f"unexported asset {asset.id} is observed through {folder}, "
+            "which has no hall aggregate points"
+        ]
+    return []

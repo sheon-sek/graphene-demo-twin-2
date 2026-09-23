@@ -133,7 +133,7 @@ for i, h in enumerate(HALLS, 1):
     ghost(f'~CCU-00{i}', f'CCU-00{i}', 'Ceiling Cooling Units', [f'Chiller_System/Ceiling Cooling Units/CCU-00{i}'])
     put(f'~CCU-00{i}', h, rx['x'] + 12, 15, f'Ceiling cooling units, {h}', 'Airside')
     link('chw', f'~CB-00{i}', f'~CCU-00{i}')
-    ghost(f'~IT-{h}', f'IT-{h}', 'IT Load', [f'Dashboard/Energy/Floors/{rx["floor"]}/Data Halls/{h}'])
+    ghost(f'~IT-{h}', f'IT-{h}', 'IT Load', [f'Dashboard/Energy/Floors/{rx["floor"]}/Data Halls/{h}', f'Environment Monitoring/{rx["floor"]}/{h}'])
     put(f'~IT-{h}', h, rx['x'] + 18, 8, f'IT equipment in {h}: draws the IT Load, all of it becomes heat in the hall', 'IT')
 ghost('~WX-01', 'WX-01', 'Weather Station', ['Chiller System Control/Weather'])
 put('~WX-01', 'R-AIR', 93, 41, 'Rooftop weather station: the outdoor air the site rejects heat to', 'Environment')
