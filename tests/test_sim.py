@@ -156,6 +156,20 @@ def test_events_cannot_be_scheduled_in_the_past_or_for_unknown_mechanisms(plant_
     sim.schedule(_inject(START + 10))  # the current instant is still open
 
 
+def test_event_params_are_frozen_scalars_so_the_log_cannot_change_after_scheduling(plant_design):
+    params = {"fault": "placeholder.cooling_loss", "severity": 0.5}
+    event = Event(START, "fault.inject", "DH03", params)
+    params["severity"] = 1.0
+    assert event.params["severity"] == 0.5
+    with pytest.raises(TypeError):
+        event.params["severity"] = 1.0  # type: ignore[index]
+    for nested in ([], {}, ("a",), {1, 2}, object()):
+        with pytest.raises(EventError, match="scalar"):
+            Event(START, "fault.inject", "DH03", {"fault": "x", "meta": nested})
+    with pytest.raises(EventError, match="names"):
+        Event(START, "fault.inject", "DH03", {1: "x"})
+
+
 def test_clear_recovers_through_dynamics_rather_than_snapping_back(plant_design):
     sim = _sim(plant_design)
     steady = sim.state.assets["DH03"]["temp_c"]
@@ -272,6 +286,32 @@ def test_reset_is_indistinguishable_from_a_fresh_process(plant_design):
         assert live.state_hash() == fresh.state_hash()
 
 
+def test_live_world_state_is_a_snapshot_that_cannot_bypass_the_event_log(plant_design):
+    clock = FakeClock()
+    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=9, clock=clock)
+    before = live.state_hash()
+    snapshot = live.state
+    snapshot.assets["DH01"]["cooling_loss"] = 0.75
+    snapshot.time += 100
+    assert live.state.assets["DH01"]["cooling_loss"] == 0.0
+    assert live.time == START
+    assert live.state_hash() == before
+    assert live.events == ()
+
+
+def test_reset_never_rewinds_sim_time_when_the_wall_clock_moved_back(plant_design):
+    clock = FakeClock(START + 110.5)
+    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=9, clock=clock)
+    live.submit("fault.inject", "DH02", {"fault": "placeholder.cooling_loss"})
+    clock.now = START + 90.5  # e.g. an NTP correction
+    live.reset()
+    assert live.events == ()
+    assert live.time == START + 110  # SourceTimestamps stay monotonic
+    assert live.state_hash() == _sim(plant_design, seed=9, start=START + 110).state_hash()
+    clock.now = START + 111.0
+    assert live.catch_up() == 1
+
+
 # ---- What-if Forks
 
 
@@ -348,3 +388,22 @@ def test_live_world_run_steps_once_per_wall_clock_second(plant_design):
     asyncio.run(live.run(stop, on_tick=on_tick, sleep=fake_sleep))
     assert ticks == [START + 1 + i for i in range(5)]
     assert delays[0] == pytest.approx(0.5)
+
+
+def test_live_world_run_publishes_every_second_after_a_delayed_wakeup(plant_design):
+    clock = FakeClock(START + 0.5)
+    live = LiveWorld(plant_design, [PlaceholderHallDomain()], seed=1, clock=clock)
+    ticks: list[tuple[int, str]] = []
+    stop = asyncio.Event()
+
+    async def stalled_sleep(delay: float) -> None:
+        clock.now += delay + 4  # the event loop was blocked for four extra seconds
+
+    def on_tick(world: LiveWorld) -> None:
+        ticks.append((world.time, world.state_hash()))
+        stop.set()
+
+    asyncio.run(live.run(stop, on_tick=on_tick, sleep=stalled_sleep))
+    assert [t for t, _ in ticks] == [START + 1 + i for i in range(5)]
+    replay = _sim(plant_design, seed=1)
+    assert [h for _, h in ticks] == _trajectory(replay, 5)

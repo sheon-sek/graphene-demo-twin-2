@@ -200,7 +200,7 @@ class Twin:
         return self._frame
 
     def _project(self) -> Frame:
-        state = self.live.state.copy()
+        state = self.live.state
         projection = self.projector.project(state)
         return Frame(next(self._seq), self._epoch, projection, state, len(self.live.events))
 
