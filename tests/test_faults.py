@@ -21,6 +21,7 @@ from graphene_demo_twin.faults import (
 from graphene_demo_twin.plant_design import ConnectionKind
 from graphene_demo_twin.projection import Projector, Quality
 from graphene_demo_twin.sim import Event, EventError, Simulation, WorldState
+from graphene_demo_twin.sim.airside import cooling_blocks
 from graphene_demo_twin.sim.electrical import network
 from graphene_demo_twin.sim.plant import PLANT, plant_layout, plant_nodes
 from graphene_demo_twin.sim.site import SITE, load_class
@@ -508,9 +509,12 @@ def test_a_preview_reports_the_propagation_diffs_and_alarms(plant_design, asset_
             or (placed is not None and placed.room in cooled)
         ), node
     first = {a.node: a.first_at for a in preview.affected}
+    # Other halls follow the chilled water: the plant, or a Cooling Block whose share of the
+    # secondary flow, and so its riser-warmed hall supply, moved as DH03's valves opened.
+    water = min(t for n, t in first.items() if n == PLANT or n in cooling_blocks(plant_design))
     for hall in ("DH01", "DH02", "DH04"):
         if hall in first:
-            assert first[hall] >= first[PLANT], hall
+            assert first[hall] >= water, hall
     assert all(a.first_at >= START + 30 for a in preview.affected)
     times = [a.first_at for a in preview.affected]
     assert times == sorted(times)
