@@ -1,10 +1,11 @@
 import math
 import struct
+from dataclasses import replace
 
 import pytest
 
 from graphene_demo_twin.asset_model import SourceClass
-from graphene_demo_twin.plant_design import PLANT_VIEWS
+from graphene_demo_twin.plant_design import PLANT_VIEWS, ConnectionKind, PlantDesign
 from graphene_demo_twin.projection import (
     Binding,
     PointSource,
@@ -148,9 +149,13 @@ def test_a_fault_moves_only_the_points_downstream_of_it(plant_design, projector)
     assert faulted.values[HOT_AISLE_DH03] > base.values[HOT_AISLE_DH03] + 5.0
     assert faulted.values[HOT_AISLE_DH01] == base.values[HOT_AISLE_DH01]
     changed = {p for p in base.values if base.values[p] != faulted.values[p]}
+    # Cooling loss heats the hall's air; the sensors placed in it are all that see it.
     assert changed == {
-        p for p in projector.coverage.paths(PointSource.PHYSICS) if "Datahall 3" in p
+        f"{a.path}/Temp"
+        for a in plant_design.assets_in("DH03")
+        if a.type_id == "Temperature and Humidity"
     }
+    assert changed < set(projector.coverage.paths(PointSource.PHYSICS))
 
 
 def test_non_finite_physics_values_are_bad_quality(asset_model, plant_design, projector):
@@ -160,6 +165,40 @@ def test_non_finite_physics_values_are_bad_quality(asset_model, plant_design, pr
     assert p.quality(HOT_AISLE_DH03) is Quality.BAD
     assert p.values[HOT_AISLE_DH03] == 0.0
     assert p.quality(HOT_AISLE_DH01) is Quality.GOOD
+
+
+@pytest.mark.parametrize("raw", [math.nan, math.inf, -math.inf])
+def test_non_finite_values_are_bad_quality_for_boolean_points(asset_model, plant_design, raw):
+    alarm = "Buffer Tank/R_BT1/Buffer Tank Temperature Alarm"
+    assert asset_model.point(alarm).data_type == "Boolean"
+    projector = Projector(asset_model, [Binding(alarm, lambda state: raw)])
+    p = projector.project(_sim(plant_design).state)
+    assert p.quality(alarm) is Quality.BAD
+    assert p.values[alarm] is False
+
+
+def test_branch_meters_split_the_load_of_the_hall_they_supply(asset_model, plant_design):
+    """Load follows the authored power connections, not where a meter sits."""
+    moved = replace(plant_design.asset("BCPM/3L1"), room="DH01")  # still feeds DH03 only
+    design = PlantDesign(
+        plant_design.version,
+        plant_design.floors,
+        plant_design.rooms.values(),
+        [moved if a.path == moved.path else a for a in plant_design.assets.values()],
+        plant_design.unexported.values(),
+        plant_design.connections,
+    )
+    assert design.upstream("DH03", ConnectionKind.POWER) == ("BCPM/3L1", "BCPM/3L2", "BCPM/3L3")
+
+    projector = Projector(asset_model, placeholder_bindings(asset_model, design))
+    state = _sim(plant_design).state.copy()
+    state.assets["DH01"]["it_load_kw"] = 300.0
+    state.assets["DH03"]["it_load_kw"] = 900.0
+    p = projector.project(state)
+    for hall, meters in {"DH03": ("3L1", "3L2", "3L3"), "DH01": ("1L1", "1L2", "1L3")}.items():
+        load = state.assets[hall]["it_load_kw"]
+        for meter in meters:
+            assert p.values[f"BCPM/{meter}/Active Power"] == pytest.approx(load / 3, rel=1e-6)
 
 
 def test_bindings_must_name_distinct_asset_model_points(asset_model):

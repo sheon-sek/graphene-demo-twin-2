@@ -97,11 +97,12 @@ class LiveWorld:
         while not stop.is_set():
             now = self._clock()
             await sleep(math.floor(now) + 1 - now)
-            while self._step_if_behind():
+            while self.step_if_behind():
                 if on_tick is not None:
                     on_tick(self)
 
-    def _step_if_behind(self) -> bool:
+    def step_if_behind(self) -> bool:
+        """Take one step if sim time is behind the wall-clock second; returns whether it did."""
         with self._lock:
             if self._sim.time >= math.floor(self._clock()):
                 return False

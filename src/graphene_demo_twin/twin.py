@@ -1,8 +1,9 @@
 """The running twin: the Live World, its projection and the frames every surface observes.
 
-A Frame is one published Live World step: the projected points and a copy of the world state
-at one sim second. Every surface (REST, SSE, OPC UA) reads the latest Frame and never the live
-state directly, so they all observe the same step (the Coherent World).
+A Frame is one published Live World step: the projected points, a copy of the world state and
+the Event Log at one sim second. Every surface (REST, SSE, OPC UA) reads published Frames and
+never the live state directly, so they all observe the same step (the Coherent World). Every
+second the Live World steps through is published, even when several are caught up at once.
 """
 
 import asyncio
@@ -10,9 +11,9 @@ import itertools
 import math
 import threading
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from graphene_demo_twin.asset_model import AssetModel
@@ -29,6 +30,9 @@ from graphene_demo_twin.sim import (
 
 MAX_FORKS = 8
 """What-if Forks kept at once; creating one more drops the oldest."""
+FRAME_BACKLOG = 60
+"""Recent frames kept for surfaces that read behind the latest; a reader further behind skips
+to the oldest one kept."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,12 +46,16 @@ class Frame:
     projection: Projection
     state: WorldState
     """A copy of the Live World state the projection was made from."""
-    event_count: int
-    """Length of the Event Log when the frame was published."""
+    events: tuple[Event, ...]
+    """The Event Log when the frame was published."""
 
     @property
     def time(self) -> int:
         return self.projection.time
+
+    @property
+    def event_count(self) -> int:
+        return len(self.events)
 
 
 @dataclass(slots=True)
@@ -112,6 +120,7 @@ class Twin:
         domains: Iterable[Domain] | None = None,
         bindings: Iterable[Binding] | None = None,
         max_forks: int = MAX_FORKS,
+        frame_backlog: int = FRAME_BACKLOG,
     ) -> None:
         self.asset_model = asset_model
         self.design = design
@@ -122,14 +131,16 @@ class Twin:
             bindings = placeholder_bindings(asset_model, design)
         self.projector = Projector(asset_model, bindings)
         self.live = LiveWorld(design, domains, seed, clock)
-        self.forks = ForkRegistry(self.live.fork, max_forks)
+        self.forks = ForkRegistry(self._fork, max_forks)
         self._lock = threading.RLock()
         self._seq = itertools.count()
         self._epoch = 0
         self._closed = False
         self._waiters: set[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = set()
         self._waiters_lock = threading.Lock()
-        self._frame = self._project()
+        self._frames: deque[Frame] = deque(maxlen=frame_backlog)
+        self._frames_lock = threading.Lock()
+        self._frame = self._publish(self._project())
 
     @property
     def frame(self) -> Frame:
@@ -137,39 +148,43 @@ class Twin:
         return self._frame
 
     def tick(self) -> Frame | None:
-        """Step the Live World up to the wall clock and publish if it moved on since the last
-        frame; returns the new frame, or None if there was nothing to publish."""
+        """Step the Live World up to the wall clock, publishing a frame for each second; returns
+        the latest new frame, or None if there was nothing to publish."""
         with self._lock:
-            self.live.catch_up()
-            if self.live.time == self._frame.time:
-                return None
-            return self._publish()
+            return self._catch_up()
 
     def submit(self, kind: str, target: str, params: Mapping[str, Any] | None = None) -> Event:
-        """Log an Operator Command or fault action in the Live World; it takes effect on the
-        next step. Raises EventError if no domain accepts it."""
+        """Log an Operator Command or fault action in the Live World and publish the longer Event
+        Log; it takes effect on the next step. Raises EventError if no domain accepts it."""
         with self._lock:
-            return self.live.submit(kind, target, params)
+            self._catch_up()
+            event = self.live.submit(kind, target, params)
+            if self._catch_up() is None:
+                # No step, so the state is the published one: republish it with the new event.
+                self._publish(replace(self._frame, seq=next(self._seq), events=self.live.events))
+            return event
 
     def reset(self) -> Frame:
         """Rebuild the Live World from its initial state, drop every fork, and publish."""
         with self._lock:
+            self._catch_up()
             self.live.reset()
             self.forks.clear()
             self._epoch += 1
-            return self._publish()
+            return self._publish(self._project())
 
     async def next_frame(self, after: int) -> Frame | None:
-        """The first frame with `seq` above `after`, waiting for it if need be; None once the
-        twin is closed."""
+        """The first frame kept with `seq` above `after`, waiting for it if need be; None once
+        the twin is closed. Read one at a time, frames never skip a second unless the reader
+        falls more than the frame backlog behind."""
         loop = asyncio.get_running_loop()
         while not self._closed:
             waiter = (loop, loop.create_future())
             with self._waiters_lock:
                 self._waiters.add(waiter)
             try:
-                if self._frame.seq > after:
-                    return self._frame
+                if (frame := self._first_after(after)) is not None:
+                    return frame
                 if self._closed:
                     break
                 await waiter[1]
@@ -194,15 +209,38 @@ class Twin:
             await sleep(math.floor(now) + 1 - now)
             self.tick()
 
-    def _publish(self) -> Frame:
-        self._frame = self._project()
+    def _catch_up(self) -> Frame | None:
+        """Publish every Live World step not yet published, stepping one second at a time up to
+        the wall clock; returns the latest new frame, if any."""
+        frame = None
+        if self.live.time != self._frame.time:  # the Live World caught itself up (submit, fork)
+            frame = self._publish(self._project())
+        while self.live.step_if_behind():
+            frame = self._publish(self._project())
+        return frame
+
+    def _fork(self) -> WhatIfFork:
+        with self._lock:
+            self._catch_up()
+            return self.live.fork()
+
+    def _publish(self, frame: Frame) -> Frame:
+        with self._frames_lock:
+            self._frames.append(frame)
+            self._frame = frame
         self._wake()
-        return self._frame
+        return frame
+
+    def _first_after(self, seq: int) -> Frame | None:
+        with self._frames_lock:
+            # Kept frames have consecutive seqs.
+            i = max(0, seq + 1 - self._frames[0].seq)
+            return self._frames[i] if i < len(self._frames) else None
 
     def _project(self) -> Frame:
         state = self.live.state
         projection = self.projector.project(state)
-        return Frame(next(self._seq), self._epoch, projection, state, len(self.live.events))
+        return Frame(next(self._seq), self._epoch, projection, state, self.live.events)
 
     def _wake(self) -> None:
         with self._waiters_lock:

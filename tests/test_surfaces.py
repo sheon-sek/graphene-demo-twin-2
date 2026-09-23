@@ -143,21 +143,32 @@ def test_every_surface_observes_the_same_live_world_step(asset_model, plant_desi
                     "/api/events",
                     json={"kind": "fault.inject", "target": "DH03", "params": COOLING_LOSS},
                 )
+                # Logging the event publishes the same step with the longer Event Log.
+                logged = await anext(events)
+                assert logged["data"]["time"] == START
+                assert logged["data"]["events"] == 1
+                assert logged["data"]["points"] == {} and logged["data"]["state"] == {}
+                assert (await http.get("/api/events")).json()["time"] == START
+
+                shown = START
                 for elapsed in (1, 2, 30):
                     clock.now = START + 0.25 + elapsed
                     frame = twin.tick()
                     t = START + elapsed
                     assert frame.time == t
 
-                    delta = await anext(events)
-                    assert delta["event"] == "delta"
-                    assert delta["data"]["time"] == t
+                    # SSE delivers every second stepped, in order, even after a jump.
+                    while shown < t:
+                        delta = await anext(events)
+                        shown += 1
+                        assert delta["event"] == "delta"
+                        assert delta["data"]["time"] == shown
+                        assert delta["data"]["events"] == 1
+                        assert HOT_AISLE_DH03 in delta["data"]["points"]
+                        assert "temp_c" in delta["data"]["state"]["DH03"]
+                        for p, v in delta["data"]["points"].items():
+                            seen[p] = v["value"]
                     assert delta["data"]["seq"] == frame.seq
-                    assert delta["data"]["events"] == 1
-                    assert HOT_AISLE_DH03 in delta["data"]["points"]
-                    assert "temp_c" in delta["data"]["state"]["DH03"]
-                    for p, v in delta["data"]["points"].items():
-                        seen[p] = v["value"]
 
                     await _until(lambda f=frame: services.opc.published_seq == f.seq)
                     rest = (await http.get("/api/points", params={"path": SAMPLE})).json()

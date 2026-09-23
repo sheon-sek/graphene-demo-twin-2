@@ -3,7 +3,7 @@
 from collections.abc import Callable, Iterable
 
 from graphene_demo_twin.asset_model import AssetModel
-from graphene_demo_twin.plant_design import PlantDesign
+from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
 from graphene_demo_twin.projection.projector import Binding
 from graphene_demo_twin.sim import WorldState
 
@@ -12,20 +12,23 @@ BRANCH_METER_TYPE = "BCPM"
 
 
 def placeholder_bindings(asset_model: AssetModel, design: PlantDesign) -> list[Binding]:
-    """Per Data Hall: hot-aisle sensors read the hall air temperature, the hall's branch circuit
-    monitors split its IT Load, and the Dashboard Plant View sums IT Load and IT energy."""
+    """Per Data Hall: hot-aisle sensors in the hall read its air temperature, the branch circuit
+    monitors that supply it (over its authored power connections) split its IT Load, and the
+    Dashboard Plant View sums IT Load and IT energy."""
     halls = [r for r in design.rooms.values() if r.kind == "hall"]
     bindings: list[Binding] = []
     for hall in halls:
         sensors = [a for a in design.assets_in(hall.id) if a.type_id == HOT_AISLE_TYPE]
-        meters = [a for a in design.assets_in(hall.id) if a.type_id == BRANCH_METER_TYPE]
+        meters = [
+            path
+            for path in design.upstream(hall.id, ConnectionKind.POWER)
+            if path in design.assets and design.asset(path).type_id == BRANCH_METER_TYPE
+        ]
         for sensor in sensors:
             bindings.append(Binding(f"{sensor.path}/Temp", _var(hall.id, "temp_c")))
         for meter in meters:
             share = 1.0 / len(meters)
-            bindings.append(
-                Binding(f"{meter.path}/Active Power", _var(hall.id, "it_load_kw", share))
-            )
+            bindings.append(Binding(f"{meter}/Active Power", _var(hall.id, "it_load_kw", share)))
         bindings.append(
             Binding(
                 f"Dashboard/Energy/Floors/{hall.floor}/Data Halls/{hall.id}/IT Energy",
