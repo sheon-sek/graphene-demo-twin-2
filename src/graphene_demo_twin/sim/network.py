@@ -251,7 +251,7 @@ class NetworkDomain:
         for switch in net.flap_link:
             s = a[switch]
             level = a[net.view_of[switch]].get("quality.port_flap", 0.0)
-            down = level > 0.0 and (t % FLAP_CYCLE_S) < math.ceil(FLAP_CYCLE_S * level / 2)
+            down = level > 0.0 and (t % FLAP_CYCLE_S) < math.ceil(FLAP_CYCLE_S * level)
             if down and not s["flap_down"]:
                 s["flap_errors"] += 1  # one counter bump per drop, like a real port
             s["flap_down"] = down

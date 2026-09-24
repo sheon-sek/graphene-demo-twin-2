@@ -208,11 +208,12 @@ def test_a_switch_failure_isolates_what_only_it_reaches(plant_design, projector)
     sim.schedule(_inject(START, DIST_A, "network.switch_failure"))
     sim.advance(3)
     p = projector.project(sim.state)
-    assert p.quality(f"{EWS_A}/Status") is Quality.BAD
+    assert p.quality(f"{EWS_A}/CPU") is Quality.BAD
+    assert p.values[f"{EWS_A}/Status"] == 1  # the supervisor's own verdict: Disconnected
     assert p.quality(f"{OWS_A1}/CPU") is Quality.BAD
     # The redundancy holds: everything with a path round the dead switch is still good, and
     # the field devices' points never went through the distribution layer anyway.
-    assert p.quality(f"{EWS_B}/Status") is Quality.GOOD
+    assert p.quality(f"{EWS_B}/CPU") is Quality.GOOD
     assert p.quality(f"{GW_A}/CPU") is Quality.GOOD
     assert p.quality(f"{CRAC3}/Supply Air Temperature") is Quality.GOOD
 
@@ -222,7 +223,8 @@ def test_device_down_keeps_its_place_in_the_catalogue(plant_design, projector):
     sim.schedule(_inject(START, DIST_A, "network.device_down", severity=0.3))
     sim.advance(3)
     p = projector.project(sim.state)
-    assert p.quality(f"{EWS_A}/Status") is Quality.UNCERTAIN
+    assert p.quality(f"{EWS_A}/CPU") is Quality.UNCERTAIN
+    assert p.values[f"{EWS_A}/Status"] == 2
 
 
 # ---- Port flap
@@ -431,3 +433,87 @@ def test_the_network_points_are_bound_and_the_port_view_is_complete(
             if path.startswith(f"{view}/")
         )
     assert projector.coverage.entries["Other/Gateway 1 Status"].source is PointSource.PHYSICS
+
+
+# ---- Review fixes (#25)
+
+
+def test_the_kpis_follow_the_scada_pair(plant_design, projector):
+    kpis = ("Dashboard/1A/PUE", "Other/IT Load")
+    both = _sim(plant_design)
+    both.schedule(_inject(START, SERVER_A, "network.device_down", severity=1.0))
+    both.schedule(_inject(START, SERVER_B, "network.device_down", severity=1.0))
+    both.advance(3)
+    p = projector.project(both.state)
+    for path in kpis:
+        assert p.quality(path) is Quality.BAD, path
+    # One degraded server with a good peer: the pair still serves, and the KPIs stay good.
+    one = _sim(plant_design)
+    one.schedule(_inject(START, SERVER_A, "network.device_down", severity=0.3))
+    one.advance(3)
+    p = projector.project(one.state)
+    assert p.quality(f"{SERVER_A}/CPU") is Quality.UNCERTAIN
+    for path in kpis:
+        assert p.quality(path) is Quality.GOOD, path
+
+
+def test_a_failed_gateway_publishes_disconnected_through_the_twin(asset_model, plant_design):
+    from graphene_demo_twin.twin import Twin
+
+    now = [float(START)]
+    twin = Twin(asset_model, plant_design, seed=7, clock=lambda: now[0])
+    twin.tick()
+    twin.inject_fault(GW_A, "network.gateway_failure", {})
+    for _ in range(3):
+        now[0] += 1
+        twin.tick()
+    p = twin.frame.projection
+    assert p.quality(f"{GW_A}/CPU") is Quality.BAD
+    assert p.values[f"{GW_A}/Comm"] == 1 and p.values[f"{GW_A}/Status"] == 1
+    assert p.quality(f"{GW_A}/Comm") is Quality.GOOD
+
+
+def test_a_failed_gateway_outranks_a_partial_device_comm_loss(plant_design, projector):
+    sim = _sim(plant_design)
+    sim.schedule(_inject(START, GW_B, "network.gateway_failure"))
+    sim.schedule(_inject(START, METER, "gpqm144.comm_loss", severity=0.3))
+    sim.advance(3)
+    p2 = projector.project(sim.state)
+    path = f"{METER}/Ptot"
+    assert p2.quality(path) is Quality.BAD
+    sim.advance(30)
+    assert projector.project(sim.state, hold=p2).values[path] == p2.values[path]
+
+
+def test_a_flapping_link_reads_the_same_from_both_ends(plant_design, projector):
+    net = network(plant_design)
+    peer = net.flap_link[DIST_A][1]
+    assert peer == CORE_A
+    ports = {
+        view: next(p.number for p in net.ports[d] if p.peer == other)
+        for view, d in net.switches.items()
+        for other in ((CORE_A,) if d == DIST_A else (DIST_A,) if d == CORE_A else ())
+    }
+    dist_view = "Network Switches/SERVER DISTRIBUTION SWITCH A"
+    sim = _sim(plant_design)
+    sim.schedule(_inject(START, dist_view, "network.port_flap", severity=0.5))
+    paths = [f"{v}/Ports/Port {n:02d}/Link Status" for v, n in ports.items()]
+    seen = set()
+    for _ in range(40):
+        sim.step()
+        values = projector.project(sim.state, only=paths).values
+        assert len({values[p] for p in paths}) == 1, values
+        seen.add(values[paths[0]])
+    assert seen == {1, 2}
+
+
+@pytest.mark.parametrize("severity, down", [(0.25, 5), (0.5, 10), (1.0, 20)])
+def test_port_flap_severity_is_the_fraction_of_each_cycle_down(plant_design, severity, down):
+    sim = _sim(plant_design)
+    sim.schedule(_inject(START, SWITCH_VIEW, "network.port_flap", severity=severity))
+    sim.advance(1)
+    steps = 0
+    for _ in range(40):
+        sim.step()
+        steps += sim.state.assets[CORE_A]["flap_down"]
+    assert steps == 2 * down
