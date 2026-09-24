@@ -355,12 +355,12 @@ def test_a_fault_preview_runs_in_a_fork(client, twin):
 
 def test_in_a_fault_free_world_the_only_alarm_bits_set_are_fallbacks(client):
     """The console lists the alarm bits the world drives: with the real Asset Model and no
-    fault, none of them is set, while some Compatibility Fallbacks from the export are."""
+    fault, none of them is set (only a Compatibility Fallback may carry a set bit from the
+    export; since water (#24) and life safety (#26) drive their points, none does)."""
     values = {p["path"]: p["value"] for p in client.get("/api/points").json()["points"]}
     bits = [p for p in client.get("/api/coverage/points").json() if p["alarmBit"]]
     set_bits = [p for p in bits if values[p["path"]] not in (False, 0)]
-    assert set_bits
-    assert {p["source"] for p in set_bits} == {"fallback"}
+    assert {p["source"] for p in set_bits} <= {"fallback"}
     assert any(p["source"] != "fallback" for p in bits)
 
 
