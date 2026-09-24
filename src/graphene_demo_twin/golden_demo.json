@@ -1,0 +1,78 @@
+{
+  "format": "graphene-demo-twin/event-log",
+  "version": 1,
+  "title": "Golden Demo: a humid afternoon, a grid failure and a tower fan",
+  "description": "A multi-domain incident across weather, power and cooling. The wet bulb rises. Utility supply to side A fails, gensets 1–3 start and the ATS transfers MSB A while the side-A UPS batteries bridge the gap. On genset power, UPS 1's rectifier fails, and that one UPS goes on battery and drains. Under the high wet bulb a fan in CH-001's Tower Group then fails, and its condenser water warms. The grid returns, the ATS retransfers, and every fault clears so the world recovers through its own dynamics.",
+  "events": [
+    {
+      "offset": 5,
+      "kind": "fault.inject",
+      "target": "~WX-01",
+      "params": {"fault": "weather.high_wet_bulb", "severity": 1.0, "ramp_min": 5},
+      "note": "A humid spell: the outdoor wet bulb climbs 4 °C over five minutes, so the towers reject heat less readily."
+    },
+    {
+      "offset": 60,
+      "kind": "fault.inject",
+      "target": "Meter/SPPA Incomer 1",
+      "params": {"fault": "utility.incomer_loss"},
+      "note": "Grid failure on side A, first incomer."
+    },
+    {
+      "offset": 60,
+      "kind": "fault.inject",
+      "target": "Meter/SPPA Incomer 2",
+      "params": {"fault": "utility.incomer_loss"},
+      "note": "Second side-A incomer lost: MSB A is dead. The ATS confirms the outage and starts gensets 1–3, and the side-A UPS carry the halls on battery until it transfers."
+    },
+    {
+      "offset": 180,
+      "kind": "fault.inject",
+      "target": "UPS/UPS 1",
+      "params": {"fault": "ups.rectifier_failure"},
+      "note": "On genset power, UPS 1's rectifier fails: this one UPS goes back on battery and its charge drains while the rest stay online."
+    },
+    {
+      "offset": 420,
+      "kind": "fault.inject",
+      "target": "Cooling Towers Plant/R_P1_CT1",
+      "params": {"fault": "tower.fan_failure", "ramp_min": 2},
+      "note": "A fan in CH-001's Tower Group slips, then fails. The other cells speed up, but under the high wet bulb its condenser water warms, and with it condenser pressure and chiller power."
+    },
+    {
+      "offset": 900,
+      "kind": "fault.clear",
+      "target": "Meter/SPPA Incomer 1",
+      "params": {"fault": "utility.incomer_loss"},
+      "note": "The grid returns on side A."
+    },
+    {
+      "offset": 900,
+      "kind": "fault.clear",
+      "target": "Meter/SPPA Incomer 2",
+      "params": {"fault": "utility.incomer_loss"},
+      "note": "Both incomers live: once the supply has been stable, the ATS retransfers MSB A and the gensets cool down and stop."
+    },
+    {
+      "offset": 1200,
+      "kind": "fault.clear",
+      "target": "UPS/UPS 1",
+      "params": {"fault": "ups.rectifier_failure"},
+      "note": "UPS 1's rectifier is repaired: it returns online and recharges its battery."
+    },
+    {
+      "offset": 1200,
+      "kind": "fault.clear",
+      "target": "Cooling Towers Plant/R_P1_CT1",
+      "params": {"fault": "tower.fan_failure"},
+      "note": "The tower fan is repaired."
+    },
+    {
+      "offset": 1200,
+      "kind": "fault.clear",
+      "target": "~WX-01",
+      "params": {"fault": "weather.high_wet_bulb"},
+      "note": "The humid spell passes. From here the world recovers through its own dynamics."
+    }
+  ]
+}

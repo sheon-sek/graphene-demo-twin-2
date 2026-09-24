@@ -43,7 +43,12 @@ import time
 from dataclasses import dataclass
 
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
-from graphene_demo_twin.sim.commands import CommandSpec, command_problem
+from graphene_demo_twin.sim.commands import (
+    HAND_AUTO,
+    HAND_AUTO_STATE,
+    CommandSpec,
+    command_problem,
+)
 from graphene_demo_twin.sim.electrical import network
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
@@ -72,6 +77,21 @@ PUMP_TYPE = "Chiller Pump"
 VALVE_TYPE = "Chiller Valve"
 TANK_TYPE = "Buffer Tank"
 TOWER_TYPE = "Cooling Tower"
+TANK_COMMANDS = (
+    CommandSpec("valves", "Valves hand / auto", "valve_mode", choices=("auto", "hand")),
+    CommandSpec("bypass", "Bypass the tank (hand)", "hand_bypass", kind="switch"),
+)
+TANK_VALVES_INITIAL: dict[str, str | bool] = {
+    "valve_mode": "auto",
+    "hand_bypass": False,
+    "no_cmd": True,
+    "nc_cmd": False,
+    "no_open": True,
+    "nc_open": False,
+    "no_fail": False,
+    "nc_fail": False,
+}
+"""A buffer tank's valves as it starts: in line, the bypass shut, under its Controller."""
 CONTROLLER_TYPE = "Chiller Plant Controller"
 """The plant Controller (`PLANT`): the sequencer and the PIDs, and their setpoints."""
 
@@ -413,6 +433,8 @@ class ChillerPlantDomain:
             _number("bp_sp", "Bypass DP setpoint", 20, 150, "kPa", "bp_sp_kpa"),
             _number("bp_manual", "Bypass PID manual output", 0, 100, "%", "bp_manual_pct"),
         ),
+        TOWER_TYPE: HAND_AUTO,
+        TANK_TYPE: TANK_COMMANDS,
     }
 
     def initial(self, ctx: StepContext) -> dict[str, AssetState]:
@@ -455,6 +477,7 @@ class ChillerPlantDomain:
                     "avg_c": CHWS_SP_C,
                     "alarm": False,
                     "pressure_kpa": TANK_PRESSURE_KPA,
+                    **TANK_VALVES_INITIAL,
                 }
             for cell in leg.cells:
                 states[cell] = {
@@ -464,6 +487,7 @@ class ChillerPlantDomain:
                     "energy_kwh": 0.0,
                     "volts": CELL_VOLTS,
                     "trip": False,
+                    **HAND_AUTO_STATE,
                 }
         for pump in layout.pumps:
             states[pump] = {"run_cmd": False, "running": False, "hz": 0.0, "flow_lps": 0.0}
@@ -563,7 +587,15 @@ class ChillerPlantDomain:
 
     def apply(self, event: Event, state: WorldState) -> None:
         name, value = event.params["command"], event.params["value"]
-        specs = self.commands[CONTROLLER_TYPE if event.target == PLANT else CHILLER_TYPE]
+        s = state.assets[event.target]
+        if event.target == PLANT:
+            specs = self.commands[CONTROLLER_TYPE]
+        elif "seq" in s:
+            specs = self.commands[CHILLER_TYPE]
+        elif "fan_pct" in s:
+            specs = self.commands[TOWER_TYPE]
+        else:
+            specs = self.commands[TANK_TYPE]
         spec = next(c for c in specs if c.name == name)
         if spec.variable in _COUNTS:
             value = round(value)
@@ -708,6 +740,8 @@ class ChillerPlantDomain:
             enabled = a[leg.chiller]["enabled"]
             for tank in leg.tanks:
                 t = a[tank]
+                through = inline * _tank_valves(t)
+                qp_heat += (inline - through) * leaving  # what the bypass valve carries past
                 if not settle:
                     # Recharge Controller: a standby tank that has warmed, or has just left
                     # line service, is re-cooled from the supply header until charged.
@@ -724,7 +758,8 @@ class ChillerPlantDomain:
                         stroke = 100.0 * dt / VALVE_STROKE_S
                         t["rc_pos_pct"] += min(max(cmd - t["rc_pos_pct"], -stroke), stroke)
                 rc = RECHARGE_LPS * t["rc_pos_pct"] / 100.0 if qp > 0.0 and not inline else 0.0
-                flow, inlet = (inline, leaving) if inline > 0.0 else (rc, t_s)
+                rc = rc if t["no_open"] else 0.0  # recharge enters through the inlet valve too
+                flow, inlet = (through, leaving) if inline > 0.0 else (rc, t_s)
                 if not flow:  # isolated: the charge it holds does not change
                     t["in_c"], t["flow_lps"], t["recharge_lps"], t["mode"] = inlet, 0.0, 0.0, 0
                     # Its outlet pipe stands: the sensor there drifts toward the plant room.
@@ -744,15 +779,15 @@ class ChillerPlantDomain:
                     t["t6"] = t6 + (inlet - t6) * f
                 avg = (t["t1"] + t["t2"] + t["t3"] + t["t4"] + t["t5"] + t["t6"]) / LAYERS
                 t["in_c"], t["out_c"], t["flow_lps"], t["recharge_lps"] = inlet, t["t1"], flow, rc
-                t["mode"] = 1 if inline > 0.0 else 2
+                t["mode"] = 1 if through > 0.0 else 2
                 t["avg_c"] = avg
                 t["pressure_kpa"] = head
                 t["alarm"] = avg > p["chws_sp_c"] + TANK_ALARM_K and flow > 0.0
                 warm_tanks[i] = warm_tanks[i] or t["alarm"]
                 recharge += rc
                 recharge_heat += rc * t["t1"]
-                if inline > 0.0:
-                    qp_heat += inline * t["t1"]
+                if through > 0.0:
+                    qp_heat += through * t["t1"]
         t_p = qp_heat / qp if qp > 0.0 else t_s
 
         # Headers and the decoupler.
@@ -809,7 +844,8 @@ class ChillerPlantDomain:
             step = FAN_PCT_PER_S * dt
             fan_sum = fan_kw = ua = 0.0
             spinning = False
-            if not flowing and not p[k["fan_pct"]]:
+            hands = any(a[x]["mode"] == "hand" and a[x]["hand_run"] for x in leg.cells)
+            if not flowing and not p[k["fan_pct"]] and not hands:
                 # A standing group: its fans stay stopped, and only their supply and their
                 # fan trips (held while the fault that caused them acts) can change.
                 for cell in leg.cells:
@@ -827,8 +863,10 @@ class ChillerPlantDomain:
                 powered_cell = live(cell)
                 loss = _fan_loss(a, leg, cell)
                 if not settle:
-                    if powered_cell and loss < FAN_TRIP_LOSS and cmd > 0.0:
-                        s["fan_pct"] += min(max(cmd - s["fan_pct"], -step), step)
+                    # In hand the fan runs flat out or stops, as the operator switches it.
+                    want = (100.0 if s["hand_run"] else 0.0) if s["mode"] == "hand" else cmd
+                    if powered_cell and loss < FAN_TRIP_LOSS and want > 0.0:
+                        s["fan_pct"] += min(max(want - s["fan_pct"], -step), step)
                     else:
                         s["fan_pct"] = 0.0
                 fan = s["fan_pct"]
@@ -928,6 +966,27 @@ def _tower_keys(tower: str) -> dict[str, str]:
     """A Tower Group's variables on the plant's AssetState, by name."""
     names = ("basin_c", "cwr_c", "fan_i", "fan_pct", "power_kw", "rejected_kw")
     return {n: f"{tower}.{n}" for n in (*names, "run_s", "run_h0")}
+
+
+def _tank_valves(t: AssetState) -> float:
+    """A buffer tank's inlet (normally open) and bypass (normally closed) valves: move them,
+    and return the share of the leg's flow that goes through the tank.
+
+    In auto the tank Controller holds the inlet open and the bypass shut, and opens the bypass
+    if the inlet fails to open, so the leg keeps its flow round an isolated tank. In hand the
+    operator bypasses the tank or puts it back in line. A seized inlet stays shut; a seized
+    bypass stays open, and then half the flow goes round the tank."""
+    if t["valve_mode"] == "hand":
+        no_cmd, nc_cmd = not t["hand_bypass"], t["hand_bypass"]
+    else:
+        no_cmd, nc_cmd = True, t["no_fail"]
+    no_open = no_cmd and t.get("constraint.inlet_stuck", 0.0) < 0.5
+    nc_open = nc_cmd or t.get("constraint.bypass_stuck", 0.0) >= 0.5
+    t["no_cmd"], t["nc_cmd"], t["no_open"], t["nc_open"] = no_cmd, nc_cmd, no_open, nc_open
+    t["no_fail"], t["nc_fail"] = no_cmd and not no_open, not nc_cmd and nc_open
+    if not no_open:
+        return 0.0
+    return 0.5 if nc_open else 1.0
 
 
 def _pump(s: AssetState, live: bool, hz: float, dt: float, settle: bool) -> None:

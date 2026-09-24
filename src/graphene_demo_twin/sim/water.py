@@ -43,6 +43,13 @@ import zlib
 from dataclasses import dataclass
 
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
+from graphene_demo_twin.sim.commands import (
+    HAND_AUTO,
+    HAND_AUTO_STATE,
+    apply_command,
+    command_problem,
+    selected_run,
+)
 from graphene_demo_twin.sim.electrical import network
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
@@ -328,6 +335,8 @@ class WaterDomain:
     """Leaked water drains below what a cable senses; tank and basin levels are stores, and
     remember what a fault cost as a battery's charge or a fuel tank does."""
 
+    commands = {TRANSFER_TYPE: HAND_AUTO, MAKEUP_TYPE: HAND_AUTO}
+
     def initial(self, ctx: StepContext) -> dict[str, AssetState]:
         design = ctx.design
         layout = water_layout(design)
@@ -358,6 +367,8 @@ class WaterDomain:
         for pump in layout.pumps:
             states[pump] = {"running": False, "trip": False, "power_kw": 0.0, "powered": True}
             states[pump]["has_alarm"] = False
+        for pump in (*layout.transfer, *layout.makeup):
+            states[pump] |= HAND_AUTO_STATE
         for pump in layout.makeup:
             states[pump] |= {
                 "speed_pct": 0.0,
@@ -388,10 +399,16 @@ class WaterDomain:
         self._step(state, ctx, settle=True)
 
     def handles(self, event: Event, design: PlantDesign) -> bool:
-        return False
+        placed = design.assets.get(event.target)
+        return (
+            event.kind == "command"
+            and placed is not None
+            and placed.type_id in self.commands
+            and command_problem(HAND_AUTO, event.params) is None
+        )
 
     def apply(self, event: Event, state: WorldState) -> None:
-        raise AssertionError("no events")
+        apply_command(HAND_AUTO, event.params, state.assets[event.target])
 
     def step(self, state: WorldState, ctx: StepContext) -> None:
         self._step(state, ctx, settle=False)
@@ -451,7 +468,13 @@ class WaterDomain:
         elif sensed < LEAD_START_PCT:
             n = max(n, 1)
         w["transfer_n"] = n
-        chosen = [p for p in layout.transfer if available(p)][:n]
+        # Lead and lag come from the pumps in auto; one in hand runs as the operator says.
+        chosen = [p for p in layout.transfer if available(p) and a[p]["mode"] == "auto"][:n]
+        chosen += [
+            p
+            for p in layout.transfer
+            if available(p) and a[p]["mode"] == "hand" and a[p]["hand_run"]
+        ]
         for pump, valve in zip(layout.transfer, layout.transfer_valves, strict=True):
             a[pump]["running"] = pump in chosen
             a[valve]["cmd_open"] = pump in chosen
@@ -521,7 +544,7 @@ class WaterDomain:
                 basin = c["basin_pct"]
                 opening = (c["basin_sp_pct"] - basin) / FLOAT_BAND_PCT
                 opening = 0.0 if opening < 0.0 else 1.0 if opening > 1.0 else opening
-                on = s["powered"] and not s["trip"]
+                on = s["powered"] and not s["trip"] and selected_run(s, True)
                 supply, target, discharge, pressure, kw = headers[header_valve]
                 if on and s["speed_pct"] == target and s["discharge_kpa"] == discharge:
                     flow = MAKEUP_LPS * opening * pressure  # at target, as it stood

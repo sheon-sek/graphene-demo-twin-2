@@ -52,3 +52,25 @@ def command_problem(specs: Iterable[CommandSpec], params: Mapping[str, Any]) -> 
         if spec.name == params["command"]:
             return spec.problem(params["value"])
     return f"unknown command: {params['command']!r}"
+
+
+HAND_AUTO: tuple[CommandSpec, ...] = (
+    CommandSpec("mode", "Hand / auto", "mode", choices=("auto", "hand")),
+    CommandSpec("run", "Start / stop (hand)", "hand_run", kind="switch"),
+)
+"""The selector every Controller-driven unit carries: in auto the Controller runs it, in hand
+the operator's start/stop does."""
+HAND_AUTO_STATE: dict[str, str | bool] = {"mode": "auto", "hand_run": True}
+"""A unit's selector as it starts: in auto, with the hand switch left on."""
+
+
+def selected_run(s: Mapping[str, Any], auto_run: bool) -> bool:
+    """Whether a unit is asked to run: by its Controller in auto, by the operator in hand."""
+    return bool(s["hand_run"]) if s["mode"] == "hand" else auto_run
+
+
+def apply_command(specs: Iterable[CommandSpec], params: Mapping[str, Any], s: dict) -> None:
+    """Take a checked Operator Command into the unit's AssetState."""
+    spec = next(c for c in specs if c.name == params["command"])
+    value = params["value"]
+    s[spec.variable] = float(value) if spec.kind == "number" else value

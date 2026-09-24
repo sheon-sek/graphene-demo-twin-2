@@ -6,6 +6,7 @@ import type { LiveStore } from '../lib/live';
 import { isSet } from '../lib/status';
 import type { LoggedEvent } from '../lib/types';
 import type { World } from '../lib/world';
+import { StoryControls } from './StoryControls';
 
 /** Active faults with per-fault Clear, set alarm bits, the Event Log timeline, and Reset. */
 export function BottomBar({ world, live }: { world: World; live: LiveStore }) {
@@ -67,7 +68,10 @@ export function BottomBar({ world, live }: { world: World; live: LiveStore }) {
         </ul>
       </section>
       <EventLog live={live} onError={fail} />
-      <ResetControl live={live} onError={fail} />
+      <div className="controls">
+        <StoryControls live={live} onError={fail} />
+        <ResetControl live={live} onError={fail} />
+      </div>
       {error && (
         <p className="error bar-error" role="alert">
           {error}{' '}
@@ -100,7 +104,11 @@ function EventLog({ live, onError }: { live: LiveStore; onError: (e: unknown) =>
       </h3>
       <ol reversed>
         {[...events].reverse().map((e, i) => (
-          <li key={events.length - i} title={JSON.stringify(e.params)}>
+          <li
+            key={events.length - i}
+            className={e.at > live.time ? 'pending' : undefined}
+            title={JSON.stringify(e.params)}
+          >
             <span className="at">{clockTime(e.timestamp)}</span>
             <span className={`kind ${e.kind.replace('.', '-')}`}>{e.kind}</span>
             <span className="target">{shortName(e.target)}</span>

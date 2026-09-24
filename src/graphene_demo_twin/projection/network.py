@@ -191,6 +191,14 @@ def _field_comm(node: str, gateway: str) -> Callable[[WorldState], Quality]:
     return read
 
 
+def _errors(switch: str, peer: str, flaps: bool) -> Callable[[WorldState], Scalar]:
+    """A port's error counter: one per drop of its link, from its peer failing or, on the
+    flapping port, from the flap."""
+    if flaps:
+        return lambda s: s.assets[peer]["drops"] + s.assets[switch]["flap_errors"]
+    return lambda s: s.assets[peer]["drops"]
+
+
 def _const(value: Scalar) -> Callable[[WorldState], Scalar]:
     return lambda state: value
 
@@ -268,7 +276,7 @@ def _port(net: Network, switch: str, port: Port) -> dict[str, Callable[[WorldSta
         "Admin Status": _const(1),
         "Description": _const(peer.rsplit("/", 1)[-1]),
         "Display Status": lambda s: _display(s, switch, port, flappers),
-        "Error Count": (lambda s: s.assets[switch]["flap_errors"]) if flaps else _const(0),
+        "Error Count": _errors(switch, peer, flaps),
         "In Utilization": lambda s: min(role.link_in * load(s), 100.0) if up(s) else 0.0,
         "Link Status": lambda s: 1 if up(s) else 2,
         "Out Utilization": lambda s: min(role.link_out * load(s), 100.0) if up(s) else 0.0,

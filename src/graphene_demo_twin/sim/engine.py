@@ -80,6 +80,8 @@ class Simulation:
         self.domains: tuple[Domain, ...] = tuple(domains)
         self.seed = seed
         self.noise = Noise(seed)
+        self.start_time = start_time
+        """Sim time of the initial state: what an exported Event Log's offsets count from."""
         self.state = self._initial_state(start_time)
         self._events: list[Event] = []
         self._pending = 0
@@ -133,6 +135,7 @@ class Simulation:
         sim.domains = other.domains  # stateless, shared
         sim.seed = other.seed
         sim.noise = other.noise
+        sim.start_time = other.start_time
         sim.state = other.state.copy()
         sim._events = list(other._events)  # events are immutable
         sim._pending = other._pending
@@ -180,6 +183,10 @@ class WhatIfFork(Simulation):
 
     def run_for(self, seconds: int) -> None:
         self.advance(seconds)
+
+    def schedule_all(self, events: list[Event]) -> list[Event]:
+        """Schedule every event, or raise EventError at the first one no domain takes."""
+        return [self.schedule(e) for e in events]
 
 
 def _at(event: Event) -> int:

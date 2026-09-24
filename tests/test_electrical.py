@@ -8,7 +8,6 @@ import pytest
 from graphene_demo_twin.asset_model import SourceClass
 from graphene_demo_twin.faults import STANDARD_CATALOG
 from graphene_demo_twin.projection import PointSource, Projector, Quality
-from graphene_demo_twin.projection.electrical import UNMODELLED
 from graphene_demo_twin.sim import Event, Simulation
 from graphene_demo_twin.sim.electrical import (
     GENSET_KW,
@@ -725,20 +724,14 @@ def test_a_whole_site_blackout_projects_through_battery_exhaustion(plant_design,
 
 
 def test_the_electrical_points_have_a_causal_source(projector, asset_model, plant_design):
-    """Every point is driven by the world except the declared Compatibility Fallback debt,
-    which the coverage report counts."""
+    """Every point of the electrical assets is driven by the world: no Compatibility Fallback
+    is left."""
     net = network(plant_design)
     physical = {*net.meters, *net.incomers, *net.ups, *net.gensets, *net.tanks, *net.branch_meters}
     physical |= {a.path for a in plant_design.assets.values() if a.type_id in ("IPS", "RCMS")}
-    types = {plant_design.asset(n).type_id for n in physical}
-    assert set(UNMODELLED) <= types
     for node in physical:
-        unmodelled = UNMODELLED.get(plant_design.asset(node).type_id, ())
         for point in asset_model.points_of(node):
             if point.source_class is SourceClass.STATIC_METADATA:
                 continue
             entry = projector.coverage.entries[point.path]
-            if point.name in unmodelled:
-                assert entry.source is PointSource.FALLBACK and entry.debt, point.path
-            else:
-                assert entry.source is not PointSource.FALLBACK, point.path
+            assert entry.source is not PointSource.FALLBACK, point.path

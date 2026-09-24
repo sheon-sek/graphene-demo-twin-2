@@ -21,16 +21,19 @@ from graphene_demo_twin.sim.plant import (
     CHILLER_KWR,
     CLOSING,
     LAYERS,
+    MIN_FLOW_LPS,
     OFF,
     PLANT,
     ROTATION_SCHEDULE,
     RUNNING,
     RUNON,
+    TANK_ALARM_K,
     Leg,
     hand,
     plant_layout,
     run_request,
 )
+from graphene_demo_twin.sim.water import AC_ASSIST, LOOP_START_KPA, WATER
 
 CSC = "Chiller System Control"
 CS = "Chiller_System"
@@ -43,6 +46,10 @@ STATIC_KPA = 200.0
 CW_STATIC_KPA = 50.0
 """Static head on the condenser-water pump suction (the tower basins)."""
 CW_HEAD_KPA = 180.0
+CW_RETURN_HEAD_KPA = 60.0
+"""What is left of the condenser pump's head where the water returns to the towers."""
+TANK_TOP_KPA = 60.0
+"""Static head of the loop at the buffer tanks' top."""
 
 type Read = Callable[[WorldState], Scalar]
 
@@ -121,9 +128,32 @@ def _tank_status(t: dict[str, Scalar]) -> str:
     return {0: "STANDBY", 1: "NORMAL", 2: "RECHARGING"}[t["mode"]]
 
 
-def _level(t: dict[str, Scalar]) -> float:
-    """A closed buffer tank runs full."""
-    return 100.0
+def _level(s: WorldState) -> float:
+    """A closed buffer tank runs full while the loop holds its pressure, and drains with the
+    loop once a leak takes the pressure below the head at the tank top."""
+    return 100.0 * min(_loop_kpa(s) / TANK_TOP_KPA, 1.0)
+
+
+def _loop_kpa(s: WorldState) -> float:
+    """Static pressure of the closed CHW loop at its expansion vessel (`sim.water`)."""
+    water = s.assets.get(WATER)
+    return LOOP_START_KPA if water is None else water["loop_kpa"]
+
+
+def _chw_static(s: WorldState) -> float:
+    """The CHW header's static pressure: its design static, moved as the loop's is."""
+    return STATIC_KPA + _loop_kpa(s) - LOOP_START_KPA
+
+
+def _flow_status(s: WorldState) -> str:
+    p = s.assets[PLANT]
+    if p["running_count"] and p["flow_lps"] < MIN_FLOW_LPS:
+        return "LOW"
+    return "NORMAL"
+
+
+def _valves_auto(t: dict[str, Scalar]) -> int:
+    return 1 if t["valve_mode"] == "auto" else 0
 
 
 # ---- Chiller System Control
@@ -255,19 +285,25 @@ def _supervisor(layout) -> Iterable[Binding]:
         "Sensors/Flow/CHWR FM": p("flow_lps", M3H),
         "Sensors/Flow/CWS FM": p("cw_lps", M3H),
         "Sensors/Flow/CWR FM": p("cw_lps", M3H),
-        "Sensors/Flow/Status": _const("NORMAL"),
-        "Sensors/Pressure/CHWS PS": lambda s: STATIC_KPA * BAR,
-        "Sensors/Pressure/CHWR PS": lambda s: (STATIC_KPA - s.assets[PLANT]["dp_kpa"]) * BAR,
+        "Sensors/Flow/Status": _flow_status,
+        "Sensors/Pressure/CHWS PS": lambda s: _chw_static(s) * BAR,
+        "Sensors/Pressure/CHWR PS": lambda s: (_chw_static(s) - s.assets[PLANT]["dp_kpa"]) * BAR,
         "Sensors/Pressure/CWS PS": lambda s: (
             (CW_STATIC_KPA + (CW_HEAD_KPA if s.assets[PLANT]["cw_lps"] > 0.0 else 0.0)) * BAR
         ),
-        "Sensors/Pressure/CWR PS": _const(CW_STATIC_KPA * BAR),
-        "Sensors/Pressure/Status": _const("NORMAL"),
+        "Sensors/Pressure/CWR PS": lambda s: (
+            (CW_STATIC_KPA + (CW_RETURN_HEAD_KPA if s.assets[PLANT]["cw_lps"] > 0.0 else 0.0)) * BAR
+        ),
+        "Sensors/Pressure/Status": lambda s: "LOW" if _loop_kpa(s) < AC_ASSIST[0] else "NORMAL",
         "Sensors/Temperature/CHWS TS": p("chws_c"),
         "Sensors/Temperature/CHWR TS": p("chwr_c"),
         "Sensors/Temperature/CWS TS": p("cws_c"),
         "Sensors/Temperature/CWR TS": p("cwr_c"),
-        "Sensors/Temperature/Status": _const("NORMAL"),
+        "Sensors/Temperature/Status": lambda s: (
+            "HIGH"
+            if s.assets[PLANT]["chws_c"] > s.assets[PLANT]["chws_sp_c"] + TANK_ALARM_K
+            else "NORMAL"
+        ),
         # Rotation schedule.
         "Rotation Schedule/Current Lead": p("lead"),
         "Rotation Schedule/Last Rotation": p("last_rotation"),
@@ -389,7 +425,9 @@ def _leg(leg: Leg, i: int) -> Iterable[Binding]:
         "CWR Temp": _var(c, "cw_out_c"),
         "Fan Speed": _plant(f"{g}.fan_pct"),
         "Load": lambda s: 100.0 * s.assets[PLANT][f"{g}.rejected_kw"] / (1000.0 * len(leg.cells)),
-        "Mode": _const("AUTO"),
+        "Mode": lambda s: (
+            "HAND" if any(s.assets[x]["mode"] == "hand" for x in leg.cells) else "AUTO"
+        ),
         "Enabled": _var(c, "enabled"),
         "Power": _plant(f"{g}.power_kw"),
         "Run Hours": lambda s: (
@@ -413,7 +451,7 @@ def _cell(cell: str) -> Iterable[Binding]:
         return 1000.0 * x["power_kw"] / (3**0.5 * volts * CELL_PF) if volts else 0.0
 
     members = {
-        "Auto_Manual": _const(1),
+        "Auto_Manual": _fn(cell, lambda x: 1 if x["mode"] == "auto" else 0),
         "Current": _fn(cell, amps),
         "Energy": _var(cell, "energy_kwh"),
         "Frequency": _var(cell, "fan_pct", 0.5),
@@ -444,20 +482,19 @@ def _tank(tank: str) -> Iterable[Binding]:
         "Chiller Buffer Tank Recharge Pipe Flow Meter": _var(tank, "recharge_lps"),
         "Recharge Valve Control": _var(tank, "rc_cmd_pct"),
         "Recharge Valve Feedback": _var(tank, "rc_pos_pct"),
-        # The tank's inlet isolation (normally open) and bypass (normally closed) valves hold
-        # their normal positions while the tank is in service.
-        "Normally Opened Valve Auto_Manual Mode": _const(1),
-        "Normally Opened Valve Open Command": _const(True),
-        "Normally Opened Valve Close Command": _const(False),
-        "Normally Opened Valve Open Status": _const(1),
-        "Normally Opened Valve Close Status": _const(0),
-        "Normally Opened Valve Fail To Open": _const(False),
-        "Normally Closed Valve Auto_Manual Mode": _const(1),
-        "Normally Closed Valve Open Command": _const(False),
-        "Normally Closed Valve Close Command": _const(True),
-        "Normally Closed Valve Open Status": _const(0),
-        "Normally Closed Valve Close Status": _const(1),
-        "Normally Closed Valve Fail To Close": _const(False),
+        # The tank's inlet isolation (normally open) and bypass (normally closed) valves.
+        "Normally Opened Valve Auto_Manual Mode": _fn(tank, _valves_auto),
+        "Normally Opened Valve Open Command": _var(tank, "no_cmd"),
+        "Normally Opened Valve Close Command": _fn(tank, lambda x: not x["no_cmd"]),
+        "Normally Opened Valve Open Status": _fn(tank, lambda x: int(x["no_open"])),
+        "Normally Opened Valve Close Status": _fn(tank, lambda x: int(not x["no_open"])),
+        "Normally Opened Valve Fail To Open": _var(tank, "no_fail"),
+        "Normally Closed Valve Auto_Manual Mode": _fn(tank, _valves_auto),
+        "Normally Closed Valve Open Command": _var(tank, "nc_cmd"),
+        "Normally Closed Valve Close Command": _fn(tank, lambda x: not x["nc_cmd"]),
+        "Normally Closed Valve Open Status": _fn(tank, lambda x: int(x["nc_open"])),
+        "Normally Closed Valve Close Status": _fn(tank, lambda x: int(not x["nc_open"])),
+        "Normally Closed Valve Fail To Close": _var(tank, "nc_fail"),
     }
     for member, read in members.items():
         yield Binding(f"{tank}/{member}", read)
@@ -465,11 +502,11 @@ def _tank(tank: str) -> Iterable[Binding]:
         "Alarm Status": _fn(tank, lambda x: "HIGH TEMPERATURE" if x["alarm"] else "NO ALARMS"),
         "Average Temp": _var(tank, "avg_c"),
         "Capacity": _fn(tank, _capacity),
-        "Enabled": _const(True),
+        "Enabled": _var(tank, "no_open"),
         "Flow Rate": _var(tank, "flow_lps"),
         "Inlet Temp": _var(tank, "in_c"),
-        "Level": _fn(tank, _level),
-        "Mode": _const("AUTO"),
+        "Level": _level,
+        "Mode": _fn(tank, lambda x: "HAND" if x["valve_mode"] == "hand" else "AUTO"),
         "Outlet Temp": _var(tank, "out_c"),
         "Pressure": _var(tank, "pressure_kpa"),
         "Status": _fn(tank, _tank_status),

@@ -39,6 +39,12 @@ class LiveWorld:
         return self._seed
 
     @property
+    def start_time(self) -> int:
+        """Sim time the world was last built from its initial state (start or Reset)."""
+        with self._lock:
+            return self._sim.start_time
+
+    @property
     def time(self) -> int:
         with self._lock:
             return self._sim.time
@@ -72,6 +78,14 @@ class LiveWorld:
         with self._lock:
             self.catch_up()
             return self._sim.schedule(Event(self._sim.time, kind, target, params or {}))
+
+    def schedule(self, events: list[Event]) -> list[Event]:
+        """Log operator actions at their own sim times, none of them in the past, as a
+        pre-authored Event Log is played. Each takes effect at the start of the step out of
+        its time."""
+        with self._lock:
+            self.catch_up()
+            return [self._sim.schedule(e) for e in events]
 
     def reset(self) -> None:
         """Discard the Event Log and rebuild from the initial state, as a restart would, but

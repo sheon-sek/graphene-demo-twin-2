@@ -510,6 +510,31 @@ def _cooling_faults() -> tuple[FaultSpec, ...]:
             "others to carry the bypass PID.",
         ),
         FaultSpec(
+            "buffer_tank.inlet_valve_stuck",
+            "Inlet valve stuck shut",
+            "Buffer Tank",
+            FaultCategory.EQUIPMENT,
+            "constraint.inlet_stuck",
+            1.0,
+            "stuck",
+            "The tank's normally open inlet valve seizes shut (once the level passes half): it "
+            "reports Fail To Open, and the tank Controller opens the bypass valve so its leg "
+            "keeps its flow. The tank is out of service: it stops buffering the leg and its "
+            "stored charge stands.",
+        ),
+        FaultSpec(
+            "buffer_tank.bypass_valve_stuck",
+            "Bypass valve stuck open",
+            "Buffer Tank",
+            FaultCategory.EQUIPMENT,
+            "constraint.bypass_stuck",
+            1.0,
+            "stuck",
+            "The tank's normally closed bypass valve seizes open (once the level passes half): "
+            "it reports Fail To Close, and half the leg's flow goes round the tank, mixing "
+            "unbuffered chiller water into the supply.",
+        ),
+        FaultSpec(
             "cdu.pump_failure",
             "CDU pump failure",
             "CDU",
@@ -875,6 +900,55 @@ STANDARD_CATALOG = FaultCatalog(
             "fail",
             "The tank's transfer pump trips: while its gensets run, their day tanks drain and "
             "are not refilled, until the engines shut down on low fuel.",
+        ),
+        FaultSpec(
+            "ips.insulation_fault",
+            "Insulation fault",
+            "IPS",
+            FaultCategory.EQUIPMENT,
+            "constraint.insulation_loss",
+            1.0,
+            "fraction of insulation lost",
+            "The isolated circuit's insulation to earth breaks down (damp, damaged cable): it "
+            "falls from 10 MΩ towards 5 kΩ. The IPS insulation monitor reads every circuit "
+            "in parallel and its value drops; below 50 kΩ the fault locator flags this circuit. "
+            "The isolated supply keeps running, as an IT system is meant to on a first fault.",
+        ),
+        FaultSpec(
+            "ips.ct_open",
+            "Locator CT open",
+            "IPS",
+            FaultCategory.SENSOR,
+            "observation.ct_open",
+            1.0,
+            "open",
+            "The fault locator's current transformer on this circuit is disconnected (once the "
+            "level passes half): the IPS raises No CT and can no longer locate an insulation "
+            "fault on the circuit, although the monitor still measures it.",
+        ),
+        FaultSpec(
+            "ips.ct_short",
+            "Locator CT short-circuited",
+            "IPS",
+            FaultCategory.SENSOR,
+            "observation.ct_short",
+            1.0,
+            "short",
+            "The fault locator's current transformer on this circuit is short-circuited (once "
+            "the level passes half): the IPS raises Short CT and can no longer locate an "
+            "insulation fault on the circuit.",
+        ),
+        FaultSpec(
+            "ips.pe_loss",
+            "PE connection lost",
+            "IPS",
+            FaultCategory.EQUIPMENT,
+            "constraint.pe_loss",
+            1.0,
+            "lost",
+            "The protective-earth bond of this circuit's panel section opens (once the level "
+            "passes half): the insulation monitor loses its reference to earth, raises PE "
+            "Connection and cannot measure insulation until it is restored.",
         ),
         FaultSpec(
             "water.municipal_loss",

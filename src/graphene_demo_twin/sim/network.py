@@ -218,6 +218,7 @@ class NetworkDomain:
                 "clock_offset_s": 0.0,
                 "flap_down": False,
                 "flap_errors": 0,
+                "drops": 0,
             }
         for n in net.state_comm:
             state[n] = {"comm": "good"}
@@ -245,6 +246,8 @@ class NetworkDomain:
             up = s.get("quality.device_failure", 0.0) < 0.5
             if up and not s["up"]:
                 s["boot_s"] = t  # rebooted
+            elif s["up"] and not up:
+                s["drops"] += 1  # every link to it drops once, and each port counts it
             s["up"] = up
             drift = s.get("observation.clock_drift_s_per_h", 0.0)
             s["clock_offset_s"] = s["clock_offset_s"] + drift * ctx.dt / 3600 if drift else 0.0

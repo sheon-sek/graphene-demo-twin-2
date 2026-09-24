@@ -32,6 +32,7 @@ from graphene_demo_twin.sim.electrical import (
     V_LN,
     load_profile,
     network,
+    powered,
 )
 
 PHASE_V = (0.002, -0.003, 0.001)
@@ -265,7 +266,7 @@ def _genset_values(s: dict[str, Scalar]) -> dict[str, Scalar]:
         "Battery DC Volts": s["battery_v"],
         "Engine Run Time": s["run_s"] / 60.0,
         "Engine Start": 1.0 if s["stage"] == "cranking" else 0.0,
-        "Run Command Active": 1 if s["start_cmd"] else 0,
+        "Run Command Active": 1 if s["run_cmd"] else 0,
         "Idling": 1 if running and s["p_kw"] == 0.0 else 0,
     }
 
@@ -290,8 +291,10 @@ GENSET_ALARMS: dict[str, Callable[[dict[str, Scalar]], Scalar]] = {
     "Short Circuit Shutdown": lambda s: s["overload_trip"],
     "Low Coolant Level": lambda s: s["coolant_c"] >= COOLANT_TRIP_C,
     "HasAlarm": lambda s: s["has_alarm"],
+    "Auto_Manual": lambda s: 1 if s["control_mode"] == "auto" else 0,
+    "Emergency Stop": lambda s: 1 if s["estop"] else 0,
 }
-"""Genset alarm member → the engine controller's logic over its state."""
+"""Genset alarm and control member → the engine controller's logic over its state."""
 
 COOLANT_TRIP_C = 105.0
 """Jacket temperature at which the controller reads low coolant (a dry jacket runs hot)."""
@@ -316,7 +319,8 @@ TANK_POINTS: dict[str, Callable[[dict[str, Scalar]], Scalar]] = {
     "Run_Stop - Fuel Pump A": lambda s: 1 if s["pump_on"] else 0,
     "On_Off - PLC Panel A": lambda s: 1 if _panel_on(s) else 0,
     "On_Off - PLC Panel B": lambda s: 1 if _panel_on(s) else 0,
-    "Open_Close Feedback - Inlet Valve": lambda s: 1 if _panel_on(s) else 0,
+    "Open_Close Feedback - Inlet Valve": lambda s: 1 if s["valve_open"] else 0,
+    "Time-out Alarm - Inlet Valve": lambda s: s["valve_timeout"],
     "System Failure_Trip - Fuel Pump A": lambda s: s["pump_failed"],
     "System Failure_Trip - PLC Panel A": lambda s: not _panel_on(s),
     "System Failure_Trip - PLC Panel B": lambda s: not _panel_on(s),
@@ -326,23 +330,19 @@ TANK_POINTS: dict[str, Callable[[dict[str, Scalar]], Scalar]] = {
 }
 """Diesel tank member → its value from the tank's AssetState (fuel pump, flowmeter, panels)."""
 
-UNMODELLED: Mapping[str, tuple[str, ...]] = {
-    "Genset": ("Auto_Manual", "Emergency Stop"),
-    "Diesel": ("Time-out Alarm - Inlet Valve",),
-    "IPS": (
-        "Insulation Fault",
-        "Insulation Value",
-        "Load Percentage",
-        "No CT",
-        "Short CT",
-        "PE Connection",
-        "Transformer Temp",
-    ),
-}
-"""Compatibility Fallback debt, by asset type: the genset's control mode and emergency stop,
-the diesel inlet valve's travel and the IPS insulation monitor's measurements have no physics
-yet. Their points keep their fallback, which the coverage report counts as debt, rather than a
-constant bound as if it were physics."""
+IPS_KVA = 20.0
+"""Rating of the IPS isolation transformer that feeds the control room's six circuits."""
+IPS_PF = 0.9
+IPS_CIRCUIT_KOHM = 10_000.0
+"""Insulation to earth of one healthy isolated circuit."""
+IPS_FAILED_KOHM = 5.0
+"""Insulation of a circuit whose insulation has failed completely (severity 1)."""
+IPS_RESPONSE_KOHM = 50.0
+"""The insulation monitor's response value (IEC 60364-7-710): below it, a fault."""
+IPS_RISE_K = 80.0
+"""Transformer hot-spot rise over its room at rated load."""
+IPS_HOT_C = 110.0
+"""Hot-spot temperature at which the transformer raises its over-temperature alarm."""
 
 
 BOARD_ALARMS: Mapping[str, tuple[str, ...]] = {
@@ -430,10 +430,7 @@ def electrical_bindings(
     for placed in design.assets.values():
         if placed.type_id == "RCMS" and placed.room:
             bindings.append(Binding(f"{placed.path}/Current", _rcms_amps(placed.path)))
-        if placed.type_id == "IPS" and placed.room and placed.path == "IPS":
-            on = VariableRead(placed.path, "power_kw")
-            bindings.append(Binding(f"{placed.path}/Device Status", lambda s, on=on: on(s) > 0.0))
-            bindings.append(Binding(f"{placed.path}/Load Status", lambda s, on=on: on(s) > 0.0))
+    bindings.extend(_ips_bindings(asset_model, design))
 
     frozen = tuple(entries)
 
@@ -451,6 +448,70 @@ def electrical_bindings(
     if missing := [p for p in named if p not in asset_model.points]:
         raise ValueError(f"electrical bindings name points not in the Asset Model: {missing}")
     return bindings
+
+
+def _ips_bindings(asset_model: AssetModel, design: PlantDesign) -> list[Binding]:
+    """The control room's IPS panel: its insulation monitor and fault locator, which watch
+    the isolated circuits' insulation to earth, and its transformer's load and temperature."""
+    circuits = tuple(
+        a.path for a in design.assets.values() if a.type_id == "IPS" and a.room and not a.support
+    )
+    if not circuits or "IPS/Insulation Value" not in asset_model.points:
+        return []
+    room = design.assets[circuits[0]].room
+
+    def on(s: WorldState) -> bool:
+        return powered(s, design, circuits[0])
+
+    def fault(s: WorldState, key: str) -> bool:
+        return any(s.assets[c].get(key, 0.0) >= 0.5 for c in circuits)
+
+    def kohm(s: WorldState) -> float:
+        """What the monitor measures: every circuit's insulation in parallel."""
+        return 1.0 / sum(1.0 / circuit_kohm(s.assets[c]) for c in circuits)
+
+    def load(s: WorldState) -> float:
+        kva = sum(s.assets[c]["power_kw"] for c in circuits) / IPS_PF
+        return kva / IPS_KVA if on(s) else 0.0
+
+    def located(c: str) -> Callable[[WorldState], bool]:
+        """The locator flags a circuit below the response value through its own CT."""
+
+        def read(s: WorldState) -> bool:
+            x = s.assets[c]
+            return (
+                on(s)
+                and not fault(s, "constraint.pe_loss")
+                and x.get("observation.ct_open", 0.0) < 0.5
+                and x.get("observation.ct_short", 0.0) < 0.5
+                and circuit_kohm(x) < IPS_RESPONSE_KOHM
+            )
+
+        return read
+
+    points: dict[str, Callable[[WorldState], Scalar]] = {
+        "IPS/Device Status": on,
+        # With its PE connection lost the monitor cannot measure, and reads no insulation.
+        "IPS/Insulation Value": lambda s: (
+            min(kohm(s), IPS_CIRCUIT_KOHM) if on(s) and not fault(s, "constraint.pe_loss") else 0.0
+        ),
+        "IPS/Load Percentage": lambda s: 100.0 * load(s),
+        "IPS/Load Status": lambda s: load(s) > 1.0,
+        "IPS/No CT": lambda s: on(s) and fault(s, "observation.ct_open"),
+        "IPS/Short CT": lambda s: on(s) and fault(s, "observation.ct_short"),
+        "IPS/PE Connection": lambda s: on(s) and fault(s, "constraint.pe_loss"),
+        "IPS/Transformer Temp": lambda s: (
+            s.assets[room]["temp_c"] + IPS_RISE_K * load(s) ** 2 >= IPS_HOT_C
+        ),
+    }
+    points |= {f"{c}/Insulation Fault": located(c) for c in circuits}
+    return [Binding(path, read) for path, read in points.items()]
+
+
+def circuit_kohm(x: Mapping[str, Scalar]) -> float:
+    """One isolated circuit's insulation to earth, falling geometrically with the fault."""
+    level = min(max(float(x.get("constraint.insulation_loss", 0.0)), 0.0), 1.0)
+    return IPS_CIRCUIT_KOHM * (IPS_FAILED_KOHM / IPS_CIRCUIT_KOHM) ** level
 
 
 def _meter_alarm(net, meter: str) -> Callable[[WorldState], bool]:

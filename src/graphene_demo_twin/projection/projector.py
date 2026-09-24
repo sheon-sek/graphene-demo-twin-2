@@ -234,6 +234,13 @@ class Projector:
                         compare(path, x, y)
         return found
 
+    def readers(self) -> Iterable[tuple[tuple[str, ...], Callable[[WorldState], object]]]:
+        """Every value binding as (the points it drives, its read), for audits."""
+        for path, b in self._bindings.items():
+            yield (path,), b.read
+        for group, _ in self._groups:
+            yield group.paths, group.read
+
     def bound(self, paths: Iterable[str]) -> tuple[str, ...]:
         """Those of `paths` the world drives; every other keeps its Compatibility Fallback."""
         return tuple(p for p in paths if p in self._bound)

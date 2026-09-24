@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from graphene_demo_twin.asset_model import AssetModel
+from graphene_demo_twin.event_log import EventLogDoc, EventLogError, export_log
 from graphene_demo_twin.faults import (
     CLEAR,
     INJECT,
@@ -240,6 +241,68 @@ class Twin:
         if (reason := command_problem(specs, params)) is not None:
             raise EventError(reason)
         return self._log(COMMAND, target, params)
+
+    def play(self, doc: EventLogDoc, *, reset: bool = True) -> tuple[int, list[Event]]:
+        """Play a pre-authored or imported Event Log against the Live World: each action is
+        logged at its offset from now. With `reset` the world is first rebuilt from its
+        initial state, so the story starts from steady state. Every action is checked, and
+        the story as a whole must hold together (no fault injected twice or cleared while
+        not active), before any is logged; raises EventLogError otherwise. Returns the sim
+        time the story starts at and the events logged."""
+        with self._lock:
+            if reset:
+                self.reset()
+            self._catch_up()
+            start = self.live.time
+            events = [e.event(start) for e in doc.entries]
+            self._check_story(events)
+            try:
+                self.live.fork(catch_up=False).schedule_all(events)
+            except EventError as e:
+                raise EventLogError(str(e)) from None
+            logged = self.live.schedule(events)
+            if self._catch_up() is None:
+                self._publish(replace(self._frame, seq=next(self._seq), events=self.live.events))
+            return start, logged
+
+    def export(self) -> EventLogDoc:
+        """The Live World's Event Log as a document, offsets from its last (re)build."""
+        with self._lock:
+            return export_log(self._frame.events, seed=self.live.seed, start=self.live.start_time)
+
+    def _check_story(self, events: list[Event]) -> None:
+        active: dict[tuple[str, str], int | None] = {}
+        """(target, fault) → when it clears itself, None if not before a Clear."""
+        seen: set[tuple[str, str]] = set()
+        for i, e in enumerate(events):
+            where = f"event {i} ({e.kind} on {e.target})"
+            for key, until in list(active.items()):
+                if until is not None and e.at >= until:
+                    del active[key]
+            if e.kind in (INJECT, CLEAR):
+                if (reason := self.catalog.check(e, self.design)) is not None:
+                    raise EventLogError(f"{where}: {reason}")
+                key = (e.target, e.params["fault"])
+                if key not in seen:  # its state before the story: as the Live World has it
+                    seen.add(key)
+                    if self._fault_live(*key):
+                        active[key] = None
+                if e.kind == INJECT:
+                    if key in active:
+                        raise EventLogError(f"{where}: {key[1]} is already active")
+                    clears = FaultParams.parse(e.params).auto_clear_s
+                    active[key] = None if clears is None else e.at + clears
+                else:
+                    if key not in active:
+                        raise EventLogError(f"{where}: {key[1]} is not active")
+                    del active[key]
+            elif e.kind == COMMAND:
+                placed = self.design.assets.get(e.target)
+                specs = self.commands.get(placed.type_id, ()) if placed else ()
+                if not specs:
+                    raise EventLogError(f"{where}: {e.target} takes no Operator Commands")
+                if (reason := command_problem(specs, e.params)) is not None:
+                    raise EventLogError(f"{where}: {reason}")
 
     def reset(self) -> Frame:
         """Rebuild the Live World from its initial state, drop every fork, and publish."""

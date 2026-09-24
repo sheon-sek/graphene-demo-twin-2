@@ -205,3 +205,32 @@ export interface LoggedEvent {
   target: string;
   params: Record<string, unknown>;
 }
+
+/** One step of a pre-authored or exported Event Log: an action at an offset from its start. */
+export interface LogEntry {
+  offset: number;
+  kind: string;
+  target: string;
+  params: Record<string, unknown>;
+  note?: string;
+}
+
+/** An Event Log document, as the twin exports it and the Golden Demo is authored. */
+export interface EventLogDoc {
+  format: string;
+  version: number;
+  title?: string;
+  description?: string;
+  seed?: number;
+  start?: number;
+  events: LogEntry[];
+}
+
+/** What playing an Event Log against the Live World logged. */
+export interface PlayResult {
+  title: string;
+  start: number;
+  timestamp: string;
+  durationS: number;
+  events: LoggedEvent[];
+}
