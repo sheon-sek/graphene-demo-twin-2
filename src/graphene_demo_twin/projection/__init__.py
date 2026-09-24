@@ -18,6 +18,7 @@ from graphene_demo_twin.projection.projector import (
 from graphene_demo_twin.projection.site import site_bindings
 from graphene_demo_twin.projection.thermal import thermal_bindings
 from graphene_demo_twin.projection.values import Quality, coerce, fallback_value, type_default
+from graphene_demo_twin.projection.water import water_bindings
 
 __all__ = [
     "Binding",
@@ -40,4 +41,5 @@ __all__ = [
     "site_bindings",
     "thermal_bindings",
     "type_default",
+    "water_bindings",
 ]

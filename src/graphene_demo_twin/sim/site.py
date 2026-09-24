@@ -9,12 +9,12 @@ facility power plus what the UPS batteries store (`storage_kw`), which is negati
 carry the load.
 
 Two domains share the work around the electrical network (`sim.electrical`). SiteLoadDomain
-steps before it: until the airside (P2), water (P3) and building services (P4) are modelled,
-it is their stand-in, working out each non-IT load from the state the other domains have
-reached (CRAC units, the chiller plant, outdoor air) with simple curves, and nothing draws
-while its supply is dead. The chiller plant (`sim.plant`) works out its own equipment's
-draw. The electrical network adds the UPS and transformer losses, and SitePowerDomain steps
-last to total everything up.
+steps before it: until the building services (P4) are modelled, it is their stand-in,
+working out each non-IT load from the state the other domains have reached (CRAC units, the
+chiller plant, outdoor air) with simple curves, and nothing draws while its supply is dead.
+The chiller plant (`sim.plant`) and the water network (`sim.water`) work out their own
+equipment's draw. The electrical network adds the UPS and transformer losses, and
+SitePowerDomain steps last to total everything up.
 """
 
 import functools
@@ -41,6 +41,7 @@ from graphene_demo_twin.sim.thermal import (
     served_room,
     ua_kw_per_k,
 )
+from graphene_demo_twin.sim.water import WATER, water_nodes
 from graphene_demo_twin.sim.weather import DAY_S, LOCAL_OFFSET_S, site_air
 
 SITE = "site"
@@ -95,20 +96,13 @@ FAN_KW = {"PAHU": 11.0, "FCU": 2.2, "FWU": 3.0, "Ceiling Cooling Units": 7.5}
 """Fan power of the chilled-water air units (`sim.airside`), which run at fixed speed."""
 CRAC_FAN_KW = 15.0
 """CRAC EC fan power at full speed; it follows the cube of speed."""
-CYCLES_OF_CONCENTRATION = 4.0
-LATENT_KJ_PER_KG = 2430.0
 SERVICE_KW = {
     "CDU": 7.5,
-    "CW Transfer Pump": 1.8,
-    "CW Booster Pump": 2.2,
-    "AC Makeup Pump": 0.2,
     "IPS": 2.5,
     "RCMS": 4.0,
 }
-"""Average draw of equipment whose physics comes later (P3 water, the CDU loop, the control
-room's critical circuits)."""
-MAKEUP_PUMP_KW, MAKEUP_PUMP_LPH = 0.9, 1000.0
-"""A tower cell's makeup pump at its rated flow; it idles at a fifth of that."""
+"""Average draw of equipment whose physics comes later (the CDU loop, the control room's
+critical circuits)."""
 LIFT_KW, LIFT_BUSY_KW = 6.0, 6.0
 """Lifts 1–3 beyond Meter14: standing losses, and the extra during office hours."""
 GENSET_AUX_KW = 30.0
@@ -183,19 +177,12 @@ class SiteLoadDomain:
                 power[unit] = FAN_KW[type_id] * (1.0 - s.get("constraint.fan_loss", 0.0))
             else:
                 power[unit] = 0.0
+        # The water network (`sim.water`) works out its own pumps' draw, and what the towers
+        # lose to evaporation, drift and blowdown.
         plant = assets.get(PLANT)
         chw_load = plant["load_kw"] if plant is not None else 0.0
-        rejected = plant["rejected_kw"] if plant is not None else 0.0
-        makeup = (
-            rejected
-            * 3600.0
-            / LATENT_KJ_PER_KG
-            * (CYCLES_OF_CONCENTRATION / (CYCLES_OF_CONCENTRATION - 1.0))
-        )
-        pumps = assets_of(design, "Makeup Water Pump")
-        each = min(makeup / max(len(pumps), 1) / MAKEUP_PUMP_LPH, 1.5)
-        for pump in pumps:
-            power[pump] = MAKEUP_PUMP_KW * (0.2 + 0.8 * each)
+        water = assets.get(WATER)
+        makeup = water["tower_loss_lps"] * 3600.0 if water is not None else 0.0
 
         # Building services, lighting room by room, and the draw beyond the meters with
         # nothing authored below them: fixed by the time of day.
@@ -349,7 +336,7 @@ def site_loads(design: PlantDesign) -> tuple[str, ...]:
     """The consumers whose draw SiteLoadDomain works out: all but the IT equipment and what
     the electrical network owns (UPS, transformers, the diesel tanks' fuel pumps)."""
     net = network(design)
-    owned = {*net.ups, *net.incomers, *net.tanks, *plant_nodes(design)}
+    owned = {*net.ups, *net.incomers, *net.tanks, *plant_nodes(design), *water_nodes(design)}
     return tuple(
         n for n, (cls, _) in consumers(design).items() if cls is not LoadClass.IT and n not in owned
     )

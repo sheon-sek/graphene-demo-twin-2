@@ -26,6 +26,7 @@ from graphene_demo_twin.sim.electrical import network
 from graphene_demo_twin.sim.plant import PLANT, plant_layout, plant_nodes
 from graphene_demo_twin.sim.site import SITE, load_class
 from graphene_demo_twin.sim.thermal import hot_aisle_sensors, zones
+from graphene_demo_twin.sim.water import WATER, water_layout
 from graphene_demo_twin.world import SETTLING_S, default_domains, default_projector
 
 START = 1_790_000_000
@@ -62,7 +63,15 @@ TARGET = {
     "FWU": "FWU/G_FWU1",
     "Ceiling Cooling Units": "~CCU-001",
     "CDU": "TIW/CDU-01",
+    "CW Ground Valve": "Cold Water and Sanitary System/G_V1",
+    "CW Roof Valve": "Cold Water and Sanitary System/R_V1",
+    "CW Transfer Pump": "Cold Water and Sanitary System/G_TP1",
+    "CW Roof Tank": "Cold Water and Sanitary System/R_T1",
+    "Makeup Water Pump": "Cooling Towers Plant/R_P1_P1",
+    "Water Leak Cable Sensor": "Water Leak Detection System/Level 1/2A",
 }
+TARGET_OF_FAULT = {"ground_valve.stuck": "Cold Water and Sanitary System/G_V2"}
+"""Where a fault's own targets exclude its type's usual one."""
 
 
 def _sim(plant_design, seed: int = 7) -> Simulation:
@@ -74,9 +83,12 @@ def _inject(at: int, target: str, fault: str, **params) -> Event:
 
 
 def _target(spec, plant_design) -> str:
-    """The asset a fault is exercised on: its type's TARGET, or for a fault restricted to
-    certain assets of its type (a utility loss needs an incomer; a switch or gateway fault
-    needs that role), the first of those."""
+    """The asset a fault is exercised on: a fault with a pinned TARGET_OF_FAULT gets that;
+    otherwise its type's TARGET, or for a fault restricted to certain assets of its type (a
+    utility loss needs an incomer; a switch or gateway fault needs that role), the first of
+    those."""
+    if spec.id in TARGET_OF_FAULT:
+        return TARGET_OF_FAULT[spec.id]
     return next(iter(spec.targets(plant_design))) if spec.where else TARGET[spec.asset_type]
 
 
@@ -394,13 +406,14 @@ def _differs(a: WorldState, b: WorldState) -> bool:
 
 
 def _history(name: str) -> bool:
-    """Energy integrals, running averages, fuel burnt, run hours, starts and the plant's last
-    staging command remember what the fault cost: the world recovers, its history does
+    """Energy integrals, running averages, fuel burnt, water stored, run hours, starts and the
+    plant's last staging command remember what the fault cost: the world recovers, its history does
     not."""
     return (
         name.startswith(("energy_kwh", "avg."))
         or name.endswith("run_s")
         or name in ("fuel_l", "fuel_pumped_l", "starts", "starts_day", "last_command")
+        or name in ("volume_l", "level_pct", "sensed_pct", "loop_kpa", "transfer_n")
     )
 
 
@@ -510,6 +523,9 @@ def test_a_preview_reports_the_propagation_diffs_and_alarms(plant_design, asset_
         *(n for leg in plant_layout(plant_design).legs for n in (*leg.valves, *leg.tanks)),
     }
     plant |= set(plant_nodes(plant_design)) | set(plant_layout(plant_design).bypass)
+    # The towers reject a little more heat, so they evaporate more and the water network
+    # that makes it up follows.
+    plant |= {WATER, *water_layout(plant_design).nodes}
     cooled = set(zones(plant_design))
     for node in set(nodes[2:]) - sensors - {SITE}:
         placed = plant_design.assets.get(node)
@@ -592,9 +608,9 @@ def test_a_60_minute_preview_completes_in_under_3_s(plant_design, asset_model, p
     started = time.perf_counter()
     preview_fault(sim, projector, asset_model, CRAC3, "crac.fan_failure", FaultParams(), 3600)
     # The PRD target is 3 s. The airside (#22) took the world past it on this suite's
-    # machines (about 3.5 s), and the control network (#25) added a further ~0.5 s (about
-    # 4.2 s); #28 verifies the performance targets and owns bringing the preview back under
-    # 3 s. This bound catches regressions until then.
+    # machines (about 3.5 s), the control network (#25) added a further ~0.5 s and the water
+    # network (#24) about 0.2 s (about 4.4 s here); #28 verifies the performance targets and
+    # owns bringing the preview back under 3 s. This bound catches regressions until then.
     assert time.perf_counter() - started < 5.0
 
 

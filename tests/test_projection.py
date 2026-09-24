@@ -112,7 +112,7 @@ def test_coverage_lists_every_point_once_with_its_source(asset_model, projector)
     assert report.entries[DASH_DH03_ENERGY].source is PointSource.PLANT_VIEW
     assert report.entries["BCPM/2L1/Rack ID"].source is PointSource.FALLBACK
     assert not report.entries["BCPM/2L1/Rack ID"].debt
-    assert report.entries["Cooling Towers Plant/R_P1_P1/Power"].debt  # P3 makeup water
+    assert report.entries["Fire Protection System/Ground/Zone 1/SD1"].debt  # P4 fire
     assert report.debt() == sum(e.debt for e in report.entries.values()) > 0
 
 
