@@ -68,6 +68,7 @@ def test_the_design_splits_the_field_between_two_gateways(plant_design):
         "Water": GW_A,
         "Electrical": GW_B,
         "Environment": GW_B,
+        "Life Safety": GW_B,  # fire protection and lifts (#26)
     }
     assert {CRAC3, "TIW/CDU-01"} <= set(net.field[GW_A])
     assert {METER, TH} <= set(net.field[GW_B])

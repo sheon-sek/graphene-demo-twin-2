@@ -32,6 +32,7 @@ from graphene_demo_twin.sim.electrical import (
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
 from graphene_demo_twin.sim.it_load import IT_TYPE
+from graphene_demo_twin.sim.life_safety import FIRE_PUMP, LIFT, life_safety_power
 from graphene_demo_twin.sim.placeholder import assets_of
 from graphene_demo_twin.sim.plant import PLANT, plant_nodes
 from graphene_demo_twin.sim.state import AssetState, WorldState
@@ -91,6 +92,8 @@ _CLASS_OF_TYPE = {
     "FCU": LoadClass.VENTILATION,
     "FWU": LoadClass.VENTILATION,
     "Ceiling Cooling Units": LoadClass.VENTILATION,
+    LIFT: LoadClass.OTHER,
+    FIRE_PUMP: LoadClass.OTHER,
 }
 FAN_KW = {"PAHU": 11.0, "FCU": 2.2, "FWU": 3.0, "Ceiling Cooling Units": 7.5}
 """Fan power of the chilled-water air units (`sim.airside`), which run at fixed speed."""
@@ -103,8 +106,6 @@ SERVICE_KW = {
 }
 """Average draw of equipment whose physics comes later (the CDU loop, the control room's
 critical circuits)."""
-LIFT_KW, LIFT_BUSY_KW = 6.0, 6.0
-"""Lifts 1–3 beyond Meter14: standing losses, and the extra during office hours."""
 GENSET_AUX_KW = 30.0
 """Jacket-water heaters and battery chargers of the six gensets, beyond Meter16."""
 LIGHTING_W_M2 = {
@@ -191,6 +192,7 @@ class SiteLoadDomain:
         office = (local // DAY_S + 3) % 7 < 5 and 8.0 <= hour < 18.0
         dark = hour < 7.0 or hour >= 19.0
         power.update(_scheduled_loads(design, office, dark))
+        power.update(life_safety_power(state, design))  # lifts and fire pumps, by their state
         for node in services(design):  # a stopped service (a tripped CDU) draws nothing
             if not assets[node].get("running", True):
                 power[node] = 0.0
@@ -306,10 +308,7 @@ def _scheduled_loads(design: PlantDesign, office: bool, dark: bool) -> dict[str,
                 watts *= 0.35
         power[room.id] = room.w * room.h * watts / 1000.0
     for meter in stand_in_meters(design):
-        if meter.endswith("Meter14"):
-            power[meter] = LIFT_KW + (LIFT_BUSY_KW if office else 0.0)
-        else:
-            power[meter] = GENSET_AUX_KW
+        power[meter] = GENSET_AUX_KW
     return power
 
 

@@ -17,6 +17,7 @@ from graphene_demo_twin.plant_design import (
     Shaft,
     parse_plant_design,
 )
+from graphene_demo_twin.sim.life_safety import FIRE_DEVICES
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -54,9 +55,9 @@ def test_regenerating_the_design_matches_the_committed_json(tmp_path):
 def test_loads_floors_rooms_assets_and_connections(plant_design):
     assert [f.name for f in plant_design.floors] == ["Ground", "Level 1", "Level 2", "Roof"]
     assert len(plant_design.rooms) == 33
-    assert len(plant_design.assets) == 639 + 28
-    assert len(plant_design.unexported) == 28
-    assert len(plant_design.connections) == 562  # rev 0.4 adds the eight CCU air connections
+    assert len(plant_design.assets) == 639 + 28 + 81
+    assert len(plant_design.unexported) == 28 + 81  # rev 0.5: 22 fire zones, 56 devices, 3 lifts
+    assert len(plant_design.connections) == 760  # rev 0.5 adds 191 fire and 7 power connections
 
 
 def test_room_carries_floor_plan_rectangle_and_fire_zone(plant_design):
@@ -105,7 +106,27 @@ def test_unexported_assets_are_the_ones_the_prd_fixes(plant_design):
         "~WX-01",  # the roof weather station
         "~PLC-01",  # the chiller plant Controller, which takes supervisory commands
         *(f"~IT-DH0{i}" for i in range(1, 9)),  # each hall's IT equipment
-    }
+        *LIFE_SAFETY,
+    } | {u for u in plant_design.unexported if plant_design.asset(u).type_id in FIRE_DEVICES}
+
+
+LIFE_SAFETY = {
+    *(f"~LIFT-{i}" for i in (1, 2, 3)),
+    *(f"~FZ-{f}-Z{z}" for f in ("G", "R") for z in (1, 2, 3, 4)),
+    "~FZ-G-Z5",
+    "~FZ-R-SA",
+    *(f"~FZ-{f}-{z}" for f in ("L1", "L2") for z in ("Z1", "Z2", "Z3", "Z4", "CA", "SA")),
+}
+"""Rev 0.5 (#26): the lifts and fire zones; each zone's devices are checked against the export
+in `test_every_fire_device_is_an_unexported_asset_of_its_zone`."""
+
+
+def test_every_fire_device_is_an_unexported_asset_of_its_zone(plant_design, asset_model):
+    devices = [u for u in plant_design.unexported.values() if u.type_id in FIRE_DEVICES]
+    points = [p for p in asset_model.points if p.startswith("Fire Protection System/")]
+    assert len(devices) == len(points) == 56
+    for u in devices:
+        assert f"{u.observed_by[0]}/{u.id.rsplit('-', 1)[1]}" in points
 
 
 def test_plant_design_is_read_only(plant_design):
@@ -249,7 +270,7 @@ def test_assets_in_a_room(plant_design):
     in_dh01 = {a.path for a in plant_design.assets_in("DH01")}
     assert {"~CB-001", "~CCU-001", "BCPM/1L1", "CRAC/L1_CRAC1"} <= in_dh01
     assert all(plant_design.room_of(p).id == "DH01" for p in in_dh01)
-    assert plant_design.assets_in("G-CORE") == ()
+    assert {a.path for a in plant_design.assets_in("G-CORE")} == {"~LIFT-1", "~LIFT-2", "~LIFT-3"}
     with pytest.raises(KeyError):
         plant_design.assets_in("DH99")
 
@@ -268,7 +289,7 @@ def test_room_and_floor_of_an_asset(plant_design):
 
 
 def test_committed_design_is_valid(plant_design):
-    assert plant_design.version == "0.4"
+    assert plant_design.version == "0.5"
 
 
 def test_fails_when_an_exported_asset_is_unplaced(raw, asset_model):

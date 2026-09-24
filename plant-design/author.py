@@ -8,6 +8,7 @@ that every exported asset is placed. Run from the repo root:
 """
 import json, re, collections, sys
 from pathlib import Path
+
 REF = Path(__file__).resolve().parent.parent / 'reference/graphene/real-graphene-demo-tag-instances.json'
 d = json.load(open(REF))
 
@@ -72,7 +73,7 @@ shaft('SH-EL', 'Electrical riser', 45, 34.5, ['power'])
 shaft('SH-HYD', 'Chilled & condenser water riser', 47, 34.5, ['chw', 'cw'])
 shaft('SH-AIR', 'Supply-air duct shaft', 49, 34.5, ['air'])
 shaft('SH-WTR', 'Cold-water riser', 51, 34.5, ['water'])
-shaft('SH-NET', 'Control-network riser', 53, 34.5, ['net'])
+shaft('SH-NET', 'Control-network & fire-alarm riser', 53, 34.5, ['net', 'fire'])
 
 # ---- Placement + connections
 place = {}      # path -> dict(room, x, y, role, sys)
@@ -187,6 +188,45 @@ for a in [p for p in A if A[p]['type'] == 'Water Leak Cable Sensor']:
     fl = a.split('/')[1]; z = a.split('/')[2]; rid = LEAK_ZONES[fl][z]; r = rooms[rid]
     put(a, rid, r['x'] + r['w'] / 2, r['y'] + r['h'] - 2, f'Leak detection cable under {r["name"]}', 'Water')
 
+# Fire protection and lifts (#26): the export has no UDTs for them, only loose points, so each
+# fire zone, each detection or suppression device and each lift is an Unexported Asset observed
+# through its loose folder. A zone's devices stand in its first room (the zone's fire sits there).
+FIRE_TYPES = {'SD': 'Smoke Detector', 'HD': 'Heat Detector', 'CP': 'Manual Call Point', 'AV': 'Alarm Valve', 'FP': 'Fire Pump'}
+FLOOR_CODE = {'Ground': 'G', 'Level 1': 'L1', 'Level 2': 'L2', 'Roof': 'R'}
+def zone_code(z): return {'Common Area': 'CA', 'Support Area': 'SA'}.get(z, z.replace('Zone ', 'Z'))
+def loose_points(n, path):
+    for c in n.get('tags', []):
+        p = f"{path}/{c['name']}" if path else c['name']
+        if c.get('tagType') == 'Folder':
+            yield from loose_points(c, p)
+        elif c.get('tagType') == 'AtomicTag':
+            yield p
+fire_devices = collections.defaultdict(list)
+lifts = []
+for p in loose_points(d, ''):
+    if p.startswith('Fire Protection System/'):
+        folder, dev = p.rsplit('/', 1)
+        fire_devices[folder].append(dev)
+    elif p.startswith('Lift Monitoring System/'):
+        lift = p.split('/')[1]
+        if lift not in lifts: lifts.append(lift)
+fire_zones = {}  # zone id -> (its rooms, its devices)
+for folder in sorted(fire_devices, key=nat):
+    _, fl, z = folder.split('/')
+    zrooms = [r for r in rooms.values() if r['floor'] == fl and r['fire'] == z]
+    assert zrooms, folder
+    r = zrooms[0]; code = f'{FLOOR_CODE[fl]}-{zone_code(z)}'
+    ghost(f'~FZ-{code}', f'Fire zone {fl} {z}', 'Fire Zone', [folder])
+    put(f'~FZ-{code}', r['id'], r['x'] + 1.5, r['y'] + 1.5, f'Fire zone {z} on {fl}: the fire panel zone its detectors report into', 'Life Safety')
+    fire_zones[f'~FZ-{code}'] = ([r['id'] for r in zrooms], [f'~{code}-{dev}' for dev in sorted(fire_devices[folder], key=nat)])
+    for i, dev in enumerate(sorted(fire_devices[folder], key=nat)):
+        ghost(f'~{code}-{dev}', f'{fl} {z} {dev}', FIRE_TYPES[dev[:2]], [folder])
+        put(f'~{code}-{dev}', r['id'], r['x'] + 3 + i * 1.5, r['y'] + 1.5, f'{FIRE_TYPES[dev[:2]]} {dev} of fire zone {z} on {fl}', 'Life Safety')
+for i, lift in enumerate(sorted(lifts, key=nat)):
+    n = lift.split()[-1]
+    ghost(f'~LIFT-{n}', lift, 'Lift', [f'Lift Monitoring System/{lift}'])
+    put(f'~LIFT-{n}', 'G-CORE', 46 + i * 3, 28, f'{lift} in the central core, serving Ground to Roof', 'Life Safety')
+
 # Electrical
 for i in range(1, 5):
     a = f'Meter/SPPA Incomer {i}'; side = 'A' if i <= 2 else 'B'
@@ -261,7 +301,7 @@ for n, desc in SUB.items():
     put(a, rid, 4 + (len([p for p in place if place[p]['room'] == rid and p.startswith('Meter/Meter')]) % 10) * 3.8, (51 if rid == 'L2-SUP' else 45) + (len([p for p in place if place[p]['room'] == rid and p.startswith('Meter/Meter')]) // 10) * 3.5, f'Sub-meter: {desc}', 'Electrical')
     link('power', mcc, a)
 # Load side (rev 0.3, A16): each sub-meter and lighting board feeds the equipment and rooms it names.
-# Meter14 (lifts) and Meter16 (genset auxiliaries) feed nothing in the design: gensets are sources, so
+# Meter16 (genset auxiliaries) feeds nothing in the design (Meter14 feeds the lifts from rev 0.5): gensets are sources, so
 # wiring their auxiliaries back to them would loop the power graph.
 LOADS = {1: [f'Cooling Towers Plant/R_P1_CT{c}' for c in range(1, 6)], 2: [f'Cooling Towers Plant/R_P1_CT{c}' for c in range(6, 11)],
          3: [f'Cooling Towers Plant/R_P2_CT{c}' for c in range(1, 6)], 4: [f'Cooling Towers Plant/R_P2_CT{c}' for c in range(6, 11)],
@@ -340,7 +380,25 @@ link('net', 'Network Topology/MAIN CORE SWITCH A', 'Network Topology/MAIN CORE S
 for s in ('MAIN CORE SWITCH A', 'MAIN CORE SWITCH B', 'SERVER DISTRIBUTION SWITCH A', 'SERVER DISTRIBUTION SWITCH B'):
     a = f'Network Switches/{s}'
     put(a, 'L1-SUP', place[f'Network Topology/{s}']['x'], place[f'Network Topology/{s}']['y'] + 1.2, 'Same physical switch as Network Topology entry — port-level view (48 ports)', 'Network')
-GATEWAY_DOMAINS = {'GATEWAY A': ['Cooling', 'Airside', 'Water'], 'GATEWAY B': ['Electrical', 'Environment']}
+# Fire alarm and life-safety interlocks (rev 0.5, A18): each fire zone reports its detectors,
+# call points and alarm valves, holds its rooms, stops the PAHUs supplying air into them and
+# recalls the lifts; a flowing alarm valve starts the fire pumps. Lifts hang off Meter14 and the
+# fire pumps off the essential-services board DB_24.
+LIFTS = sorted((u for u in unexported if unexported[u]['type'] == 'Lift'), key=nat)
+FIRE_PUMPS = [u for u in unexported if unexported[u]['type'] == 'Fire Pump']
+for zid, (zrooms, devices) in fire_zones.items():
+    for dev in devices:
+        if A[dev]['type'] != 'Fire Pump': link('fire', zid, dev, 'detection')
+    for rid in zrooms: link('fire', zid, rid, 'fire zone')
+    for pahu in sorted({e['a'] for e in edges if e['kind'] == 'air' and e['b'] in zrooms and A[e['a']]['type'] == 'PAHU'}, key=nat):
+        link('fire', zid, pahu, 'fire shutdown')
+    for lift in LIFTS: link('fire', zid, lift, 'fire recall')
+    for dev in devices:
+        if A[dev]['type'] == 'Alarm Valve':
+            for pump in FIRE_PUMPS: link('fire', dev, pump, 'pump start')
+for lift in LIFTS: link('power', 'Meter/Meter14', lift)
+for pump in FIRE_PUMPS: link('power', 'Meter/Level 1_DB_24', pump, 'fire pump')
+GATEWAY_DOMAINS = {'GATEWAY A': ['Cooling', 'Airside', 'Water'], 'GATEWAY B': ['Electrical', 'Environment', 'Life Safety']}
 
 # Demo Rack — standalone, not on the site
 for a in sorted([p for p in A if p.startswith('DemoRack/')], key=nat):
@@ -407,9 +465,10 @@ reviews = [
  dict(id='A15', area='Site', title='Service shafts', text='Rev 0.2. Five risers beside the lift core, Ground to Roof: electrical (power), chilled & condenser water, supply-air duct, cold water, control network. Every connection that changes floor runs up its discipline\'s shaft. Diesel stays on the Ground floor and needs none.'),
  dict(id='A16', area='Electrical', title='Load side of the power graph', text='Rev 0.3. Every consumer hangs off exactly one board or sub-meter, so each meter reads what its authored loads draw. Meter1–4 feed the five cells of Tower Groups CT-001–004, Meter5–7 the chiller pumps, Meter8–9 the makeup pumps of tower plants P1 and P2, Meter10–12 the roof, Level 1 and ground air units (CCU-005–008 on Meter10, CCU-001–004 on Meter11), Meter13 the CDUs, Meter15 the diesel tanks\' fuel pumps, Meter18 the transfer, booster and AC makeup pumps. Lighting: MSB A_6 lights the Ground rooms, DB_22 DH01–04, Meter17 the other Level 1 rooms, MSB B_14 Level 2 and the roof plant rooms, and Meter19 the outdoor areas and security. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads; their draw is a stand-in on the meter. The three-phase sub-meters Meter14, 17 and 19 hang off the essential-services board DB_24, not the single-phase lighting board DB_22.'),
  dict(id='A17', area='Airside', title='Ceiling cooling units serve their hall', text='Rev 0.4. Each hall\'s ceiling cooling units (CCU-001–008) supply air to that hall, so their cooling reaches its heat balance like the other units\'. The CDUs\' air connection to DH08 carries no air: they remove the liquid-cooled share of its IT Load directly.'),
+ dict(id='A18', area='Life safety', title='Fire zones, fire devices and lifts', text='Rev 0.5 (#26). The Fire Protection System and Lift Monitoring System folders hold loose points with no UDT, so each fire zone (~FZ-<floor>-<zone>), each device in it (~<floor>-<zone>-SD1 etc.: smoke and heat detectors, call points, alarm valves, fire pumps) and each lift (~LIFT-1–3) is an Unexported Asset observed through its folder. A zone stands in its first room (Ground Zone 1 in the HV intake, Common Areas in the common area, Roof Support Area on the AHU deck) and a fire in it heats that room. Fire connections (a new kind, up the control-network & fire-alarm riser) carry every relation the simulation uses: each zone → its detectors, call points and alarm valves (detection), its rooms (fire zone), the PAHUs supplying air into them (fire shutdown) and Lifts 1–3 (fire recall); each alarm valve → the four fire pumps (pump start). Meter14 now feeds the lifts and the essential-services board DB_24 the fire pumps, so their draw follows their state and they stop without supply. They report through GATEWAY B (Life Safety).'),
 ]
 
-out = dict(version='0.4', date='2026-09-24', floors=FLOORS, rooms=list(rooms.values()), shafts=shafts,
+out = dict(version='0.5', date='2026-09-24', floors=FLOORS, rooms=list(rooms.values()), shafts=shafts,
            assets=[dict(path=p, type=A[p]['type'], unexported=A[p].get('unexported', False), **place[p]) for p in sorted(A, key=nat)],
            edges=edges, unexported=list(unexported.values()), views=views, fire=fire, leak=LEAK_ZONES,
            gateways=GATEWAY_DOMAINS, basis=basis, reviews=reviews,

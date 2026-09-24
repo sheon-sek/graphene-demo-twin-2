@@ -69,6 +69,11 @@ TARGET = {
     "CW Roof Tank": "Cold Water and Sanitary System/R_T1",
     "Makeup Water Pump": "Cooling Towers Plant/R_P1_P1",
     "Water Leak Cable Sensor": "Water Leak Detection System/Level 1/2A",
+    "Fire Zone": "~FZ-L1-Z2",  # DH02
+    "Smoke Detector": "~L1-Z2-SD1",
+    "Heat Detector": "~L1-Z1-HD1",
+    "Manual Call Point": "~L1-Z4-CP1",
+    "Lift": "~LIFT-1",
 }
 TARGET_OF_FAULT = {"ground_valve.stuck": "Cold Water and Sanitary System/G_V2"}
 """Where a fault's own targets exclude its type's usual one."""
