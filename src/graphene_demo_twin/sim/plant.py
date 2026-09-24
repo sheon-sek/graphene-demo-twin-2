@@ -29,7 +29,8 @@ are how the equipment responded.
 Physical Constraints the plant reads (the `faults` catalog): on a chiller
 `constraint.trip`, `constraint.compressor_degradation` and `constraint.condenser_fouling`;
 on a pump `constraint.trip` and `constraint.bearing_wear`; on a tower cell
-`constraint.fan_loss` and `constraint.fill_fouling`; on a valve `constraint.stuck`. Controller
+`constraint.fan_loss`, `constraint.group_fan_loss` (every cell of its Tower Group) and
+`constraint.fill_fouling`; on a valve `constraint.stuck`. Controller
 faults: `controller.hand_mode` on a chiller (its selector left in hand and on) and
 `controller.gain_factor` on the secondary pump (a mistuned DP PID). A chiller's
 `observation.drift_c_per_h` corrupts only its leaving-water sensor (`chws_read_c`).
@@ -116,6 +117,11 @@ RECHARGE_START_K, RECHARGE_STOP_K = 0.3, 0.02
 """How far above the supply a standby tank may warm on average before it is recharged, and
 how close to it recharging brings its warmest layer."""
 TANK_ALARM_K = 3.0
+FAN_TRIP_LOSS = 0.9
+"""Airflow a tower cell's fan may lose before it trips."""
+PLANT_ROOM_C, DEAD_LEG_TAU_S = 26.0, 600.0
+"""A buffer tank's outlet sensor sits in its outlet pipe: with no flow through the tank the
+water round it stands, and warms toward the plant room with this time constant."""
 TANK_PRESSURE_KPA, PRIMARY_HEAD_KPA = 150.0, 120.0
 
 CELL_KW, CELL_UA = 1000.0, 1000.0 / 7.5
@@ -440,6 +446,7 @@ class ChillerPlantDomain:
                 states[tank] = {
                     **{f"t{k}": CHWS_SP_C for k in range(1, LAYERS + 1)},
                     "in_c": CHWS_SP_C,
+                    "out_c": CHWS_SP_C,
                     "flow_lps": 0.0,
                     "recharge_lps": 0.0,
                     "rc_cmd_pct": 0.0,
@@ -720,6 +727,9 @@ class ChillerPlantDomain:
                 flow, inlet = (inline, leaving) if inline > 0.0 else (rc, t_s)
                 if not flow:  # isolated: the charge it holds does not change
                     t["in_c"], t["flow_lps"], t["recharge_lps"], t["mode"] = inlet, 0.0, 0.0, 0
+                    # Its outlet pipe stands: the sensor there drifts toward the plant room.
+                    gain = 1.0 if settle else min(dt / DEAD_LEG_TAU_S, 1.0)
+                    t["out_c"] += (PLANT_ROOM_C - t["out_c"]) * gain
                     t["pressure_kpa"], t["alarm"] = head, False
                     continue
                 if not settle:
@@ -733,7 +743,7 @@ class ChillerPlantDomain:
                     t["t5"] = t5 + (t6 - t5) * f
                     t["t6"] = t6 + (inlet - t6) * f
                 avg = (t["t1"] + t["t2"] + t["t3"] + t["t4"] + t["t5"] + t["t6"]) / LAYERS
-                t["in_c"], t["flow_lps"], t["recharge_lps"] = inlet, flow, rc
+                t["in_c"], t["out_c"], t["flow_lps"], t["recharge_lps"] = inlet, t["t1"], flow, rc
                 t["mode"] = 1 if inline > 0.0 else 2
                 t["avg_c"] = avg
                 t["pressure_kpa"] = head
@@ -800,28 +810,30 @@ class ChillerPlantDomain:
             fan_sum = fan_kw = ua = 0.0
             spinning = False
             if not flowing and not p[k["fan_pct"]]:
-                # A standing group: its fans stay stopped, and only their supply can change.
+                # A standing group: its fans stay stopped, and only their supply and their
+                # fan trips (held while the fault that caused them acts) can change.
                 for cell in leg.cells:
                     s = a[cell]
                     volts = CELL_VOLTS if live(cell) else 0.0
-                    if s["volts"] != volts or s["trip"]:
-                        s["volts"], s["trip"] = volts, False
+                    trip = _fan_loss(a, leg, cell) >= FAN_TRIP_LOSS
+                    if s["volts"] != volts or s["trip"] != trip:
+                        s["volts"], s["trip"] = volts, trip
+                    fan_trips[i] = fan_trips[i] or trip
                 cells = ()
             else:
                 cells = leg.cells
             for cell in cells:
                 s = a[cell]
                 powered_cell = live(cell)
-                # A basin at its low-level trip (`sim.water`) stops the fan like a fan fault.
-                loss = 1.0 if s.get("basin_low") else s.get("constraint.fan_loss", 0.0)
+                loss = _fan_loss(a, leg, cell)
                 if not settle:
-                    if powered_cell and loss < 0.9 and cmd > 0.0:
+                    if powered_cell and loss < FAN_TRIP_LOSS and cmd > 0.0:
                         s["fan_pct"] += min(max(cmd - s["fan_pct"], -step), step)
                     else:
                         s["fan_pct"] = 0.0
                 fan = s["fan_pct"]
                 s["running"] = fan > 0.0
-                s["trip"] = loss >= 0.9 and flowing
+                s["trip"] = loss >= FAN_TRIP_LOSS
                 fan_trips[i] = fan_trips[i] or s["trip"]
                 s["power_kw"] = FAN_KW * (fan / 100.0) ** 3 if powered_cell else 0.0
                 s["volts"] = CELL_VOLTS if powered_cell else 0.0
@@ -954,10 +966,26 @@ def _tower_ua(a: dict, leg: Leg, fan_pct: float | None) -> float:
     for cell in leg.cells:
         s = a[cell]
         speed = (s["fan_pct"] if fan_pct is None else fan_pct) / 100.0
-        speed *= 1.0 - s.get("constraint.fan_loss", 0.0)
+        speed *= 1.0 - _fan_loss(a, leg, cell)
         air = NATURAL_DRAFT + (1.0 - NATURAL_DRAFT) * speed
         ua += CELL_UA * air**0.8 * (1.0 - 0.5 * s.get("constraint.fill_fouling", 0.0))
     return ua
+
+
+def _fan_loss(a: dict, leg: Leg, cell: str) -> float:
+    """The airflow a cell's fan has lost: to its own fault, to its Tower Group's fan supply
+    failing, or all of it while its basin is at the low-level trip (`sim.water`)."""
+    s = a[cell]
+    if s.get("basin_low"):
+        return 1.0
+    group = max(a[c].get("constraint.group_fan_loss", 0.0) for c in leg.cells)
+    return max(s.get("constraint.fan_loss", 0.0), group)
+
+
+def _tower_failed(a: dict, leg: Leg) -> bool:
+    """Whether every cell of the leg's Tower Group has lost its fan: the leg cannot reject
+    its chiller's heat, so the sequencer may not start it."""
+    return all(_fan_loss(a, leg, cell) >= FAN_TRIP_LOSS for cell in leg.cells)
 
 
 _LIVE: AssetState = {}
@@ -1115,12 +1143,14 @@ def _priority(layout: Layout, lead: str) -> list[str]:
 
 def _available(state: WorldState, design: PlantDesign, leg: Leg) -> bool:
     """Whether the sequencer may run this chiller: in auto, enabled, not tripped, and its
-    leg able to run: the chiller and both its pumps supplied and untripped, and none of its
-    valves stuck short of open."""
+    leg able to run: the chiller and both its pumps supplied and untripped, none of its
+    valves stuck short of open, and (to start) a fan left in its Tower Group."""
     a = state.assets
     c = a[leg.chiller]
     if hand(c) or not c["enabled"] or c["trip"]:
         return False
+    if _tower_failed(a, leg) and not c["running"]:
+        return False  # one already running rides on until its own protection trips it
     flags = _supply_flags(design)
     for node in (leg.chiller, leg.chw_pump, leg.cw_pump):
         flag = flags[node]
