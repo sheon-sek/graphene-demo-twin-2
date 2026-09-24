@@ -13,7 +13,7 @@ seed and Event Log always replay the same trajectory.
 ## Quick start
 
 ```sh
-uv venv .venv && uv pip install -e '.[dev]'
+uv sync --extra dev                  # creates .venv and installs the graphene-twin CLI
 (cd apps/web && pnpm install && pnpm build)      # optional: the Operator Console
 .venv/bin/graphene-twin serve                    # http://127.0.0.1:8080, opc.tcp://127.0.0.1:4840/graphene/twin
 ```
