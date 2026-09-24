@@ -1,10 +1,12 @@
 import type {
   CommandInfo,
+  EventLogDoc,
   FaultParams,
   FaultPreview,
   FaultSpec,
   LoggedEvent,
   PlantDesign,
+  PlayResult,
   PointInfo,
   Value,
 } from './types';
@@ -71,4 +73,11 @@ export const api = {
     post<LoggedEvent>('/api/commands', { target, command, value }),
   events: () => get<{ time: number; events: LoggedEvent[] }>('/api/events'),
   reset: () => post<{ epoch: number }>('/api/reset', { confirm: true }),
+  goldenDemo: () => get<EventLogDoc & { durationS: number }>('/api/golden-demo'),
+  /** Reset the Live World and play the Golden Demo from steady state. */
+  playGoldenDemo: () => post<PlayResult>('/api/golden-demo/play', { reset: true, confirm: true }),
+  exportEvents: () => get<EventLogDoc>('/api/events/export'),
+  /** Reset the Live World and replay an exported Event Log from steady state. */
+  importEvents: (log: EventLogDoc) =>
+    post<PlayResult>('/api/events/import', { log, reset: true, confirm: true }),
 };

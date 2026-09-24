@@ -27,7 +27,7 @@ TANK_POINTS: dict[str, Point] = {
 }
 VALVE_POINTS: dict[str, Point] = {"On_Off": lambda s: int(bool(s["open"]))}
 PUMP_POINTS: dict[str, Point] = {
-    "Auto_Manual": lambda s: 1,
+    "Auto_Manual": lambda s: 1 if s["mode"] == "auto" else 0,
     "HasAlarm": "has_alarm",
     "Incoming Power Status": "powered",
     "On_Off": _on,

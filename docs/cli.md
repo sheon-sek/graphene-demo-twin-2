@@ -43,6 +43,10 @@ Every read comes from the latest published frame, which is one Live World step. 
 | `GET` | `/api/plant-design` | The Plant Design graph: floors, rooms, service shafts, placed assets, Unexported Assets and connections. |
 | `GET` | `/api/events` | The Event Log. |
 | `POST` | `/api/events` | Log an operator action `{kind, target, params}` at the current sim time. A fault action or Operator Command is checked exactly as its own endpoint checks it (`fault.inject` params are normalized the same way). Returns 201, 409 if a fault is already active (inject) or not active (clear), or 422 if no domain accepts it. |
+| `GET` | `/api/events/export` | The Event Log as an Event Log document (`graphene-demo-twin/event-log` v1): the seed, the sim time the world was last built from (`start`), and every event at its `offset` from then. |
+| `POST` | `/api/events/import` | Play an Event Log document `{log, reset?, confirm?}` against the Live World: each event is logged at its offset from now. With `reset` (the default, which needs `"confirm": true`) the world is first rebuilt from its initial state. Every event, and the story as a whole, is checked before any is logged. Returns 201 with `start` and the logged events, 409 on a fault conflict, or 422 if the document or any event is rejected. |
+| `GET` | `/api/golden-demo` | The Golden Demo: a pre-authored Event Log document with a title, description and a note on every step, plus `durationS`. |
+| `POST` | `/api/golden-demo/play` | Play the Golden Demo against the Live World, as `/api/events/import` plays a document: `{reset?, confirm?}`. |
 | `GET` | `/api/faults/catalog` | The fault catalog: id, name, asset type, category, mechanism, the connection kinds its effect spreads along (`spreadsAlong`, the causal path), driven variable, span, unit, description and default severity. Filter with `type=`. |
 | `GET` | `/api/faults` | The active faults in injection order: target, fault, `spreadsAlong`, severity, current level, `since`, ramp and auto-clear time (`until`). |
 | `POST` | `/api/faults` | Inject `{target, fault, params}` on exactly `target`. `params` is `{severity?, ramp_min?, auto_clear_min?}`: severity in (0, 1], default 1; `ramp_min` 0 (default) is a step onset; `auto_clear_min` null (default) acts until cleared. Logs `fault.inject` and returns 201, 409 if the fault is already active there, or 422 if it does not apply to that asset. |
@@ -51,7 +55,7 @@ Every read comes from the latest published frame, which is one Live World step. 
 | `GET` | `/api/commands/{path}` | The Operator Commands an asset takes, with their current values. |
 | `POST` | `/api/commands` | Give an Operator Command `{target, command, value}`. Logs `command` and returns 201, or 422 if the asset cannot take it. |
 | `POST` | `/api/reset` | Reset. Requires `{"confirm": true}`. It discards the Event Log and every fork, and starts a new epoch. |
-| `GET` | `/api/coverage` | Coverage counts: `total`, `counts` by source (`physics`, `plant_view`, `fallback`) and `debt` (fallbacks outside Support Assets and static metadata). |
+| `GET` | `/api/coverage` | Coverage counts: `total`, `counts` by source (`physics`, `plant_view`, `fallback`) and `debt` (fallbacks outside Support Assets and static metadata; zero since P5, which the zero-fallback audit enforces). |
 | `GET` | `/api/coverage/points` | The coverage report, one entry per point, with its source class and whether it is an alarm bit (`alarmBit`). Filter with `source=` or `debt=`. |
 | `GET` | `/api/forks` | The What-if Forks held, oldest first (at most 8; creating a ninth drops the oldest). |
 | `POST` | `/api/forks` | Fork the Live World as it is now. Returns 201. |

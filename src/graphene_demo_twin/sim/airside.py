@@ -30,7 +30,14 @@ import math
 from dataclasses import dataclass
 
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
-from graphene_demo_twin.sim.commands import CommandSpec, command_problem
+from graphene_demo_twin.sim.commands import (
+    HAND_AUTO,
+    HAND_AUTO_STATE,
+    CommandSpec,
+    apply_command,
+    command_problem,
+    selected_run,
+)
 from graphene_demo_twin.sim.electrical import network
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
@@ -58,6 +65,8 @@ from graphene_demo_twin.sim.thermal import (
 from graphene_demo_twin.sim.weather import enthalpy_kj_per_kg, site_air
 
 CCU_TYPE = "Ceiling Cooling Units"
+HAND_AUTO_TYPES = frozenset({FRESH_AIR_TYPE, "FCU", "FWU"})
+"""Chilled-water air units whose selector the operator can put in hand."""
 CHW_UNIT_TYPES = frozenset({FRESH_AIR_TYPE, "FCU", "FWU", CCU_TYPE, LIQUID_TYPE})
 COOLING_BLOCK_TYPE = "Cooling Block"
 
@@ -278,6 +287,7 @@ class ChilledWaterUnitDomain:
     the site loads and the thermal zones."""
 
     settling_s = int(6 * VALVE_TAU_S)
+    commands = {t: HAND_AUTO for t in HAND_AUTO_TYPES}
 
     def initial(self, ctx: StepContext) -> dict[str, AssetState]:
         states: dict[str, AssetState] = {}
@@ -299,6 +309,7 @@ class ChilledWaterUnitDomain:
                 s |= {"it_kwh": 0.0, "facility_kwh": 0.0}
                 s |= {f"pump{k}_kwh": 0.0 for k in range(1, CDU_PUMPS + 1)}
             else:
+                s |= HAND_AUTO_STATE
                 s |= {
                     "airflow": 1.0,
                     "setpoint_c": UNIT_SUPPLY_SP_C,
@@ -335,10 +346,16 @@ class ChilledWaterUnitDomain:
         self._update(state, ctx, settle=True)
 
     def handles(self, event: Event, design: PlantDesign) -> bool:
-        return False
+        placed = design.assets.get(event.target)
+        return (
+            event.kind == "command"
+            and placed is not None
+            and placed.type_id in HAND_AUTO_TYPES
+            and command_problem(HAND_AUTO, event.params) is None
+        )
 
     def apply(self, event: Event, state: WorldState) -> None:
-        raise AssertionError("no events")
+        apply_command(HAND_AUTO, event.params, state.assets[event.target])
 
     def step(self, state: WorldState, ctx: StepContext) -> None:
         self._update(state, ctx, settle=False)
@@ -391,7 +408,8 @@ class ChilledWaterUnitDomain:
                 tripped = s.get("constraint.trip", 0.0) >= 0.5
                 fan_loss = s.get("constraint.fan_loss", 0.0)
                 blockage = s.get("constraint.filter_blockage", 0.0)
-            running = live and not fire and not tripped
+            # The fire interlock is hard-wired: it stops a unit in hand as well.
+            running = live and not fire and not tripped and selected_run(s, True)
             airflow = (1.0 - fan_loss) * (1.0 - blockage) if running else 0.0
             temp = a[u.room]["temp_c"]
             coil = (s["chws_c"] if s["flow_lps"] > 0.0 else chws) + COIL_APPROACH_K

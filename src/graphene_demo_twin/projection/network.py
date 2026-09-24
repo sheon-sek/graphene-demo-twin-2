@@ -21,6 +21,8 @@ from graphene_demo_twin.sim.network import (
     Network,
     Port,
     network,
+    patched_key,
+    port_drops_key,
     role_of,
 )
 
@@ -40,6 +42,10 @@ DEVICE_POINTS = {
     "Comm": "comm_lost",
     "Status": "status",
 }
+PATCHED_POE_W = 7.0
+"""PoE draw of the temporary access point an operator patches into a spare port."""
+PATCHED_IN, PATCHED_OUT = 3.0, 8.0
+"""Utilization % of a patched spare port, into and out of the switch."""
 KPI_VIEWS = frozenset({"Dashboard", "Other"})
 """KPI views the supervisor itself computes; they follow the SCADA server pair's quality."""
 GATEWAY_STATUS = {"Other/Gateway 1 Status": "GATEWAY A", "Other/Gateway 2 Status": "GATEWAY B"}
@@ -71,10 +77,10 @@ def network_bindings(asset_model: AssetModel, design: PlantDesign) -> list[Bindi
         ports = net.ports[d]
         bindings.append(Binding(f"{view}/Port Count", _const(len(ports))))
         for label, display in (("Ports Up", 1), ("Ports Down", 2), ("Ports Off", 0)):
-            bindings.append(Binding(f"{view}/{label}", _count(net, d, ports, display)))
+            bindings.append(Binding(f"{view}/{label}", _count(net, view, d, ports, display)))
         for port in ports:
             at = f"{view}/Ports/Port {port.number:02d}"
-            for name, read in _port(net, d, port).items():
+            for name, read in _port(net, view, d, port).items():
                 bindings.append(Binding(f"{at}/{name}", read))
     for path, gw in GATEWAY_STATUS.items():
         if path in asset_model.points:
@@ -191,6 +197,14 @@ def _field_comm(node: str, gateway: str) -> Callable[[WorldState], Quality]:
     return read
 
 
+def _errors(switch: str, peer: str, flaps: bool) -> Callable[[WorldState], Scalar]:
+    """A port's error counter: one per drop of its link, from its peer failing or, on the
+    flapping port, from the flap."""
+    if flaps:
+        return lambda s: s.assets[peer]["drops"] + s.assets[switch]["flap_errors"]
+    return lambda s: s.assets[peer]["drops"]
+
+
 def _const(value: Scalar) -> Callable[[WorldState], Scalar]:
     return lambda state: value
 
@@ -203,12 +217,15 @@ def _uptime_days(node: str) -> Callable[[WorldState], Scalar]:
     return read
 
 
-def _link_up(state: WorldState, switch: str, port: Port, flappers: tuple[str, ...]) -> bool:
+def _link_up(
+    state: WorldState, view: str, switch: str, port: Port, flappers: tuple[str, ...]
+) -> bool:
     """One state per physical link, the same from both ends: down with either device, or
-    while a switch whose flapping port it is has it dropped."""
-    if port.peer is None:
-        return False
+    while a switch whose flapping port it is has it dropped. A spare port's link is up while
+    a device is patched into it and the switch is up."""
     a = state.assets
+    if port.peer is None:
+        return a[view][patched_key(port.number)] and a[switch]["up"]
     if not (a[switch]["up"] and a[port.peer]["up"]):
         return False
     return not any(a[f]["flap_down"] for f in flappers)
@@ -222,43 +239,58 @@ def _flappers(net: Network, switch: str, port: Port) -> tuple[str, ...]:
     return tuple(sw for sw, flap in net.flap_link.items() if frozenset(flap) == link)
 
 
-def _display(state: WorldState, switch: str, port: Port, flappers: tuple[str, ...]) -> int:
+def _display(
+    state: WorldState, view: str, switch: str, port: Port, flappers: tuple[str, ...]
+) -> int:
     """The UDT's Display Status: 0 Off (admin down), 1 Up, 2 Down."""
-    if port.peer is None:
+    if port.peer is None and not state.assets[view][patched_key(port.number)]:
         return 0
-    return 1 if _link_up(state, switch, port, flappers) else 2
+    return 1 if _link_up(state, view, switch, port, flappers) else 2
 
 
 def _count(
-    net: Network, switch: str, ports: tuple[Port, ...], display: int
+    net: Network, view: str, switch: str, ports: tuple[Port, ...], display: int
 ) -> Callable[[WorldState], Scalar]:
     flappers = [_flappers(net, switch, p) for p in ports]
     return lambda state: sum(
-        _display(state, switch, p, f) == display for p, f in zip(ports, flappers, strict=True)
+        _display(state, view, switch, p, f) == display for p, f in zip(ports, flappers, strict=True)
     )
 
 
-def _port(net: Network, switch: str, port: Port) -> dict[str, Callable[[WorldState], Scalar]]:
+def _spare_port(view: str, switch: str, port: Port) -> dict[str, Callable[[WorldState], Scalar]]:
+    """A port nothing in the Plant Design connects: admin down and empty until an operator
+    patches a temporary PoE access point into it."""
+    patched, drops = patched_key(port.number), port_drops_key(port.number)
+
+    def up(state: WorldState) -> bool:
+        return _link_up(state, view, switch, port, ())
+
+    return {
+        "Admin Status": lambda s: 1 if s.assets[view][patched] else 2,
+        "Description": _const("Spare"),
+        "Display Status": lambda s: _display(s, view, switch, port, ()),
+        "Error Count": lambda s: s.assets[view][drops],
+        "In Utilization": lambda s: PATCHED_IN if up(s) else 0.0,
+        "Link Status": lambda s: 1 if up(s) else 2,
+        "Out Utilization": lambda s: PATCHED_OUT if up(s) else 0.0,
+        "PoE Power": lambda s: PATCHED_POE_W if up(s) else 0.0,
+        "Speed": lambda s: 1_000 if up(s) else 0,
+    }
+
+
+def _port(
+    net: Network, view: str, switch: str, port: Port
+) -> dict[str, Callable[[WorldState], Scalar]]:
     peer = port.peer
     if peer is None:
-        return {
-            "Admin Status": _const(2),
-            "Description": _const("Spare"),
-            "Display Status": _const(0),
-            "Error Count": _const(0),
-            "In Utilization": _const(0.0),
-            "Link Status": _const(2),
-            "Out Utilization": _const(0.0),
-            "PoE Power": _const(0.0),
-            "Speed": _const(0),
-        }
+        return _spare_port(view, switch, port)
     role = ROLES[role_of(peer)]
     poe = 6.5 if role_of(peer) == "kvm" else 0.0
     flaps = port.number == FLAP_PORT and switch in net.flap_link
     flappers = _flappers(net, switch, port)
 
     def up(state: WorldState) -> bool:
-        return _link_up(state, switch, port, flappers)
+        return _link_up(state, view, switch, port, flappers)
 
     def load(state: WorldState) -> float:
         """How busy the link is: the peer's CPU relative to its idle, as a traffic proxy."""
@@ -267,8 +299,8 @@ def _port(net: Network, switch: str, port: Port) -> dict[str, Callable[[WorldSta
     return {
         "Admin Status": _const(1),
         "Description": _const(peer.rsplit("/", 1)[-1]),
-        "Display Status": lambda s: _display(s, switch, port, flappers),
-        "Error Count": (lambda s: s.assets[switch]["flap_errors"]) if flaps else _const(0),
+        "Display Status": lambda s: _display(s, view, switch, port, flappers),
+        "Error Count": _errors(switch, peer, flaps),
         "In Utilization": lambda s: min(role.link_in * load(s), 100.0) if up(s) else 0.0,
         "Link Status": lambda s: 1 if up(s) else 2,
         "Out Utilization": lambda s: min(role.link_out * load(s), 100.0) if up(s) else 0.0,

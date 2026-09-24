@@ -27,6 +27,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
+from graphene_demo_twin.sim.commands import CommandSpec, command_problem
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
 from graphene_demo_twin.sim.state import AssetState, WorldState
@@ -45,6 +46,9 @@ TX_TAP, TX_DROP = 0.025, 0.045
 """Off-load tap boost, and the LV voltage drop at rated load, per unit."""
 
 GENSET_KW, GENSET_KVA = 3000.0, 3750.0
+VALVE_TRAVEL_S = 30
+"""A diesel day-tank inlet valve that has not opened this long after a refill asks for it
+raises its travel time-out."""
 """Prime rating: two sets of a side carry its whole load (N+1)."""
 OVERLOAD_TRIP_S = 10
 """The genset breaker trips after this long above its rating."""
@@ -383,6 +387,13 @@ class ElectricalDomain:
 
     settling_s = 3600
     """A fully discharged battery recharges within the hour."""
+    commands = {
+        GENSET_TYPE: (
+            CommandSpec("mode", "Auto / manual", "control_mode", choices=("auto", "manual")),
+            CommandSpec("run", "Start / stop (manual)", "manual_run", kind="switch"),
+            CommandSpec("estop", "Emergency stop", "estop", kind="switch"),
+        )
+    }
 
     def initial(self, ctx: StepContext) -> dict[str, AssetState]:
         net = network(ctx.design)
@@ -435,6 +446,10 @@ class ElectricalDomain:
                 "stage": "standby",
                 "timer_s": 0,
                 "start_cmd": False,
+                "control_mode": "auto",
+                "manual_run": False,
+                "estop": False,
+                "run_cmd": False,
                 "ready": False,
                 "online": False,
                 "speed_rpm": 0.0,
@@ -466,6 +481,9 @@ class ElectricalDomain:
                 "power_kw": PLC_KW,
                 "pump_failed": False,
                 "low_day_tank": False,
+                "valve_open": True,
+                "valve_wait_s": 0,
+                "valve_timeout": False,
                 "has_alarm": False,
             }
         for room in net.ups_rooms:
@@ -477,10 +495,17 @@ class ElectricalDomain:
         self._switch(state, ctx)
 
     def handles(self, event: Event, design: PlantDesign) -> bool:
-        return False
+        placed = design.assets.get(event.target)
+        return (
+            event.kind == "command"
+            and placed is not None
+            and placed.type_id == GENSET_TYPE
+            and command_problem(self.commands[GENSET_TYPE], event.params) is None
+        )
 
     def apply(self, event: Event, state: WorldState) -> None:
-        raise AssertionError("no events")
+        spec = next(c for c in self.commands[GENSET_TYPE] if c.name == event.params["command"])
+        state.assets[event.target][spec.variable] = event.params["value"]
 
     def step(self, state: WorldState, ctx: StepContext) -> None:
         self._flow(state, ctx)
@@ -646,8 +671,16 @@ class ElectricalDomain:
             s["fuel_pumped_l"] += delivered
             s["flow_lpm"] = delivered * 60.0 / ctx.dt
             s["pump_on"], s["pump_failed"] = on, failed
+            # The day-tank inlet valve is held open by the PLC panels; without them it closes,
+            # and a refill that asks for it waits on travel that never comes.
+            s["valve_open"] = s["power_kw"] > 0.0
+            waiting = wanted and not s["valve_open"]
+            s["valve_wait_s"] = s["valve_wait_s"] + ctx.dt if waiting else 0
+            s["valve_timeout"] = s["valve_wait_s"] >= VALVE_TRAVEL_S
             s["low_day_tank"] = any(a[g]["day_l"] < 0.25 * DAY_TANK_L for g in gensets)
-            s["has_alarm"] = failed or s["low_day_tank"] or s["fuel_l"] < 0.2 * BULK_TANK_L
+            s["has_alarm"] = (
+                failed or s["low_day_tank"] or s["fuel_l"] < 0.2 * BULK_TANK_L or s["valve_timeout"]
+            )
 
     # ---- 3. Switching
 
@@ -807,9 +840,16 @@ class ElectricalDomain:
 
 
 def _genset_sequence(s: AssetState) -> None:
-    """The genset's own start/stop sequence, following the ATS Controller's start command."""
-    stage, start = s["stage"], s["start_cmd"]
+    """The genset's own start/stop sequence: in auto it follows the ATS Controller's start
+    command, in manual the operator's. The emergency stop drops it at once, with no cooldown,
+    and holds it stopped until released."""
+    auto = s["control_mode"] == "auto"
+    start = (s["start_cmd"] if auto else s["manual_run"]) and not s["estop"]
+    s["run_cmd"] = start
+    stage = s["stage"]
     fail = s.get("constraint.fail_to_start", 0.0) >= 0.5
+    if s["estop"] and stage in ("cranking", "running", "cooldown"):
+        stage, s["ready"] = "standby", False
     if stage == "standby":
         if start:
             stage, s["timer_s"] = "cranking", 0
@@ -880,7 +920,7 @@ def _engine(s: AssetState, dt: float) -> None:
     s["overload"] = s["load_pct"] > 100.0
     s["overload_s"] = s["overload_s"] + 1 if s["overload"] else 0
     s["prealarm"] = s["overload"] or s["coolant_c"] > 95.0 or s["day_l"] < 0.25 * DAY_TANK_L
-    s["general_alarm"] = s["overcrank"] or s["fuel_shutdown"] or s["overload_trip"]
+    s["general_alarm"] = s["overcrank"] or s["fuel_shutdown"] or s["overload_trip"] or s["estop"]
     s["has_alarm"] = s["general_alarm"] or s["prealarm"]
 
 

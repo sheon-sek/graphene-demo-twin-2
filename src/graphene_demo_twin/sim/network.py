@@ -14,6 +14,11 @@ gateway dies, and reboots on Clear), `quality.comm_loss` (a device stops forward
 `quality.port_flap` (on a `Network Switches/` view: its first uplink port flaps),
 `constraint.cpu_overload` (a server runs out of CPU) and `observation.clock_drift_s_per_h`
 (the NTP server's clock drifts).
+
+A port the Plant Design leaves unconnected (a spare) is admin down with nothing in it. An
+Operator Command on the switch's `Network Switches/` view patches a temporary PoE device (a
+technician's wireless access point) into a spare port, which admin-enables it; its link then
+follows the switch, and each drop of that link counts one error on the port.
 """
 
 import functools
@@ -21,6 +26,7 @@ import math
 from dataclasses import dataclass
 
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
+from graphene_demo_twin.sim.commands import COMMAND, CommandSpec, command_problem
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
 from graphene_demo_twin.sim.state import AssetState, WorldState
@@ -77,6 +83,22 @@ SCAN_CPU = 15.0
 FLAP_CPU = 25.0
 """Extra CPU a switch spends recomputing its topology while a port flaps."""
 OVERLOAD_PING_MS = 250.0
+SWITCH_TYPE = "Network Switch"
+PORT_COMMANDS: tuple[CommandSpec, ...] = (
+    CommandSpec("patch", "Patch a device into spare port", "", "number", minimum=1, maximum=PORTS),
+    CommandSpec("unpatch", "Unplug spare port", "", "number", minimum=1, maximum=PORTS),
+)
+"""Operator Commands on a `Network Switches/` view: the value is a spare port's number."""
+
+
+def patched_key(port: int) -> str:
+    """The switch view's variable that holds whether a device is patched into spare `port`."""
+    return f"port_{port:02d}_patched"
+
+
+def port_drops_key(port: int) -> str:
+    """The switch view's variable that counts the link drops on spare `port`."""
+    return f"port_{port:02d}_drops"
 
 
 def role_of(path: str) -> str:
@@ -198,6 +220,7 @@ class NetworkDomain:
     """Reachability and device health over the control network; see the module docstring."""
 
     settling_s = 0
+    commands = {SWITCH_TYPE: PORT_COMMANDS}
 
     def initial(self, ctx: StepContext) -> dict[str, AssetState]:
         net = network(ctx.design)
@@ -218,11 +241,15 @@ class NetworkDomain:
                 "clock_offset_s": 0.0,
                 "flap_down": False,
                 "flap_errors": 0,
+                "drops": 0,
             }
         for n in net.state_comm:
             state[n] = {"comm": "good"}
-        for view in net.switches:  # the port view sits in the world only to carry its fault
+        for view, d in net.switches.items():  # the port view carries its fault and patches
             state[view] = {"comm": "good"}
+            for port in spare_ports(net, d):
+                state[view][patched_key(port)] = False
+                state[view][port_drops_key(port)] = 0
         return state
 
     def complete(self, state: WorldState, ctx: StepContext) -> None:
@@ -230,10 +257,24 @@ class NetworkDomain:
         self._metrics(state, ctx, network(ctx.design), _reach(state, network(ctx.design)), True)
 
     def handles(self, event: Event, design: PlantDesign) -> bool:
-        return False
+        net = network(design)
+        switch = net.switches.get(event.target)
+        if (
+            event.kind != COMMAND
+            or switch is None
+            or command_problem(PORT_COMMANDS, event.params) is not None
+        ):
+            return False
+        port = event.params["value"]
+        return port == int(port) and int(port) in spare_ports(net, switch)
 
     def apply(self, event: Event, state: WorldState) -> None:
-        raise AssertionError("no events")
+        view = state.assets[event.target]
+        port = int(event.params["value"])
+        patch = event.params["command"] == "patch"
+        if view[patched_key(port)] and not patch:
+            view[port_drops_key(port)] += 1  # unplugging drops the link
+        view[patched_key(port)] = patch
 
     def step(self, state: WorldState, ctx: StepContext) -> None:
         """Every step: device health and, from it, what the supervisor can reach. The pass is
@@ -245,6 +286,13 @@ class NetworkDomain:
             up = s.get("quality.device_failure", 0.0) < 0.5
             if up and not s["up"]:
                 s["boot_s"] = t  # rebooted
+            elif s["up"] and not up:
+                s["drops"] += 1  # every link to it drops once, and each port counts it
+                if view := net.view_of.get(d):
+                    v = a[view]
+                    for port in spare_ports(net, d):
+                        if v[patched_key(port)]:
+                            v[port_drops_key(port)] += 1
             s["up"] = up
             drift = s.get("observation.clock_drift_s_per_h", 0.0)
             s["clock_offset_s"] = s["clock_offset_s"] + drift * ctx.dt / 3600 if drift else 0.0
@@ -324,6 +372,12 @@ class NetworkDomain:
                 and a[view].get("quality.port_flap", 0.0) > 0.0
             )
             s["status"] = 1 if q == BAD else 2 if warning else 0
+
+
+def spare_ports(net: Network, switch: str) -> tuple[int, ...]:
+    """The numbers of the Network Topology switch's ports that the Plant Design leaves
+    unconnected."""
+    return tuple(p.number for p in net.ports[switch] if p.peer is None)
 
 
 def _reach(state: WorldState, net: Network) -> dict[str, int]:

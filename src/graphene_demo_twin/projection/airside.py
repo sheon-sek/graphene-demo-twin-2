@@ -59,7 +59,7 @@ _AIR: dict[str, Point] = {
     "Supply Air Temperature": "supply_c",
     "Supply Air Relative Humidity": "supply_rh_pct",
     "On_Off": "running",
-    "Auto_Manual": lambda s: 1,
+    "Auto_Manual": lambda s: 1 if s["mode"] == "auto" else 0,
     "HasAlarm": "has_alarm",
     "System Failure_Trip": "alarm_trip",
 }

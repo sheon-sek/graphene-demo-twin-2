@@ -112,9 +112,9 @@ def test_coverage_lists_every_point_once_with_its_source(asset_model, projector)
     assert report.entries[DASH_DH03_ENERGY].source is PointSource.PLANT_VIEW
     assert report.entries["BCPM/2L1/Rack ID"].source is PointSource.FALLBACK
     assert not report.entries["BCPM/2L1/Rack ID"].debt
-    # Water (#24), life safety (#26) and support assets (#27) are covered; genset controls are not.
-    assert report.entries["Genset/Genset 1/Emergency Stop"].debt
-    assert report.debt() == sum(e.debt for e in report.entries.values()) > 0
+    # P5 (#28): no production point is left on a Compatibility Fallback.
+    assert report.entries["Genset/Genset 1/Emergency Stop"].source is PointSource.PHYSICS
+    assert report.debt() == sum(e.debt for e in report.entries.values()) == 0
 
 
 def test_placeholder_points_follow_the_hall_state(asset_model, plant_design, projector):

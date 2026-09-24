@@ -889,6 +889,56 @@ i.marker,
   color: var(--accent);
 }
 
+.bottombar .controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  max-width: 320px;
+}
+
+.bottombar .story {
+  flex: 1;
+}
+
+.story-actions,
+.story .confirming {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.story .confirming p {
+  margin: 0;
+  flex-basis: 100%;
+}
+
+.story .warn {
+  color: var(--warn);
+}
+
+.story-steps li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 8px;
+  padding: 1px 0;
+}
+
+.story-steps .note {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.story-steps li.pending,
+.timeline li.pending {
+  opacity: 0.5;
+}
+
+.story-steps li.done .at {
+  color: var(--good);
+}
+
 .bottombar .reset {
   display: flex;
   flex-direction: column;

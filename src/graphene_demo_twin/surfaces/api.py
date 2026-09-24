@@ -17,6 +17,7 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from graphene_demo_twin.event_log import EventLogDoc, EventLogError, golden_demo, parse_log
 from graphene_demo_twin.faults import (
     PREVIEW_MINUTES,
     FaultCatalog,
@@ -75,6 +76,18 @@ class CommandIn(BaseModel):
 class ResetIn(BaseModel):
     confirm: Literal[True]
     """Reset discards the Event Log, so the caller must say so."""
+
+
+class PlayIn(BaseModel):
+    reset: bool = True
+    """Rebuild the Live World first, so the story starts from steady state."""
+    confirm: bool = False
+    """A Reset discards the Event Log, so playing with one must say so."""
+
+
+class ImportIn(PlayIn):
+    log: dict[str, Any]
+    """An Event Log document, as `GET /api/events/export` gives one."""
 
 
 PathsQuery = Annotated[list[str] | None, Query()]
@@ -288,6 +301,42 @@ def create_app(twin: Twin, console_dir: Path | None = CONSOLE_DIR) -> FastAPI:
             return event_json(twin.submit(body.kind, body.target, body.params))
         except EventError as e:
             raise rejected(e) from None
+
+    def play(doc: EventLogDoc, body: PlayIn) -> dict[str, Any]:
+        if body.reset and not body.confirm:
+            raise HTTPException(422, "playing with a Reset discards the Event Log: confirm it")
+        try:
+            start, events = twin.play(doc, reset=body.reset)
+        except EventError as e:
+            raise rejected(e) from None
+        return {
+            "title": doc.title,
+            "start": start,
+            "timestamp": iso(start),
+            "durationS": doc.duration_s,
+            "events": [event_json(e) for e in events],
+        }
+
+    @app.get("/api/golden-demo")
+    def get_golden_demo() -> dict[str, Any]:
+        doc = golden_demo()
+        return {**doc.to_json(), "durationS": doc.duration_s}
+
+    @app.post("/api/golden-demo/play", status_code=status.HTTP_201_CREATED)
+    async def play_golden_demo(body: PlayIn) -> dict[str, Any]:
+        return play(golden_demo(), body)
+
+    @app.get("/api/events/export")
+    def export_events() -> dict[str, Any]:
+        return twin.export().to_json()
+
+    @app.post("/api/events/import", status_code=status.HTTP_201_CREATED)
+    async def import_events(body: ImportIn) -> dict[str, Any]:
+        try:
+            doc = parse_log(body.log)
+        except EventLogError as e:
+            raise HTTPException(422, str(e)) from None
+        return play(doc, body)
 
     @app.get("/api/faults/catalog")
     def fault_catalog(type: str | None = None) -> list[dict[str, Any]]:

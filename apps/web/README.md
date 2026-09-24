@@ -24,7 +24,8 @@ pnpm e2e        # Playwright: builds nothing; starts `serve` on dist/ and drives
 
 - The inspector's Faults tab lists the catalog for the selected asset's type. The operator sets severity, onset (step or ramp) and duration (until cleared or auto-clear), previews the fault for 15, 30 or 60 minutes in a What-if Fork (`POST /api/faults/preview`), and injects it on exactly that asset. The preview shows the affected nodes in propagation order, the alarm bits that would change and the point diffs at the end of the window.
 - The Control tab gives the asset's Operator Commands (hand/auto, start/stop, setpoints). Each one becomes an Event Log entry.
-- The bottom bar lists the active faults, each with its own Clear, the alarm bits that are set, the Event Log timeline, and Reset, which asks for confirmation in the page.
+- The bottom bar lists the active faults, each with its own Clear, the alarm bits that are set, the Event Log timeline (events logged for later seconds are dimmed until they happen), and Reset, which asks for confirmation in the page.
+- The bottom bar's Golden Demo panel loads the Golden Demo (`GET /api/golden-demo`) and plays it against the Live World after the operator confirms the Reset it makes (`POST /api/golden-demo/play`). It then follows the story, step by step, with each step's note. **Export Event Log** downloads the current log as a document (`GET /api/events/export`). **Import Event Log…** plays such a file in the same way (`POST /api/events/import`).
 - A faulted asset carries a pulsing red ring and beacon, apart from its state colour. The connections downstream of it along the Plant Design (its causal path) are drawn red, and that takes priority over the selection's upstream and downstream lighting.
 
 ## Drawing conventions

@@ -73,6 +73,10 @@ _STATIC_METADATA = _names(
     r"_RackID$",
     r"^GEM630CTL_",
     r"^Maintenance Schedule$",
+    # Configuration constants: set when the system is commissioned, not by the world.
+    r"^(Admin Status|Port Count|Staging Strategy|Minimum Flow Rate)$",
+    # An integrator's unnamed placeholder tag, with no configured source or meaning.
+    r"^New Tag$",
 )
 _ENERGY_INTEGRAL = _names(
     r"Wh_Im",
@@ -143,7 +147,7 @@ def classify(
         return SourceClass.SUPPORT
     if data_type in ("DataSet", "Document") or _STATIC_METADATA.search(name):
         return SourceClass.STATIC_METADATA
-    if path.startswith("Chiller System Control/Rotation Schedule/") and name == "Time":
+    if path.startswith("Chiller System Control/Rotation Schedule/") and name in ("Time", "Enabled"):
         return SourceClass.STATIC_METADATA
     if (type_id in _NETWORK_TYPES and name != "Temperature") or _NETWORK_STATE.search(name):
         return SourceClass.NETWORK_STATE
