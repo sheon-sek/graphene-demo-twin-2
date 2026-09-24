@@ -15,7 +15,14 @@ seed and Event Log always replay the same trajectory.
 ```sh
 uv sync --extra dev                  # creates .venv and installs the graphene-twin CLI
 (cd apps/web && pnpm install && pnpm build)      # optional: the Operator Console
-.venv/bin/graphene-twin serve                    # http://127.0.0.1:8080, opc.tcp://127.0.0.1:4840/graphene/twin
+
+# POSIX (Linux/macOS)
+source .venv/bin/activate
+graphene-twin serve                  # http://127.0.0.1:8080, opc.tcp://127.0.0.1:4840/graphene/twin
+
+# Windows (PowerShell)
+.venv\Scripts\activate
+graphene-twin serve                  # same endpoints
 ```
 
 Open http://127.0.0.1:8080. To see a multi-domain incident, press **Play Golden Demo…** in the
@@ -46,11 +53,13 @@ curl -X POST localhost:8080/api/events/import -H 'content-type: application/json
 ## Development
 
 ```sh
-.venv/bin/python -m pytest              # fast suite (slow tests excluded; CI runs them too)
-.venv/bin/python -m pytest -m 'slow or not slow'
-.venv/bin/ruff check . && .venv/bin/ruff format --check .
-.venv/bin/python tools/benchmark.py     # measure the performance targets
-.venv/bin/python -m graphene_demo_twin.faults.reference > docs/fault-catalog.md
+source .venv/bin/activate               # Windows PowerShell: .venv\Scripts\activate
+
+python -m pytest                        # fast suite (slow tests excluded; CI runs them too)
+python -m pytest -m 'slow or not slow'
+ruff check . && ruff format --check .
+python tools/benchmark.py               # measure the performance targets
+python -m graphene_demo_twin.faults.reference > docs/fault-catalog.md
 (cd apps/web && pnpm test && pnpm build && pnpm e2e)
 ```
 

@@ -8,6 +8,7 @@ import socket
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 
@@ -107,8 +108,20 @@ async def serve(
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
+    # Unix event loops support add_signal_handler; the Windows Proactor loop raises
+    # NotImplementedError, so fall back to plain signal handlers (main thread only).
+    signal_handlers: list[tuple[int, Any]] = []
+
+    def register(sig: int) -> None:
+        try:
+            loop.add_signal_handler(sig, stop.set)
+            signal_handlers.append((sig, None))
+        except (NotImplementedError, AttributeError):
+            previous = signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
+            signal_handlers.append((sig, previous))
+
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+        register(sig)
     log.warning(
         "Graphene Demo Twin: API and console on http://%s:%d, OPC UA on %s (seed %d)",
         host,
@@ -119,6 +132,9 @@ async def serve(
     try:
         await twin.run(stop)
     finally:
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.remove_signal_handler(sig)
+        for sig, previous in signal_handlers:
+            if previous is None:
+                loop.remove_signal_handler(sig)
+            else:
+                signal.signal(sig, previous)
         await services.stop()
