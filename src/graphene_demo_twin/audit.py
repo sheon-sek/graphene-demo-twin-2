@@ -13,14 +13,16 @@ cannot respond to any change in the world. The check is structural. It looks at 
 execution path, so a binding that reads the state and then ignores it would pass. Tests
 that follow each fault's causal chain cover that case.
 
-Exactly one rule exempts production points, and the report counts every point it exempts.
-A switch port with no peer in the Plant Design (a spare) reports link down, no traffic and
-no errors. It keeps doing so whatever happens, because nothing is plugged into it. When the
-switch fails, those points still respond through their quality.
+A group binding drives many points from one read, so the variables it reads say nothing
+about any one of its points. The audit therefore perturbs each variable the group reads,
+one at a time, and records which of the group's points change: a point no perturbation
+moves is a constant, and a measured point only setpoints move is a Setpoint Mirror.
+
+No production point is exempt.
 """
 
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
@@ -30,7 +32,6 @@ from graphene_demo_twin.asset_model import AssetModel, SourceClass
 from graphene_demo_twin.plant_design import PlantDesign
 from graphene_demo_twin.projection import PointSource, Projector
 from graphene_demo_twin.sim import WorldState
-from graphene_demo_twin.sim.network import network
 
 
 class DeadEnd(StrEnum):
@@ -52,7 +53,9 @@ MEASURED = frozenset(
     }
 )
 """Source classes whose value must come from physics, never a setpoint alone."""
-SPARE_PORT = "spare switch port: nothing is connected in the Plant Design"
+UNMATCHED = "\x00unmatched"
+"""A text value no reader expects: it falls through every comparison, so the reader shows
+each value it would compare a text variable against."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,8 +64,6 @@ class AuditReport:
     """Production points checked."""
     dead_ends: Mapping[str, DeadEnd]
     """Every production point that is a Causal Dead End, and why."""
-    exempt: Mapping[str, str]
-    """Production points the one exemption rule excuses, with the reason."""
 
     @property
     def ok(self) -> bool:
@@ -78,19 +79,22 @@ class AuditReport:
         lines = [
             f"production points: {self.production}",
             f"causal dead ends: {len(self.dead_ends)} {self.counts()}",
-            f"exempt ({SPARE_PORT}): {len(self.exempt)}",
         ]
         lines += [f"  {d.value}: {p}" for p, d in sorted(self.dead_ends.items())]
         return "\n".join(lines)
 
 
 def audit(
-    asset_model: AssetModel, design: PlantDesign, projector: Projector, state: WorldState
+    asset_model: AssetModel,
+    design: PlantDesign,
+    projector: Projector,
+    states: WorldState | Sequence[WorldState],
 ) -> AuditReport:
-    """Audit every production point of `projector` against `state`, typically the steady
-    initial state of the world."""
+    """Audit every production point of `projector` against `states`, typically the steady
+    initial state of the world and a stressed one. A point is a constant only if it reads
+    nothing (a group's point: moves under no perturbation) in every state."""
+    states = [states] if isinstance(states, WorldState) else list(states)
     coverage = projector.coverage
-    exempt = {p: SPARE_PORT for p in spare_port_paths(asset_model, design)}
     production = {
         path
         for path, e in coverage.entries.items()
@@ -98,41 +102,129 @@ def audit(
     }
     dead: dict[str, DeadEnd] = {}
     seen: set[tuple[str, str]] = set()
-    probe = _Probe(state, seen)
-    for path in production - exempt.keys():
+    for path in production:
         if coverage.entries[path].source is PointSource.FALLBACK:
             dead[path] = DeadEnd.FALLBACK
     for paths, read in projector.readers():
-        mine = [p for p in paths if p in production and p not in exempt]
+        mine = [p for p in paths if p in production]
         if not mine:
             continue
-        seen.clear()
-        read(probe)
-        reads = set(seen)
+        moved_by: dict[str, set[tuple[str, str]]] = {p: set() for p in paths}
+        for state in states:
+            seen.clear()
+            read(_Probe(state, seen))
+            if len(paths) == 1:
+                moved_by[paths[0]] |= seen
+            else:
+                for path, moved in _moved_by(state, paths, read, set(seen)).items():
+                    moved_by[path] |= moved
         for path in mine:
-            if not reads:
+            if not moved_by[path]:
                 dead[path] = DeadEnd.CONSTANT
             elif asset_model.point(path).source_class in MEASURED and all(
-                SETPOINT_VARIABLE.search(key) for _, key in reads
+                SETPOINT_VARIABLE.search(key) for _, key in moved_by[path]
             ):
                 dead[path] = DeadEnd.SETPOINT_MIRROR
-    return AuditReport(
-        len(production),
-        MappingProxyType(dict(sorted(dead.items()))),
-        MappingProxyType(exempt),
-    )
+    return AuditReport(len(production), MappingProxyType(dict(sorted(dead.items()))))
 
 
-def spare_port_paths(asset_model: AssetModel, design: PlantDesign) -> Iterator[str]:
-    """Every point of a switch port that the Plant Design leaves unconnected."""
-    net = network(design)
-    for view, switch in net.switches.items():
-        for port in net.ports[switch]:
-            if port.peer is None:
-                prefix = f"{view}/Ports/Port {port.number:02d}/"
-                for p in asset_model.points_of(view):
-                    if p.path.startswith(prefix):
-                        yield p.path
+def _moved_by(
+    state: WorldState,
+    paths: Sequence[str],
+    read: Callable[[WorldState], object],
+    reads: set[tuple[str, str]],
+) -> dict[str, set[tuple[str, str]]]:
+    """For each output of a group binding, the variables among `reads` whose perturbation
+    changes it. Each variable is tried with a few values, one variable at a time; a text
+    variable with every value the reader compares it against."""
+    world = state.copy()
+    compared = _compared(world, read, reads)
+    base = list(read(world))
+    moved: dict[str, set[tuple[str, str]]] = {p: set() for p in paths}
+    for node, key in sorted(reads):
+        if not node:
+            continue  # sim time: every group reads it only as a timestamp, if at all
+        variables = world.assets[node]
+        original = variables[key]
+        seen = compared.get((node, key), set())
+        tried = {original}
+        todo = _perturbations(original, seen)
+        while todo:
+            value = todo.pop()
+            tried.add(value)
+            if isinstance(value, str):  # learn what the reader compares it with next
+                value = _Text(value, seen)
+            variables[key] = value
+            try:
+                values = list(read(world))
+            except Exception:  # an impossible combination of variables: no evidence
+                values = base
+            finally:
+                variables[key] = original
+            for path, before, after in zip(paths, base, values, strict=True):
+                if not _same(before, after):
+                    moved[path].add((node, key))
+            if isinstance(original, str):
+                todo = sorted(seen - tried)
+    return moved
+
+
+def _compared(
+    world: WorldState, read: Callable[[WorldState], object], reads: set[tuple[str, str]]
+) -> dict[tuple[str, str], set[str]]:
+    """Every value the reader compares each text variable against, from one read with each
+    text variable swapped for a recording copy."""
+    compared: dict[tuple[str, str], set[str]] = {}
+    originals = {}
+    for node, key in reads:
+        value = world.assets[node].get(key) if node else None
+        if isinstance(value, str):
+            originals[node, key] = value
+            world.assets[node][key] = _Text(value, compared.setdefault((node, key), set()))
+    try:
+        read(world)
+    finally:
+        for (node, key), value in originals.items():
+            world.assets[node][key] = value
+    return compared
+
+
+class _Text(str):
+    """A text value that records every string it is compared with."""
+
+    __slots__ = ("_seen",)
+
+    def __new__(cls, value: str, seen: set[str]) -> "_Text":
+        text = super().__new__(cls, value)
+        text._seen = seen
+        return text
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, str):
+            self._seen.add(str(other))
+        return str.__eq__(self, other)
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    __hash__ = str.__hash__
+
+
+def _perturbations(value: object, compared: set[str]) -> list[object]:
+    """Values to try in place of `value`: enough to cross any threshold a reader applies."""
+    if isinstance(value, bool):
+        return [not value]
+    if isinstance(value, int):
+        return [value + 1, value * 2 + 10, value - 50, 0 if value else 1]
+    if isinstance(value, float):
+        return [value + 1.0, value * 2.0 + 10.0, value - 50.0, 0.0 if value else 1.0]
+    if isinstance(value, str):
+        return [*sorted(compared - {value}), UNMATCHED]  # UNMATCHED goes first
+    return []
+
+
+def _same(a: object, b: object) -> bool:
+    return a == b or (a != a and b != b)  # NaN equals NaN here
 
 
 class _Variables(dict):

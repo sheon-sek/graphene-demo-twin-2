@@ -247,19 +247,24 @@ class Twin:
         logged at its offset from now. With `reset` the world is first rebuilt from its
         initial state, so the story starts from steady state. Every action is checked, and
         the story as a whole must hold together (no fault injected twice or cleared while
-        not active), before any is logged; raises EventLogError otherwise. Returns the sim
-        time the story starts at and the events logged."""
+        not active), before any is logged; raises EventLogError otherwise. The check runs
+        against a disposable world in the state the Reset would leave, so a rejected story
+        leaves the Live World, its Event Log and its What-if Forks as they were. Returns the
+        sim time the story starts at and the events logged."""
         with self._lock:
-            if reset:
-                self.reset()
             self._catch_up()
-            start = self.live.time
-            events = [e.event(start) for e in doc.entries]
-            self._check_story(events)
+            world = self.live.rebuilt() if reset else self.live.fork(catch_up=False)
+            events = [e.event(world.time) for e in doc.entries]
+            self._check_story(events, world)
             try:
-                self.live.fork(catch_up=False).schedule_all(events)
+                world.schedule_all(events)
             except EventError as e:
                 raise EventLogError(str(e)) from None
+            if reset:
+                self.reset()
+            start = self.live.time
+            if start != world.time:  # a second passed while checking: the story moves along
+                events = [e.event(start) for e in doc.entries]
             logged = self.live.schedule(events)
             if self._catch_up() is None:
                 self._publish(replace(self._frame, seq=next(self._seq), events=self.live.events))
@@ -270,7 +275,8 @@ class Twin:
         with self._lock:
             return export_log(self._frame.events, seed=self.live.seed, start=self.live.start_time)
 
-    def _check_story(self, events: list[Event]) -> None:
+    def _check_story(self, events: list[Event], world: WhatIfFork) -> None:
+        """Check the story as a whole against `world`, the state it will start from."""
         active: dict[tuple[str, str], int | None] = {}
         """(target, fault) → when it clears itself, None if not before a Clear."""
         seen: set[tuple[str, str]] = set()
@@ -283,9 +289,9 @@ class Twin:
                 if (reason := self.catalog.check(e, self.design)) is not None:
                     raise EventLogError(f"{where}: {reason}")
                 key = (e.target, e.params["fault"])
-                if key not in seen:  # its state before the story: as the Live World has it
+                if key not in seen:  # its state before the story: as `world` has it
                     seen.add(key)
-                    if self._fault_live(*key):
+                    if fault_active(world.state, world.events, *key):
                         active[key] = None
                 if e.kind == INJECT:
                     if key in active:

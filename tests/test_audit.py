@@ -3,9 +3,10 @@ that used to be one now follows the world."""
 
 import pytest
 
-from graphene_demo_twin.audit import SPARE_PORT, DeadEnd, audit
-from graphene_demo_twin.projection import Binding, Projector, VariableRead
+from graphene_demo_twin.audit import DeadEnd, audit
+from graphene_demo_twin.projection import Binding, GroupBinding, Projector, VariableRead
 from graphene_demo_twin.sim import Event, Simulation
+from graphene_demo_twin.sim.electrical import network as electrical_network
 from graphene_demo_twin.sim.plant import plant_layout
 from graphene_demo_twin.world import default_domains, default_projector
 
@@ -31,14 +32,27 @@ def _inject(sim: Simulation, target: str, fault: str) -> None:
     sim.schedule(Event(sim.time, "fault.inject", target, {"fault": fault}))
 
 
+def _stressed(plant_design) -> Simulation:
+    """A world far from its steady state: the utility lost, so the gensets carry the site,
+    and every chiller and tower cell run in hand, so the standby legs' meters see load."""
+    sim = _sim(plant_design)
+    for incomer in electrical_network(plant_design).incomers:
+        _inject(sim, incomer, "utility.incomer_loss")
+    for a in plant_design.assets.values():
+        if a.room and a.type_id in ("Chiller", "Cooling Tower"):
+            _command(sim, a.path, "mode", "hand")
+            _command(sim, a.path, "run", True)
+    sim.advance(180)
+    return sim
+
+
 def test_the_audit_is_green(asset_model, plant_design, projector):
-    """The CI gate: every production point has a causal source. Only spare switch ports,
-    which nothing in the Plant Design connects, are exempt."""
-    report = audit(asset_model, plant_design, projector, _sim(plant_design).state)
+    """The CI gate: every production point has a causal source, with no exemptions, in the
+    steady state and in a stressed one."""
+    states = [_sim(plant_design).state, _stressed(plant_design).state]
+    report = audit(asset_model, plant_design, projector, states)
     assert report.ok, report.summary()
     assert report.production > 7000
-    assert set(report.exempt.values()) == {SPARE_PORT}
-    assert all("/Ports/Port " in p for p in report.exempt)
 
 
 def test_the_audit_finds_each_kind_of_dead_end(asset_model, plant_design):
@@ -56,6 +70,47 @@ def test_the_audit_finds_each_kind_of_dead_end(asset_model, plant_design):
     assert report.dead_ends[f"{crac}/Return Air Relative Humidity"] is DeadEnd.SETPOINT_MIRROR
     assert report.dead_ends[f"{crac}/On_Off"] is DeadEnd.FALLBACK
     assert not report.ok
+
+
+def test_a_constant_member_of_a_group_is_found_beside_a_dynamic_one(asset_model, plant_design):
+    """A group binding's outputs are audited one by one: a live sibling does not hide a
+    hard-coded one, nor a setpoint mirror."""
+    crac = "CRAC/L1_CRAC1"
+    live, constant, mirror = (
+        f"{crac}/Return Air Temperature",
+        f"{crac}/Supply Air Temperature",
+        f"{crac}/Return Air Relative Humidity",
+    )
+    group = GroupBinding(
+        (live, constant, mirror),
+        lambda s: (s.assets[crac]["return_c"], 18.0, s.assets[crac]["setpoint_c"]),
+    )
+    report = audit(
+        asset_model, plant_design, Projector(asset_model, [group]), _sim(plant_design).state
+    )
+    assert live not in report.dead_ends
+    assert report.dead_ends[constant] is DeadEnd.CONSTANT
+    assert report.dead_ends[mirror] is DeadEnd.SETPOINT_MIRROR
+
+
+def test_a_device_patched_into_a_spare_switch_port_brings_its_link_up(plant_design, projector):
+    view = "Network Switches/MAIN CORE SWITCH A"
+    at = f"{view}/Ports/Port 30"
+    sim = _sim(plant_design)
+    before = projector.project(sim.state)
+    assert before.values[f"{at}/Display Status"] == 0 and before.values[f"{at}/Link Status"] == 2
+    _command(sim, view, "patch", 30)
+    sim.step()
+    p = projector.project(sim.state)
+    assert p.values[f"{at}/Admin Status"] == 1 and p.values[f"{at}/Link Status"] == 1
+    assert p.values[f"{at}/Speed"] == 1000 and p.values[f"{at}/PoE Power"] > 0.0
+    assert p.values[f"{at}/In Utilization"] > 0.0
+    assert p.values[f"{view}/Ports Up"] == before.values[f"{view}/Ports Up"] + 1
+    _command(sim, view, "unpatch", 30)
+    sim.step()
+    p = projector.project(sim.state)
+    assert p.values[f"{at}/Display Status"] == 0 and p.values[f"{at}/Error Count"] == 1
+    assert p.values[f"{at}/PoE Power"] == 0.0
 
 
 def test_a_genset_in_manual_ignores_the_ats_and_its_emergency_stop_drops_it(

@@ -93,6 +93,12 @@ class LiveWorld:
         with self._lock:
             self._sim = self._fresh(not_before=self._sim.time)
 
+    def rebuilt(self) -> WhatIfFork:
+        """A What-if Fork of the world a Reset would build now, from the initial state with
+        an empty Event Log; the Live World is untouched."""
+        with self._lock:
+            return self._fresh(not_before=self._sim.time).fork()
+
     def fork(self, *, catch_up: bool = True) -> WhatIfFork:
         """A What-if Fork of the world as it is now; nothing done to it reaches the Live World.
         With `catch_up=False` it is the step already reached, for a caller that publishes every

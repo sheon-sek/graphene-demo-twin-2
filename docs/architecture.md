@@ -132,14 +132,22 @@ A dead end is one of three kinds:
 
 - a **Compatibility Fallback**: nothing binds it;
 - a **constant**: its binding reads no world state (found by evaluating each binding against
-  a probe that records every AssetState variable read);
-- a **Setpoint Mirror**: a measured, computed or alarm point that reads only setpoints.
+  a probe that records every AssetState variable read). A group binding drives many points
+  from one read, so each of its points is checked on its own: the audit perturbs every
+  variable the group reads, one at a time, and a point that no perturbation moves is a
+  constant. A text variable is tried with every value the reader compares it against;
+- a **Setpoint Mirror**: a measured, computed or alarm point that only setpoints move.
 
-One rule exempts production points, and the report counts every point it exempts: the
-points of switch ports that the Plant Design leaves unconnected. Nothing can change those
-points' values, but their quality still follows the switch. Configuration constants set at
-commissioning, such as a port's Admin Status, the staging strategy or the rotation schedule,
-are classified as static metadata in `asset_model/classify.py`.
+The CI gate audits two states: the steady initial state, and a stressed one (the utility
+lost, every chiller and tower cell run in hand), so a point that only moves away from steady
+state is still seen to move.
+
+No production point is exempt. A switch port that the Plant Design leaves unconnected is
+admin down and empty, but an Operator Command on its switch's `Network Switches/` view
+(`patch` / `unpatch` with the port number) plugs a temporary PoE access point into it. Its
+link, speed, PoE draw and utilization then follow the switch, and each drop of the link
+counts one error. Configuration constants set at commissioning, such as the staging strategy
+or the rotation schedule, are classified as static metadata in `asset_model/classify.py`.
 
 ## Performance
 

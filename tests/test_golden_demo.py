@@ -190,3 +190,18 @@ def test_a_story_that_does_not_hold_together_is_rejected_whole(client, twin):
     r = client.post("/api/events/import", json={"log": wrong.to_json(), "reset": False})
     assert r.status_code == 422 and "Cooling Tower" in r.text
     assert twin.frame.events == ()  # nothing logged
+
+
+def test_a_rejected_import_with_reset_leaves_the_live_world_alone(client, twin):
+    """The story is checked against a disposable world in the state a Reset would leave:
+    a rejected import keeps the epoch, the Event Log, the state and the What-if Forks."""
+    twin.command("Genset/Genset 1", "mode", "manual")
+    twin.forks.create()
+    before = (twin.frame.epoch, twin.frame.events, twin.live.state_hash(), len(twin.forks))
+    wrong = golden_demo().__class__(
+        (LogEntry(5, "fault.inject", "UPS/UPS 1", {"fault": "tower.fan_failure"}),)
+    )
+    r = client.post("/api/events/import", json={"log": wrong.to_json(), "confirm": True})
+    assert r.status_code == 422 and "Cooling Tower" in r.text
+    after = (twin.frame.epoch, twin.frame.events, twin.live.state_hash(), len(twin.forks))
+    assert after == before and len(before[1]) == 1 and before[3] == 1
