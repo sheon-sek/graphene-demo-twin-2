@@ -1,0 +1,18 @@
+Report #27 (P4: Demo Rack and Support Assets), branch feat/27
+
+BUILT
+- sim/demorack.py: DemoRackDomain, a standalone electrical system touching only DemoRack/ assets. E820 incomer meter with 126 circuits (Ba1-3, Bb1-3 x 21; one bank per phase), 9 circuits per breaker, 14 breakers, 7 demo meters (GEM630 B1-4, GPQM144 Pro B5-7, GPQM96 B8-10, GPM96 B11-12, GEM130 B13, GEM230 B14 single-phase, GDC230 = 48 V DC rectifier branch off B14). Everything derives from the circuit loads and breaker positions in one pass, so circuit/breaker/meter/incomer readings always add up. Loads wobble deterministically (seeded smooth noise); registered last in default_domains.
+- Faults (catalog): breaker.trip, breaker.earth_fault (sets EF and trips) on Breaker; e820.incomer_trip on Production/E820. A tripped breaker recloses 30 s after Clear. HasAlarm bits come from device logic (breaker tripped / no supply).
+- projection/demorack.py: binds all 1,100+ DemoRack points (RackID stays static metadata).
+- Coverage debt 1,184 -> 101. Also bound: Genset/UPS/Diesel root HasAlarm, Meter/HasAlarm_* board summaries, genset Low Lube Oil Shutdown / Short Circuit / Low Coolant, IPS Device/Load Status, CB-001 Enabled/Loop Enable/Mode, Data Halls Energy Consumption. Meter/GEM630CTL/* classified as a Support Asset (decoder family, like Meter/decoder1).
+- Test: tests/test_demorack.py (5 fast tests: coverage, consistency, breaker trip only changes DemoRack points, EF + auto-reclose, incomer trip leaves site alone). tests/test_faults.py TARGET gained the two new types.
+
+RESULTS
+- pytest -m "not slow": all pass; ruff check + format clean.
+- Demo Rack domain costs ~0.05 ms/step (optimised after it first pushed the 60-min preview over its bound).
+
+LEFT OPEN FOR #28 (zero-fallback audit): 101 debt points remain
+- Fire Protection System (56) and Lift Monitoring System (12): belong to #26, not done here.
+- Genset Auto_Manual and Emergency Stop (12), Diesel tank inlet-valve Time-out Alarm (3), IPS Insulation Fault/Insulation Value/Load Percentage/No CT/Short CT/PE Connection/Transformer Temp (~15), TIW/CDU-0n/New Tag (3): still in electrical.UNMODELLED or unbound.
+- Deferred: comm-quality (bad/uncertain) on demo meters, Operator Commands on demo breakers (open/close), overload trip on demo breakers, GDC230/E820 semantics of Vsys2/Iasys/Wh_Ima are my assumptions (Vsys2 = mean phase-neutral volts, Iasys = mean phase current, Wh_Ima = incomer kWh).
+- Preview perf bound in test_faults is still the 5 s placeholder; PRD target 3 s is #28's.

@@ -284,9 +284,17 @@ GENSET_ALARMS: dict[str, Callable[[dict[str, Scalar]], Scalar]] = {
     "Low Lubricant Oil Pressure Prealarm": lambda s: (
         s["stage"] in ("running", "cooldown") and _oil_bar(s) < 2.0
     ),
+    "Low Lubricant Oil Pressure Shutdown": lambda s: (
+        s["stage"] in ("running", "cooldown") and _oil_bar(s) < 1.0
+    ),
+    "Short Circuit Shutdown": lambda s: s["overload_trip"],
+    "Low Coolant Level": lambda s: s["coolant_c"] >= COOLANT_TRIP_C,
     "HasAlarm": lambda s: s["has_alarm"],
 }
 """Genset alarm member → the engine controller's logic over its state."""
+
+COOLANT_TRIP_C = 105.0
+"""Jacket temperature at which the controller reads low coolant (a dry jacket runs hot)."""
 
 UPS_ALARMS: dict[str, str] = {
     "Rectifier Failure": "alarm_rectifier",
@@ -319,21 +327,32 @@ TANK_POINTS: dict[str, Callable[[dict[str, Scalar]], Scalar]] = {
 """Diesel tank member → its value from the tank's AssetState (fuel pump, flowmeter, panels)."""
 
 UNMODELLED: Mapping[str, tuple[str, ...]] = {
-    "Genset": (
-        "Auto_Manual",
-        "Low Lubricant Oil Pressure Shutdown",
-        "Short Circuit Shutdown",
-        "Emergency Stop",
-        "Low Coolant Level",
-    ),
+    "Genset": ("Auto_Manual", "Emergency Stop"),
     "Diesel": ("Time-out Alarm - Inlet Valve",),
-    "IPS": ("Insulation Fault",),
+    "IPS": (
+        "Insulation Fault",
+        "Insulation Value",
+        "Load Percentage",
+        "No CT",
+        "Short CT",
+        "PE Connection",
+        "Transformer Temp",
+    ),
 }
-"""Compatibility Fallback debt, by asset type: the genset's control mode and protective
-shutdowns, the diesel inlet valve's travel and the IPS insulation monitor have no physics yet.
-Their points keep their fallback, which the coverage report counts as debt, rather than a
+"""Compatibility Fallback debt, by asset type: the genset's control mode and emergency stop,
+the diesel inlet valve's travel and the IPS insulation monitor's measurements have no physics
+yet. Their points keep their fallback, which the coverage report counts as debt, rather than a
 constant bound as if it were physics."""
 
+
+BOARD_ALARMS: Mapping[str, tuple[str, ...]] = {
+    "HasAlarm_Level 1": ("Meter/Level 1_",),
+    "HasAlarm_Level 1_DB": ("Meter/Level 1_DB_",),
+    "HasAlarm_Level 2": ("Meter/Level 2_",),
+    "HasAlarm_Level 2_MSB A": ("Meter/Level 2_MSB A_",),
+    "HasAlarm_Level 2_MSB B": ("Meter/Level 2_MSB B_",),
+}
+"""Board summary alarm → the meters (by path prefix) whose own alarms it collects."""
 
 METER_KEYS_3 = frozenset(
     {"Hz", "Wh_Im", "In", "Isys", "Vsys", "V12", "V23", "V31", "Ptot", "Qtot", "Stot", "PFsys"}
@@ -395,9 +414,26 @@ def electrical_bindings(
     for t in net.tanks:
         for member, read in TANK_POINTS.items():
             bindings.append(Binding(f"{t}/{member}", _read(t, read)))
+    bindings.append(Binding("UPS/HasAlarm", _any(net.ups, "has_alarm")))
+    bindings.append(Binding("Genset/HasAlarm", _any(net.gensets, "has_alarm")))
+    bindings.append(
+        Binding(
+            "Diesel/HasAlarm",
+            lambda s: any(TANK_POINTS["HasAlarm"](s.assets[t]) for t in net.tanks),
+        )
+    )
+    for name, prefixes in BOARD_ALARMS.items():
+        alarms = [
+            _meter_alarm(net, m) for m in (*net.incomers, *net.order) if m.startswith(prefixes)
+        ]
+        bindings.append(Binding(f"Meter/{name}", _any_of(alarms)))
     for placed in design.assets.values():
         if placed.type_id == "RCMS" and placed.room:
             bindings.append(Binding(f"{placed.path}/Current", _rcms_amps(placed.path)))
+        if placed.type_id == "IPS" and placed.room and placed.path == "IPS":
+            on = VariableRead(placed.path, "power_kw")
+            bindings.append(Binding(f"{placed.path}/Device Status", lambda s, on=on: on(s) > 0.0))
+            bindings.append(Binding(f"{placed.path}/Load Status", lambda s, on=on: on(s) > 0.0))
 
     frozen = tuple(entries)
 
@@ -427,6 +463,14 @@ def _meter_alarm(net, meter: str) -> Callable[[WorldState], bool]:
         return not s["live"] or net.supply(state, meter)["v_pu"] < 0.9
 
     return read
+
+
+def _any(nodes, variable: str) -> Callable[[WorldState], bool]:
+    return lambda s: any(s.assets[n][variable] for n in nodes)
+
+
+def _any_of(reads: list[Callable[[WorldState], bool]]) -> Callable[[WorldState], bool]:
+    return lambda s: any(r(s) for r in reads)
 
 
 def _rcms_amps(node: str) -> Callable[[WorldState], float]:
