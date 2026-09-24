@@ -25,7 +25,12 @@ A leak cable reports a leak only while water lies on it: a pipe leak (the `const
 a fault drives on the cable, standing for pipework in the room it runs under) pours water onto
 the floor at one position along the cable, the floor drains it away with a time constant, and
 the cable alarms and reports the position while the pool is deep enough to bridge it. The water
-comes from the closed CHW loop, or in a water plant room from that floor's cold-water tanks.
+comes from the pipework the Plant Design places in the room: its cold-water tanks, else the
+closed CHW loop through the units there. A pipe gives no more than its source holds, so a leak
+from an isolated, emptied loop or tank stops and the pool drains away.
+
+The route is the Plant Design's water connections (`water_layout`): no valve, pump or tank is
+named here.
 
 Physical Constraints read here: `constraint.trip` on transfer, booster, makeup and AC makeup
 pumps, `constraint.supply_loss` on the municipal inlet G_V1, `constraint.stuck` on any valve
@@ -51,6 +56,7 @@ WATER = "water"
 static pressure. Not a Plant Design node."""
 
 CW = "Cold Water and Sanitary System"
+GROUND_TANK_TYPE, ROOF_TANK_TYPE = "CW Ground Tank", "CW Roof Tank"
 TRANSFER_TYPE = "CW Transfer Pump"
 BOOSTER_TYPE = "CW Booster Pump"
 MAKEUP_TYPE = "Makeup Water Pump"
@@ -117,9 +123,13 @@ class WaterLayout:
     ground_tanks: tuple[str, ...]
     ground_inlets: tuple[str, ...]
     """Inlet valve of each ground tank, in order."""
+    ground_outlets: tuple[str, ...]
+    """Outlet valve of each ground tank, in order."""
     municipal: str
     transfer: tuple[str, ...]
     """Lead, lag, standby."""
+    transfer_draw: tuple[bool, ...]
+    """Whether each ground tank's outlet feeds the transfer pumps."""
     transfer_valves: tuple[str, ...]
     """Discharge valve of each transfer pump."""
     riser: str
@@ -128,7 +138,12 @@ class WaterLayout:
     roof_outlets: tuple[str, ...]
     boosters: tuple[str, ...]
     """Duty, standby."""
+    booster_header: str
+    """The boosters' discharge header, feeding the makeup headers and the domestic branch."""
+    domestic: str
     ac_branch: str
+    ac_draw: tuple[bool, ...]
+    """Whether each ground tank's outlet feeds the AC makeup branch."""
     ac_makeup: tuple[str, ...]
     """Lead, assist."""
     makeup: dict[str, str]
@@ -137,9 +152,13 @@ class WaterLayout:
     """Makeup pump → the makeup header valve it draws through."""
     header_valves: tuple[str, ...]
     valves: tuple[str, ...]
+    normally_closed: tuple[str, ...]
+    """Valves on no authored water path (the header drain / bypass): they start closed."""
     cables: tuple[str, ...]
     cable_source: dict[str, str]
-    """Leak cable → where water leaking in its room comes from: "loop", "ground" or "roof"."""
+    """Leak cable → where water leaking in its room comes from: "ground" or "roof" (a tank set
+    the Plant Design places in the room) or "loop" (units in the room on the CHW loop). A cable
+    in a room with no authored pipework has none."""
 
     @property
     def pumps(self) -> tuple[str, ...]:
@@ -152,37 +171,105 @@ class WaterLayout:
 
 @functools.cache
 def water_layout(design: PlantDesign) -> WaterLayout:
+    """The water network as the Plant Design's water connections run (ADR-0002): every valve,
+    pump and tank on the route is found by following them, and a route the physics cannot read
+    is rejected with a ValueError."""
+
     def of(type_id: str) -> list[str]:
         return sorted(a.path for a in design.assets.values() if a.type_id == type_id and a.room)
 
-    water = ConnectionKind.WATER
-    makeup = {p: design.downstream(p, water)[0] for p in of(MAKEUP_TYPE)}
-    headers = {p: design.upstream(p, water)[0] for p in makeup}
+    def up(node: str) -> tuple[str, ...]:
+        return design.upstream(node, ConnectionKind.WATER)
+
+    def down(node: str) -> tuple[str, ...]:
+        return design.downstream(node, ConnectionKind.WATER)
+
+    def one(nodes, what: str) -> str:
+        found = sorted(set(nodes))
+        if len(found) != 1:
+            raise ValueError(f"water network: {what} must be exactly one node, found {found}")
+        return found[0]
+
+    def expect(ok: bool, what: str) -> None:
+        if not ok:
+            raise ValueError(f"water network: {what}")
+
+    ground_tanks = tuple(of(GROUND_TANK_TYPE))
+    ground_inlets = tuple(one(up(t), f"the inlet of {t}") for t in ground_tanks)
+    ground_outlets = tuple(one(down(t), f"the outlet of {t}") for t in ground_tanks)
+    municipal = one((x for i in ground_inlets for x in up(i)), "the municipal inlet")
+    expect(not up(municipal), f"the municipal inlet {municipal} is fed from {up(municipal)}")
+    for inlet in ground_inlets:
+        expect(up(inlet) == (municipal,), f"{inlet} is not fed by the mains {municipal}")
+
+    # Lead and lag in authored order, the standby (by its authored role) last.
+    transfer = tuple(
+        sorted(of(TRANSFER_TYPE), key=lambda p: ("standby" in design.asset(p).role, p))
+    )
+    for pump in transfer:
+        expect(up(pump) and set(up(pump)) <= set(ground_outlets), f"{pump} draws off no tank")
+    transfer_valves = tuple(one(down(p), f"the discharge of {p}") for p in transfer)
+    riser = one((x for v in transfer_valves for x in down(v)), "the riser")
+
+    roof_tanks = tuple(of(ROOF_TANK_TYPE))
+    roof_inlets = tuple(one(up(t), f"the inlet of {t}") for t in roof_tanks)
+    for inlet in roof_inlets:
+        expect(up(inlet) == (riser,), f"{inlet} is not fed by the riser {riser}")
+    roof_outlets = tuple(one(down(t), f"the outlet of {t}") for t in roof_tanks)
+    boosters = tuple(sorted({x for o in roof_outlets for x in down(o)}))
+    expect(boosters == tuple(of(BOOSTER_TYPE)), f"the roof tanks feed {boosters}, not boosters")
+    booster_header = one((x for b in boosters for x in down(b)), "the booster discharge header")
+
+    makeup = {p: one(down(p), f"the cell {p} feeds") for p in of(MAKEUP_TYPE)}
+    headers = {p: one(up(p), f"the header {p} draws on") for p in makeup}
+    header_valves = tuple(sorted(set(headers.values())))
+    for h in header_valves:
+        expect(up(h) == (booster_header,), f"{h} is not fed by {booster_header}")
+    domestic = one(
+        (b for b in down(booster_header) if b not in header_valves), "the domestic branch"
+    )
+
+    ac_makeup = tuple(of(AC_MAKEUP_TYPE))
+    ac_branch = one((x for p in ac_makeup for x in up(p)), "the AC makeup branch")
+    expect(set(up(ac_branch)) <= set(ground_outlets), f"{ac_branch} draws off no ground tank")
+
+    valves = tuple(sorted(p for t in VALVE_TYPES for p in of(t)))
     cable_source = {}
     for cable in of(CABLE_TYPE):
-        room = design.room(design.asset(cable).room)
-        if room.kind != "water":
+        here = design.assets_in(design.asset(cable).room)
+        paths = {x.path for x in here}
+        if paths & set(ground_tanks):
+            cable_source[cable] = "ground"
+        elif paths & set(roof_tanks):
+            cable_source[cable] = "roof"
+        elif any(
+            design.upstream(x, ConnectionKind.CHW) or design.downstream(x, ConnectionKind.CHW)
+            for x in paths
+        ):
             cable_source[cable] = "loop"
-        else:
-            cable_source[cable] = "ground" if room.floor == "Ground" else "roof"
-    n = lambda *names: tuple(f"{CW}/{x}" for x in names)  # noqa: E731
     return WaterLayout(
-        ground_tanks=n("G_T1", "G_T2"),
-        ground_inlets=n("G_V2", "G_V3"),
-        municipal=f"{CW}/G_V1",
-        transfer=n("G_TP1", "G_TP2", "G_TP3"),
-        transfer_valves=n("G_V6", "G_V7", "G_V8"),
-        riser=f"{CW}/G_V9",
-        roof_tanks=n("R_T1", "R_T2"),
-        roof_inlets=n("R_V1", "R_V2"),
-        roof_outlets=n("R_V3", "R_V4"),
-        boosters=n("R_BP1", "R_BP2"),
-        ac_branch=f"{CW}/G_V10",
-        ac_makeup=("AC Makeup Tank/G_P1", "AC Makeup Tank/G_P2"),
+        ground_tanks=ground_tanks,
+        ground_inlets=ground_inlets,
+        ground_outlets=ground_outlets,
+        municipal=municipal,
+        transfer=transfer,
+        transfer_draw=tuple(any(o in up(p) for p in transfer) for o in ground_outlets),
+        transfer_valves=transfer_valves,
+        riser=riser,
+        roof_tanks=roof_tanks,
+        roof_inlets=roof_inlets,
+        roof_outlets=roof_outlets,
+        boosters=boosters,
+        booster_header=booster_header,
+        domestic=domestic,
+        ac_branch=ac_branch,
+        ac_draw=tuple(o in up(ac_branch) for o in ground_outlets),
+        ac_makeup=ac_makeup,
         makeup=makeup,
         headers=headers,
-        header_valves=tuple(sorted(set(headers.values()))),
-        valves=tuple(sorted(p for t in VALVE_TYPES for p in of(t))),
+        header_valves=header_valves,
+        valves=valves,
+        normally_closed=tuple(v for v in valves if not up(v) and not down(v)),
         cables=tuple(of(CABLE_TYPE)),
         cable_source=cable_source,
     )
@@ -230,10 +317,6 @@ def loss_keys(tower: str) -> tuple[str, str, str]:
 def leak_position_m(cable: str) -> float:
     """Where along `cable` a leak in its room reaches it: fixed by the pipework's route."""
     return round(CABLE_M * (0.15 + 0.7 * (zlib.crc32(cable.encode()) % 1000) / 1000.0), 1)
-
-
-NORMALLY_CLOSED = frozenset({f"{CW}/R_V9"})
-"""The header drain / bypass."""
 
 
 class WaterDomain:
@@ -284,7 +367,7 @@ class WaterDomain:
                 "run_s": 0.0,
             }
         for valve in layout.valves:
-            is_open = valve not in NORMALLY_CLOSED and valve not in layout.ground_inlets
+            is_open = valve not in layout.normally_closed and valve not in layout.ground_inlets
             states[valve] = {"cmd_open": is_open, "open": is_open}
         for cell in layout.makeup.values():
             states[cell] = {
@@ -351,8 +434,12 @@ class WaterDomain:
                 v["cmd_open"] = False
             inflow.append(MUNICIPAL_LPS * mains if v["open"] else 0.0)
         w["municipal_lps"] = sum(inflow)
-        ground_l = sum(a[t]["volume_l"] for t in layout.ground_tanks)
-        ground_avail = min(ground_l / SUCTION_L, 1.0)
+        # The transfer pumps and the AC makeup branch each draw on the tanks whose open outlets
+        # feed them.
+        outlet_open = [a[o]["open"] for o in layout.ground_outlets]
+        transfer_draw = [d and o for d, o in zip(layout.transfer_draw, outlet_open, strict=True)]
+        ac_draw = [d and o for d, o in zip(layout.ac_draw, outlet_open, strict=True)]
+        ground_avail = _suction(a, layout.ground_tanks, transfer_draw)
 
         # Transfer pumps on the roof tanks' readings: lead, lag, and the standby for either.
         sensed = sum(a[t]["sensed_pct"] for t in layout.roof_tanks) / len(layout.roof_tanks)
@@ -391,13 +478,13 @@ class WaterDomain:
             t for t, o in zip(layout.roof_tanks, layout.roof_outlets, strict=True) if a[o]["open"]
         ]
         roof_l = sum(a[t]["volume_l"] for t in feeding)
-        roof_avail = min(roof_l / SUCTION_L, 1.0)
+        roof_avail = min(roof_l / SUCTION_L, 1.0) if a[layout.booster_header]["open"] else 0.0
         booster = next((b for b in layout.boosters if available(b)), None)
         for b in layout.boosters:
             a[b]["running"] = b == booster
         header = (BOOSTER_KPA if booster else STATIC_KPA) * roof_avail
         w["header_kpa"] = header
-        domestic = DOMESTIC_LPS * roof_avail if a[f"{CW}/R_V8"]["open"] else 0.0
+        domestic = DOMESTIC_LPS * roof_avail if a[layout.domestic]["open"] else 0.0
 
         # Tower cells: what each loses with the heat its group rejects, and its makeup pump
         # holding its discharge pressure as its header allows, into the cell's float valve.
@@ -474,24 +561,9 @@ class WaterDomain:
         w["tower_makeup_lps"] = makeup_total
         w["domestic_lps"] = domestic
 
-        # Leaks: water pours onto the floor under the cable, and drains away.
-        leaks = {"loop": 0.0, "ground": 0.0, "roof": 0.0}
-        for cable in layout.cables:
-            s = a[cable]
-            leak = s.get("constraint.leak_lps", 0.0)
-            if not leak and not s["water_l"]:
-                continue  # dry, as it stood
-            leaks[layout.cable_source[cable]] += leak
-            if not settle:
-                s["water_l"] = max(s["water_l"] + (leak - s["water_l"] / DRAIN_TAU_S) * dt, 0.0)
-                if s["water_l"] < 1e-3 and not leak:
-                    s["water_l"] = 0.0
-            wet = s["water_l"] >= DETECT_L
-            s["status"] = 1 if wet else 0
-            s["position_m"] = leak_position_m(cable) if wet else 0.0
-
         # AC makeup pumps hold the closed CHW loop's pressure from the ground tank branch.
         loop = w["loop_kpa"]
+        ac_avail = _suction(a, layout.ground_tanks, ac_draw)
         ac_flow = 0.0
         for pump, (start, stop) in zip(layout.ac_makeup, (AC_LEAD, AC_ASSIST), strict=True):
             s = a[pump]
@@ -502,7 +574,7 @@ class WaterDomain:
             s["power_kw"] = AC_MAKEUP_KW if s["running"] else 0.0
             s["has_alarm"] = s["trip"]
             if s["running"] and a[layout.ac_branch]["open"]:
-                ac_flow += AC_MAKEUP_LPS * ground_avail
+                ac_flow += AC_MAKEUP_LPS * ac_avail
         w["ac_makeup_lps"] = ac_flow
         for pump, kw in (
             *((x, TRANSFER_KW) for x in layout.transfer),
@@ -512,29 +584,70 @@ class WaterDomain:
             s["power_kw"] = kw if s["running"] else 0.0
             s["has_alarm"] = s["trip"]
 
+        # Leaks: a pipe gives what its source still holds after this step's other flows, and
+        # that water pours onto the floor under the cable and drains away.
+        asked = {"loop": 0.0, "ground": 0.0, "roof": 0.0}
+        for cable, source in layout.cable_source.items():
+            asked[source] += a[cable].get("constraint.leak_lps", 0.0)
+        roof_inflow = [transfer / len(roof_in) if i in roof_in else 0.0 for i in layout.roof_inlets]
+        held = {
+            "loop": loop / LOOP_KPA_PER_L / dt + ac_flow - LOOP_WEEP_LPS,
+            "ground": _held(a, layout.ground_tanks, dt) + sum(inflow) - transfer - ac_flow,
+            "roof": _held(a, layout.roof_tanks, dt) + transfer - makeup_total - domestic,
+        }
+        given = {k: min(q, max(held[k], 0.0)) if q else 0.0 for k, q in asked.items()}
+        for cable in layout.cables:
+            s = a[cable]
+            source = layout.cable_source.get(cable)
+            leak = s.get("constraint.leak_lps", 0.0) if source else 0.0
+            if leak:
+                leak *= given[source] / asked[source]
+            if not leak and not s["water_l"]:
+                continue  # dry, as it stood
+            if not settle:
+                s["water_l"] = max(s["water_l"] + (leak - s["water_l"] / DRAIN_TAU_S) * dt, 0.0)
+                if s["water_l"] < 1e-3 and not leak:
+                    s["water_l"] = 0.0
+            wet = s["water_l"] >= DETECT_L
+            s["status"] = 1 if wet else 0
+            s["position_m"] = leak_position_m(cable) if wet else 0.0
+
         if settle:
             return
         w["loop_kpa"] = min(
-            max(loop + (ac_flow - leaks["loop"] - LOOP_WEEP_LPS) * LOOP_KPA_PER_L * dt, 0.0),
+            max(loop + (ac_flow - given["loop"] - LOOP_WEEP_LPS) * LOOP_KPA_PER_L * dt, 0.0),
             LOOP_RELIEF_KPA,
         )
 
         # The tanks integrate what flows in and out.
-        ground_out = transfer + ac_flow + leaks["ground"]
-        _share(a, layout.ground_tanks, inflow, ground_out, dt)
-        roof_out = makeup_total + domestic + leaks["roof"]
-        roof_inflow = [transfer / len(roof_in) if i in roof_in else 0.0 for i in layout.roof_inlets]
+        _share(a, layout.ground_tanks, inflow, transfer, dt, transfer_draw)
+        if ac_flow:
+            _share(a, layout.ground_tanks, None, ac_flow, dt, ac_draw)
         draw = [t in feeding for t in layout.roof_tanks]
-        _share(a, layout.roof_tanks, roof_inflow, roof_out, dt, draw)
+        _share(a, layout.roof_tanks, roof_inflow, makeup_total + domestic, dt, draw)
+        for tanks, source in ((layout.ground_tanks, "ground"), (layout.roof_tanks, "roof")):
+            if given[source]:
+                _share(a, tanks, None, given[source], dt)  # the pipework in their room
+
+
+def _suction(a: dict, tanks: tuple[str, ...], draw: list[bool]) -> float:
+    """Share of full flow a pump drawing on the `draw` tanks gets, as their water runs out."""
+    held = sum(a[t]["volume_l"] for t, d in zip(tanks, draw, strict=True) if d)
+    return min(held / SUCTION_L, 1.0)
+
+
+def _held(a: dict, tanks: tuple[str, ...], dt: float) -> float:
+    """What `tanks` hold, as a flow over one step."""
+    return sum(a[t]["volume_l"] for t in tanks) / dt
 
 
 def _share(
-    a: dict, tanks: tuple[str, ...], inflow: list[float], out: float, dt: float, draw=None
+    a: dict, tanks: tuple[str, ...], inflow: list[float] | None, out: float, dt: float, draw=None
 ) -> None:
     """Fill each tank by its inflow and draw `out` from those drawing, by what each holds."""
     drawing = [t for i, t in enumerate(tanks) if draw is None or draw[i]]
     held = sum(a[t]["volume_l"] for t in drawing)
-    for tank, q_in in zip(tanks, inflow, strict=True):
+    for tank, q_in in zip(tanks, inflow or [0.0] * len(tanks), strict=True):
         t = a[tank]
         q_out = out * t["volume_l"] / held if tank in drawing and held > 0.0 else 0.0
         t["volume_l"] = min(max(t["volume_l"] + (q_in - q_out) * dt, 0.0), t["capacity_l"])

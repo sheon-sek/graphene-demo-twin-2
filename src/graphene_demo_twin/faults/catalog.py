@@ -9,6 +9,7 @@ from typing import Any
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
 from graphene_demo_twin.sim import Event, EventError
 from graphene_demo_twin.sim.electrical import METER_TYPES, incomers
+from graphene_demo_twin.sim.water import water_layout
 
 INJECT = "fault.inject"
 CLEAR = "fault.clear"
@@ -502,7 +503,7 @@ STANDARD_CATALOG = FaultCatalog(
             "fraction of mains flow lost",
             "The mains supply to the site fails: the ground tanks stop refilling and drain as "
             "the transfer and AC makeup pumps draw on them.",
-            where=lambda design: ("Cold Water and Sanitary System/G_V1",),
+            where=lambda design: (water_layout(design).municipal,),
         ),
         FaultSpec(
             "ground_valve.stuck",
@@ -512,8 +513,9 @@ STANDARD_CATALOG = FaultCatalog(
             "constraint.stuck",
             1.0,
             "stuck",
-            "The valve's actuator seizes and it holds its position whatever it is commanded "
-            "(once the level passes half): a stuck tank inlet stops floating on level.",
+            "A ground tank inlet valve's actuator seizes and it holds its position whatever "
+            "it is commanded (once the level passes half): the tank stops floating on level.",
+            where=lambda design: water_layout(design).ground_inlets,
         ),
         FaultSpec(
             "roof_valve.stuck",
@@ -523,8 +525,9 @@ STANDARD_CATALOG = FaultCatalog(
             "constraint.stuck",
             1.0,
             "stuck",
-            "The valve's actuator seizes and it holds its position whatever it is commanded "
-            "(once the level passes half): a stuck roof tank inlet can overfill its tank.",
+            "A roof tank inlet valve's actuator seizes and it holds its position whatever it "
+            "is commanded (once the level passes half): stuck open, it can overfill its tank.",
+            where=lambda design: water_layout(design).roof_inlets,
         ),
         FaultSpec(
             "transfer_pump.trip",
@@ -569,7 +572,8 @@ STANDARD_CATALOG = FaultCatalog(
             "L/s",
             "A pipe leaks in the room this cable runs under. Water pools on the floor and the "
             "cable alarms, with its position, once the water reaches it; the closed CHW loop "
-            "(or, in a water plant room, the tanks) loses the water.",
+            "(or, in a water plant room, the tanks) loses the water, until it runs dry.",
+            where=lambda design: tuple(water_layout(design).cable_source),
         ),
     ]
 )

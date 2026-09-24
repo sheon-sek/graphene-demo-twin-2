@@ -59,6 +59,12 @@ TARGET = {
     "Makeup Water Pump": "Cooling Towers Plant/R_P1_P1",
     "Water Leak Cable Sensor": "Water Leak Detection System/Level 1/2A",
 }
+TARGET_OF_FAULT = {"ground_valve.stuck": "Cold Water and Sanitary System/G_V2"}
+"""Where a fault's own targets exclude its type's usual one."""
+
+
+def _target(spec) -> str:
+    return TARGET_OF_FAULT.get(spec.id, TARGET[spec.asset_type])
 
 
 def _sim(plant_design, seed: int = 7) -> Simulation:
@@ -217,9 +223,9 @@ def test_the_fault_domain_writes_only_its_mechanism_variable(plant_design):
     """A fault never writes alarm points or any other state: only its own variable."""
     for spec in STANDARD_CATALOG:
         sim = Simulation(plant_design, [FaultDomain(STANDARD_CATALOG)], 1, START)
-        sim.schedule(_inject(START, TARGET[spec.asset_type], spec.id, severity=0.5))
+        sim.schedule(_inject(START, _target(spec), spec.id, severity=0.5))
         sim.step()
-        assert sim.state.assets == {TARGET[spec.asset_type]: {spec.variable: 0.5 * spec.span}}
+        assert sim.state.assets == {_target(spec): {spec.variable: 0.5 * spec.span}}
 
 
 def test_onset_ramps_the_level_and_auto_clear_ends_the_fault_without_a_log_entry(plant_design):
@@ -348,7 +354,7 @@ def test_clearing_every_fault_returns_to_the_base_world_within_the_settling_time
     plant_design, asset_model, projector, spec
 ):
     base, sim = _sim(plant_design), _sim(plant_design)
-    target = TARGET[spec.asset_type]
+    target = _target(spec)
     sim.schedule(_inject(START, target, spec.id, ramp_min=2))
     sim.schedule(_inject(START + 60, CRAC1, "crac.fan_failure", severity=0.5))
     sim.schedule(_clear(START + 1200, target, spec.id))

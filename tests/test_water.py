@@ -3,6 +3,8 @@
 import pytest
 
 from graphene_demo_twin.asset_model import SourceClass
+from graphene_demo_twin.faults import STANDARD_CATALOG
+from graphene_demo_twin.plant_design import Connection, ConnectionKind, PlantDesign
 from graphene_demo_twin.projection import PointSource
 from graphene_demo_twin.sim import Event, Simulation
 from graphene_demo_twin.sim.plant import PLANT, plant_layout
@@ -52,6 +54,23 @@ def _set_roof(sim, pct):
     for t in ROOF:
         s = sim.state.assets[t]
         s["volume_l"] = s["capacity_l"] * pct / 100.0
+
+
+def _rewired(design, drop=(), add=()) -> PlantDesign:
+    """`design` with the water connections `drop` removed and `add` added, as (source, target)."""
+    water = ConnectionKind.WATER
+    kept = [c for c in design.connections if not (c.kind is water and (c.source, c.target) in drop)]
+    assert len(kept) == len(design.connections) - len(drop)
+    return PlantDesign(
+        design.version,
+        design.floors,
+        design.rooms.values(),
+        design.assets.values(),
+        design.unexported.values(),
+        [*kept, *(Connection(water, s, t) for s, t in add)],
+        design.it_basis.values(),
+        design.shafts.values(),
+    )
 
 
 def _running_cells(sim, design):
@@ -107,6 +126,71 @@ def test_a_leak_in_dh03_trips_its_level_1_cable_once_water_reaches_it(base, proj
     sim.advance(3 * 3600)
     assert sim.state.assets[DH03_CABLE]["water_l"] < DETECT_L
     assert projector.project(sim.state).values[f"{DH03_CABLE}/Status"] == 0
+
+
+def test_a_leak_from_an_isolated_loop_stops_once_the_loop_is_empty(base, projector):
+    """A pipe gives only the water its source holds: with the AC makeup branch shut, the loop's
+    last litres reach the floor, then the pool drains and the cable clears with the fault on."""
+    sim = base.fork()
+    a = sim.state.assets
+    branch = water_layout(sim.design).ac_branch
+    a[branch]["cmd_open"] = False
+    a[WATER]["loop_kpa"] = 5.0  # 50 L above empty
+    _inject(sim, DH03_CABLE, "leak.pipe_leak", severity=0.5)
+    sim.advance(120)
+    assert not a[branch]["open"] and a[WATER]["loop_kpa"] == 0.0
+    peak = a[DH03_CABLE]["water_l"]
+    assert DETECT_L < peak <= 50.0
+    sim.advance(60)
+    assert a[DH03_CABLE]["water_l"] < peak
+    sim.advance(2400)
+    assert "leak.pipe_leak@" + DH03_CABLE in sim.state.faults
+    assert a[DH03_CABLE]["water_l"] < DETECT_L
+    assert projector.project(sim.state).values[f"{DH03_CABLE}/Status"] == 0
+
+
+def test_a_leak_cable_in_a_room_with_no_pipework_is_no_leak_target(plant_design):
+    targets = set(STANDARD_CATALOG.get("leak.pipe_leak").targets(plant_design))
+    assert DH03_CABLE in targets and f"{LEAK}/Ground/1A" in targets
+    assert f"{LEAK}/Ground/2A" not in targets  # UPS room A: no water or CHW pipe in it
+
+
+# ---- Layout
+
+
+def test_the_layout_follows_the_authored_water_connections(plant_design):
+    layout = water_layout(plant_design)
+    assert layout.roof_inlets == (f"{CW}/R_V1", f"{CW}/R_V2")
+    # Swap which inlet fills which roof tank: the layout follows the pipes.
+    swapped = _rewired(
+        plant_design,
+        drop=[(f"{CW}/R_V1", ROOF[0]), (f"{CW}/R_V2", ROOF[1])],
+        add=[(f"{CW}/R_V1", ROOF[1]), (f"{CW}/R_V2", ROOF[0])],
+    )
+    assert water_layout(swapped).roof_inlets == (f"{CW}/R_V2", f"{CW}/R_V1")
+    # Take the AC makeup branch off ground tank 1's outlet and onto tank 2's.
+    moved = _rewired(
+        plant_design,
+        drop=[(f"{CW}/G_V4", f"{CW}/G_V10")],
+        add=[(f"{CW}/G_V5", f"{CW}/G_V10")],
+    )
+    assert layout.ac_draw == (True, False)
+    assert water_layout(moved).ac_draw == (False, True)
+
+
+@pytest.mark.parametrize(
+    "edge",
+    [
+        (f"{CW}/G_V9", f"{CW}/R_V2"),  # the riser to roof tank 2's inlet
+        (f"{CW}/G_V1", f"{CW}/G_V3"),  # the mains to ground tank 2's inlet
+        (f"{CW}/R_V5", f"{CW}/R_V8"),  # the domestic branch
+        (f"{CW}/G_TP2", f"{CW}/G_V7"),  # a transfer pump's discharge
+    ],
+    ids=lambda e: "→".join(x.rsplit("/", 1)[1] for x in e),
+)
+def test_a_route_with_an_authored_connection_removed_is_rejected(plant_design, edge):
+    with pytest.raises(ValueError, match="water network"):
+        water_layout(_rewired(plant_design, drop=[edge]))
 
 
 # ---- Tower water use and WUE
@@ -312,16 +396,33 @@ def test_a_roof_tank_level_sensor_fault_misleads_the_transfer_control(base, proj
     assert a[ROOF[0]]["level_pct"] == pytest.approx(55.0, abs=0.1)
 
 
-def test_a_stuck_ground_inlet_valve_does_not_open(base):
-    sim = base.fork()
-    a = sim.state.assets
-    assert not a[f"{CW}/G_V2"]["open"]
-    _inject(sim, f"{CW}/G_V2", "ground_valve.stuck")
-    for t in GROUND:
-        a[t]["volume_l"] = a[t]["capacity_l"] * 0.8
-    sim.advance(5)
-    assert not a[f"{CW}/G_V2"]["open"] and a[f"{CW}/G_V2"]["cmd_open"]
-    assert a[f"{CW}/G_V3"]["open"]
+@pytest.mark.parametrize("fault", ["ground_valve.stuck", "roof_valve.stuck"])
+def test_every_stuck_valve_target_holds_against_a_command_and_changes_its_tank(base, fault):
+    """Each target is a tank inlet whose command changes: stuck, the valve holds and its tank
+    fills differently. Ground tanks at 80 % open their inlets; a roof tank at 99 % closes its
+    inlet while the other, near empty, calls the lead transfer pump."""
+    layout = water_layout(base.design)
+    tank_of = {
+        **dict(zip(layout.ground_inlets, layout.ground_tanks, strict=True)),
+        **dict(zip(layout.roof_inlets, layout.roof_tanks, strict=True)),
+    }
+    targets = STANDARD_CATALOG.get(fault).targets(base.design)
+    assert targets and set(targets) <= set(tank_of)
+    for valve in targets:
+        tank = tank_of[valve]
+        healthy, stuck = base.fork(), base.fork()
+        _inject(stuck, valve, fault)
+        for sim in (healthy, stuck):
+            a = sim.state.assets
+            for t in layout.ground_tanks:
+                a[t]["volume_l"] = a[t]["capacity_l"] * 0.8
+            for t in layout.roof_tanks:
+                a[t]["volume_l"] = a[t]["capacity_l"] * (0.99 if t == tank else 0.1)
+            sim.advance(60)
+        h, s = healthy.state.assets, stuck.state.assets
+        assert s[valve]["open"] != s[valve]["cmd_open"], valve
+        assert s[valve]["open"] != h[valve]["open"], valve
+        assert s[tank]["volume_l"] != pytest.approx(h[tank]["volume_l"], abs=1.0), valve
 
 
 # ---- Projection
