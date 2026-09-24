@@ -8,10 +8,11 @@ detector alarms on obscuration, a heat detector on its fixed temperature, so a r
 overheats trips its heat detectors with no fire at all. A call point alarms only when someone
 presses it (a false alarm). A zone with an alarm valve is sprinklered: once the ceiling
 reaches the sprinkler heads' temperature they open, water flows through the valve, the fire
-pumps start and the sprinklers knock the fire down to a fraction of its heat. A zone in alarm
-shuts down the fresh-air handlers that supply its rooms (their `constraint.fire_alarm` input,
-which also sets PAHU `Main Fire Alarm`), and the lifts return to the ground floor and park
-with their doors open.
+pumps it starts run (while they have supply) and the sprinklers knock the fire down to a
+fraction of its heat. A zone in alarm shuts down the fresh-air handlers it stops (their
+`constraint.fire_alarm` input, which also sets PAHU `Main Fire Alarm`), and the lifts it
+recalls return to the ground floor and park with their doors open. Every one of these
+relations is an authored `fire` connection of the Plant Design (ADR-0002).
 
 A detector fault puts the device in fault on the panel (its point reads true) but it detects
 nothing; a false alarm makes it report a fire that is not there, with the same consequences as
@@ -19,13 +20,15 @@ a real one. Neither changes the air.
 
 Lifts: each car runs a simple traffic model, answering calls to random floors, more often in
 office hours, travelling a floor every LIFT_FLOOR_S and dwelling with its doors open. A stuck
-car stops where it is with its doors shut until the fault is cleared.
+car, or one without supply, stops where it is with its doors shut until the fault is cleared or
+the power returns. A recall turns a travelling car back to the ground floor at once.
 """
 
 import functools
 import math
 
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
+from graphene_demo_twin.sim.electrical import powered
 from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
 from graphene_demo_twin.sim.state import AssetState, WorldState
@@ -39,6 +42,7 @@ ALARM_VALVE = "Alarm Valve"
 FIRE_PUMP = "Fire Pump"
 LIFT = "Lift"
 FIRE_DEVICES = (SMOKE_DETECTOR, HEAT_DETECTOR, CALL_POINT, ALARM_VALVE, FIRE_PUMP)
+FIRE = ConnectionKind.FIRE
 
 SMOKE_PER_KWS = 4e-4
 """Obscuration a fire adds to its zone's air, in %/m per kW per second."""
@@ -70,6 +74,10 @@ LIFT_CALL = {True: 0.02, False: 0.004}
 """Chance per second an idle car gets a call, in and out of office hours."""
 DOOR_OPEN, DOOR_CLOSED = 0, 1
 """Lift `Door Status` codes (the export's cars are moving with Door Status 1)."""
+LIFT_IDLE_KW, LIFT_RUN_KW = 1.5, 11.0
+"""A lift's controls, lighting and ventilation, and its drive while the car travels."""
+FIRE_PUMP_KW = 30.0
+"""An electric fire pump running."""
 
 
 class FireDomain:
@@ -93,7 +101,13 @@ class FireDomain:
             for device in zone.devices:
                 states[device] = {"detecting": False, "fault": False, "alarm": False, "on": False}
         for pump in fire_pumps(ctx.design):
-            states[pump] = {"detecting": False, "fault": False, "alarm": False, "on": False}
+            states[pump] = {
+                "detecting": False,
+                "fault": False,
+                "alarm": False,
+                "on": False,
+                "running": False,
+            }
         return states
 
     def complete(self, state: WorldState, ctx: StepContext) -> None:
@@ -132,7 +146,7 @@ class FireDomain:
 
     def _devices(self, state: WorldState, design: PlantDesign) -> None:
         a = state.assets
-        flowing = False
+        flowing = set()
         for zone in fire_zones(design):
             z = a[zone.id]
             smoke, ceiling = z["smoke_pct_m"], z["ceiling_c"]
@@ -158,7 +172,7 @@ class FireDomain:
                 if kind in (SMOKE_DETECTOR, HEAT_DETECTOR, CALL_POINT, ALARM_VALVE):
                     alarm = alarm or d["alarm"]
                 if kind == ALARM_VALVE and detecting:
-                    flowing = True
+                    flowing.add(device)
             z["alarm"] = alarm
             # The fire panel's interlock: a zone in alarm stops the fresh-air handlers that
             # supply it. It releases only the stop it gave.
@@ -169,18 +183,34 @@ class FireDomain:
                 for pahu in zone.fresh_air:
                     a[pahu].pop("constraint.fire_alarm", None)
             z["shutdown"] = alarm
-        for pump in fire_pumps(design):
+        # A flowing alarm valve starts the fire pumps it is connected to; one without supply
+        # cannot run.
+        for pump, valves in fire_pumps(design).items():
             p = a[pump]
             fault = p.get("constraint.detector_fault", 0.0) >= 0.5
-            p["detecting"] = flowing and not fault
+            started = not fault and not flowing.isdisjoint(valves)
+            p["running"] = started and powered(state, design, pump)
+            p["detecting"] = started
             p["fault"] = fault
             p["alarm"] = p["detecting"]
             p["on"] = p["detecting"] or fault
 
 
-def fire_alarm(state: WorldState, design: PlantDesign) -> bool:
-    """Whether any fire zone is in alarm."""
-    return any(state.assets[z.id]["alarm"] for z in fire_zones(design))
+def recalled(state: WorldState, design: PlantDesign, lift: str) -> bool:
+    """Whether a fire zone that recalls `lift` is in alarm."""
+    return any(state.assets[z]["alarm"] for z in recalling_zones(design)[lift])
+
+
+def life_safety_power(state: WorldState, design: PlantDesign) -> dict[str, float]:
+    """What the lifts and fire pumps draw, from their state (before any loss of supply)."""
+    power = {}
+    for lift in lifts(design):
+        s = state.assets[lift]
+        moving = s.get("phase") == "moving" and not s.get("stuck")
+        power[lift] = LIFT_IDLE_KW + (LIFT_RUN_KW if moving else 0.0)
+    for pump in fire_pumps(design):
+        power[pump] = FIRE_PUMP_KW if state.assets[pump].get("running") else 0.0
+    return power
 
 
 def room_air_c(state: WorldState, design: PlantDesign, room: str) -> float:
@@ -208,41 +238,51 @@ class _FireZone:
         self.sprinklered = ALARM_VALVE in kinds
 
 
+def _fire_targets(design: PlantDesign, node: str, *types: str) -> tuple[str, ...]:
+    """The assets of `types` that `node`'s fire connections reach."""
+    return tuple(
+        n
+        for n in design.downstream(node, FIRE)
+        if not design.is_room(n) and design.asset(n).type_id in types
+    )
+
+
 @functools.cache
 def fire_zones(design: PlantDesign) -> tuple[_FireZone, ...]:
-    """Every fire zone: the room it stands in, its devices (fire pumps apart) and the
-    fresh-air handlers supplying any room in the zone."""
+    """Every fire zone: the room it stands in, and along its fire connections the devices
+    that report to it and the fresh-air handlers it stops."""
     zones = []
     for z in design.unexported.values():
         if z.type_id != FIRE_ZONE:
             continue
-        room = design.asset(z.id).room
-        folder = z.observed_by[0]
-        devices = tuple(
-            u.id
-            for u in design.unexported.values()
-            if u.type_id in FIRE_DEVICES and u.type_id != FIRE_PUMP and u.observed_by[0] == folder
-        )
-        floor, fire_zone = design.room(room).floor, design.room(room).fire_zone
-        fresh_air = tuple(
-            a.path
-            for a in design.assets.values()
-            if a.type_id == "PAHU"
-            and any(
-                design.is_room(r)
-                and design.room(r).floor == floor
-                and design.room(r).fire_zone == fire_zone
-                for r in design.downstream(a.path, ConnectionKind.AIR)
-            )
+        devices = _fire_targets(
+            design, z.id, SMOKE_DETECTOR, HEAT_DETECTOR, CALL_POINT, ALARM_VALVE
         )
         kinds = tuple(design.asset(d).type_id for d in devices)
-        zones.append(_FireZone(z.id, room, devices, kinds, fresh_air))
+        fresh_air = _fire_targets(design, z.id, "PAHU")
+        zones.append(_FireZone(z.id, design.asset(z.id).room, devices, kinds, fresh_air))
     return tuple(zones)
 
 
 @functools.cache
-def fire_pumps(design: PlantDesign) -> tuple[str, ...]:
-    return tuple(u.id for u in design.unexported.values() if u.type_id == FIRE_PUMP)
+def fire_pumps(design: PlantDesign) -> dict[str, tuple[str, ...]]:
+    """Each fire pump → the alarm valves whose flow starts it."""
+    return {
+        u.id: tuple(
+            v for v in design.upstream(u.id, FIRE) if design.asset(v).type_id == ALARM_VALVE
+        )
+        for u in design.unexported.values()
+        if u.type_id == FIRE_PUMP
+    }
+
+
+@functools.cache
+def recalling_zones(design: PlantDesign) -> dict[str, tuple[str, ...]]:
+    """Each lift → the fire zones whose alarm recalls it."""
+    return {
+        lift: tuple(z for z in design.upstream(lift, FIRE) if design.asset(z).type_id == FIRE_ZONE)
+        for lift in lifts(design)
+    }
 
 
 @functools.cache
@@ -288,18 +328,26 @@ class LiftDomain:
     def step(self, state: WorldState, ctx: StepContext) -> None:
         now = ctx.time + int(ctx.dt)
         top = len(ctx.design.floors)
-        recall = fire_alarm(state, ctx.design)
         busy = office_hours(ctx.time)
         for lift in lifts(ctx.design):
             s = state.assets[lift]
-            if s.get("constraint.stuck", 0.0) >= 0.5:
+            if s.get("constraint.stuck", 0.0) >= 0.5 or not powered(state, ctx.design, lift):
                 s["door"] = DOOR_CLOSED
                 s["stuck"] = True
                 continue
             if s.pop("stuck", False) and s["phase"] == "moving":
                 # Released between floors: carry on to the landing it was heading for.
                 self._travel(s, s["level"], s["target"], ctx.time)
+            recall = recalled(state, ctx.design, lift)
             phase = s["phase"]
+            if phase == "moving" and recall and s["target"] != 1:
+                # Recalled mid-trip: it opens nowhere on the way, but heads straight down to
+                # the ground floor from the landing it has reached.
+                if s["level"] == 1:
+                    self._stop(s, now)
+                else:
+                    self._travel(s, s["level"], 1, ctx.time)
+                continue
             if phase == "moving":
                 if now >= s["until"]:
                     s["level"] = s["target"]

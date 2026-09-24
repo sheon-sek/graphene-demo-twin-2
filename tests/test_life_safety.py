@@ -2,9 +2,16 @@
 
 import pytest
 
+from graphene_demo_twin.faults.preview import _hops
 from graphene_demo_twin.projection import PointSource, Projector
 from graphene_demo_twin.sim import Event, Simulation
-from graphene_demo_twin.sim.life_safety import DOOR_CLOSED, DOOR_OPEN, fire_zones
+from graphene_demo_twin.sim.life_safety import (
+    DOOR_CLOSED,
+    DOOR_OPEN,
+    FIRE_PUMP_KW,
+    LIFT_IDLE_KW,
+    fire_zones,
+)
 from graphene_demo_twin.world import default_domains, default_projector
 
 START = 1_790_000_000  # Monday 2026-09-21, 22:13 local
@@ -73,6 +80,7 @@ def test_a_fire_in_dh02_alarms_level_1_zone_2_only_and_stops_its_pahu(
     pumps = {f for f in alarmed if f.rsplit("/", 1)[1].startswith("FP")}
     assert zone == {f"{L1Z2}/SD1", f"{L1Z2}/SD2", f"{L1Z2}/AV1"}  # sprinklers flowing
     assert pumps and alarmed == zone | pumps  # no other zone alarms; the fire pumps run
+    assert sim.state.assets["~G-Z3-FP1"]["power_kw"] == FIRE_PUMP_KW
 
     assert p.values[f"{PAHU2}/Main Fire Alarm"] is True
     assert p.values[f"{PAHU2}/On_Off"] == 0
@@ -189,3 +197,56 @@ def test_a_stuck_lift_stops_with_its_doors_shut_and_resumes_on_clear(plant_desig
     sim.schedule(_clear(sim.time, "~LIFT-1", "lift.stuck"))
     sim.advance(30)
     assert lift["level"] == target
+
+
+def _until_lift_1_travels_up_past_ground(sim: Simulation) -> dict:
+    lift = sim.state.assets["~LIFT-1"]
+    for _ in range(3600):
+        sim.step()
+        if lift["phase"] == "moving" and lift["target"] > lift["level"] >= 2:
+            return lift
+    raise AssertionError("Lift 1 never travelled up")
+
+
+def test_a_recall_turns_a_travelling_lift_back_without_opening_on_the_way(plant_design):
+    sim = _sim(plant_design)
+    lift = _until_lift_1_travels_up_past_ground(sim)
+    sim.schedule(_inject(sim.time, "~L1-Z4-CP1", "call_point.false_alarm"))
+    for _ in range(60):
+        sim.step()
+        if lift["door"] == DOOR_OPEN:
+            break
+        assert lift["phase"] == "moving"
+    assert lift["level"] == 1 and lift["door"] == DOOR_OPEN
+
+
+def test_the_fire_zone_reaches_its_rooms_pahus_devices_pumps_and_lifts(plant_design):
+    """ADR-0002: every consequence of a zone fire follows authored connections."""
+    hops = _hops(plant_design, FZ_DH02)
+    for node in ("DH02", PAHU2, "~L1-Z2-SD1", "~L1-Z2-AV1", "~G-Z3-FP1", "~LIFT-1"):
+        assert hops.get(node) is not None, node
+
+
+def test_lifts_stop_and_draw_nothing_without_supply(plant_design):
+    sim = _sim(plant_design)
+    lift = _until_lift_1_travels_up_past_ground(sim)
+    sim.advance(2)
+    assert sim.state.assets["~LIFT-1"]["power_kw"] > LIFT_IDLE_KW
+    sim.schedule(_inject(sim.time, "Meter/Meter14", "gpm96.breaker_trip"))
+    sim.advance(5)
+    held = dict(lift)
+    sim.advance(120)
+    assert lift["level"] == held["level"] and lift["door"] == DOOR_CLOSED
+    assert all(sim.state.assets[f"~LIFT-{n}"]["power_kw"] == 0.0 for n in (1, 2, 3))
+    assert sim.state.assets["Meter/Meter14"]["p_kw"] == 0.0
+
+
+def test_fire_pumps_do_not_run_without_supply(plant_design):
+    pumps = ("~G-Z3-FP1", "~L1-SA-FP1", "~L2-SA-FP1", "~R-SA-FP1")
+    sim = _sim(plant_design)
+    sim.schedule(_inject(START, "Meter/Level 1_DB_24", "gpqm144.breaker_trip"))
+    sim.schedule(_inject(START, FZ_DH02, "fire.room_fire"))
+    sim.advance(600)
+    assert sim.state.assets["~L1-Z2-AV1"]["alarm"]  # the sprinklers flow
+    assert not any(sim.state.assets[p]["running"] for p in pumps)
+    assert all(sim.state.assets[p]["power_kw"] == 0.0 for p in pumps)

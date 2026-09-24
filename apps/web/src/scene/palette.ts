@@ -20,6 +20,7 @@ export const KIND_COLOR: Record<ConnectionKind, string> = {
   air: '#a5d8ff',
   water: '#4ade80',
   net: '#c084fc',
+  fire: '#fb923c',
 };
 
 export const LAYER_COLOR: Record<Layer, string> = {

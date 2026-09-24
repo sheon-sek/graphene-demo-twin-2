@@ -14,6 +14,8 @@ const LAYER_OF: Record<ConnectionKind, Layer> = {
   cw: 'Hydraulic',
   air: 'Airside',
   net: 'Network',
+  // Fire alarm signalling and interlocks run in the control-network trays and riser.
+  fire: 'Network',
   water: 'Water',
 };
 

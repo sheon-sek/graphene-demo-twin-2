@@ -57,7 +57,7 @@ The electrical power drawn by IT equipment in one Data Hall; all of it becomes h
 _Avoid_: rack load, server load
 
 **Fire Zone**:
-One zone of the fire alarm panel on one floor (`Fire Protection System/<floor>/<zone>`), covering one or more rooms. A zone in alarm shuts down the fresh-air handlers supplying its rooms and recalls the lifts.
+One zone of the fire alarm panel on one floor (`Fire Protection System/<floor>/<zone>`), covering one or more rooms. A zone in alarm shuts down the fresh-air handlers supplying its rooms and recalls the lifts, along its authored `fire` connections.
 _Avoid_: fire area, detection loop
 
 **Demo Rack**:

@@ -289,7 +289,7 @@ def test_the_fault_catalog_is_served_per_asset_type(client):
     trip = next(f for f in crac if f["id"] == "crac.compressor_trip")
     assert trip["mechanism"] == "physical_constraint"
     assert {"name", "description", "variable", "span", "unit", "defaultSeverity"} <= trip.keys()
-    assert trip["spreadsAlong"] == ["power", "chw", "cw", "air", "water", "fuel"]
+    assert trip["spreadsAlong"] == ["power", "chw", "cw", "air", "water", "fuel", "fire"]
     comm = next(f for f in crac if f["id"] == "crac.comm_loss")
     assert comm["spreadsAlong"] == ["net"]
 
@@ -310,7 +310,7 @@ def test_faults_are_injected_listed_and_cleared_on_the_chosen_asset(client, twin
     ]
     assert active[0]["key"] == f"crac.compressor_trip@{CRAC3}"
     assert active[0]["category"] == "equipment"
-    assert active[0]["spreadsAlong"] == ["power", "chw", "cw", "air", "water", "fuel"]
+    assert active[0]["spreadsAlong"] == ["power", "chw", "cw", "air", "water", "fuel", "fire"]
     assert client.get("/api/state").json()["faults"].keys() == {active[0]["key"]}
 
     clear = {"target": CRAC3, "fault": "crac.compressor_trip"}

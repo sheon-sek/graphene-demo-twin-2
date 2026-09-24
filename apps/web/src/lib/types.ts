@@ -1,6 +1,6 @@
 /** Shapes served by the twin's REST and SSE surfaces (see docs/cli.md). */
 
-export type ConnectionKind = 'power' | 'chw' | 'cw' | 'air' | 'water' | 'net' | 'fuel';
+export type ConnectionKind = 'power' | 'chw' | 'cw' | 'air' | 'water' | 'net' | 'fuel' | 'fire';
 
 export interface Room {
   id: string;

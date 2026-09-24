@@ -124,11 +124,13 @@ PROFILES: Mapping[str, LoadProfile] = {
     "RCMS": _profile(0.90, 12.0),
     TANK_TYPE: _profile(0.85, 8.0),
     UPS_TYPE: _profile(0.99, 3.0),
+    "Lift": _profile(0.85, 25.0),
+    "Fire Pump": _profile(0.86, 8.0),
 }
 ROOM_PROFILE = _profile(0.93, 18.0)
 """LED lighting and small power."""
 STAND_IN_PROFILE = _profile(0.85, 25.0)
-"""Lift drives and genset jacket heaters and chargers, beyond Meter14 and Meter16."""
+"""Genset jacket heaters and chargers, beyond Meter16."""
 IT_BRANCH_THD = 8.0
 
 

@@ -22,6 +22,9 @@ class ConnectionKind(StrEnum):
     NET = "net"
     """Control network."""
     FUEL = "fuel"
+    FIRE = "fire"
+    """Fire alarm signalling and life-safety interlocks: a fire zone to its devices, rooms,
+    the fresh-air handlers it stops and the lifts it recalls; an alarm valve to the fire pumps."""
 
 
 @dataclass(frozen=True, slots=True)
