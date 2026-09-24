@@ -103,3 +103,37 @@ def test_incomer_trip_drops_the_rack_only(plant_design, projector):
     assert v[f"{DR}/E820/Vsys"] == 0 and v[f"{DR}/GEM630/Ptot"] == 0
     assert v[f"{DR}/E820/HasAlarm"] in (True, 1)
     assert v["Dashboard/PUE"] > 0
+
+
+def test_energy_registers_reconcile_with_their_circuits(plant_design, projector):
+    from graphene_demo_twin.sim.demorack import DC_SHARE, RECTIFIER_EFF
+
+    sim = _sim(plant_design)
+    for _ in range(2):
+        v = _values(projector, sim)
+        e = f"{DR}/E820/"
+        wh = {
+            k: v[f"{e}{b}{n}_I{s:02d}_Wh_Im"]
+            for k, (b, n, s) in enumerate(
+                (b, n, s) for b in ("Ba", "Bb") for n in (1, 2, 3) for s in range(1, 22)
+            )
+        }
+        assert v[f"{e}Wh_Ima"] == pytest.approx(sum(wh.values()), rel=1e-6)
+        for m, meter in METERS.items():
+            covered = sum(wh[k] for i in meter.breakers for k in range(i * 9, i * 9 + 9))
+            if meter.dc:
+                covered *= DC_SHARE * RECTIFIER_EFF
+            assert v[f"{m}/Wh_Im"] == pytest.approx(covered, rel=1e-6), m
+        sim.advance(60)
+
+
+def test_last_breaker_trip_deenergises_its_meters(plant_design, projector):
+    sim = _sim(plant_design)
+    sim.schedule(_inject(START + 2, f"{DR}/Breaker14", "breaker.trip"))
+    sim.advance(10)
+    v = _values(projector, sim)
+    for m in ("GEM230", "GDC230"):
+        for pt in ("V1", "I1", "P1"):
+            assert v[f"{DR}/{m}/{pt}"] == 0, (m, pt)
+    assert v[f"{DR}/GEM230/Hz"] == 0
+    assert v[f"{DR}/GEM630/V1"] > 200

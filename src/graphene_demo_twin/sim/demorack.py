@@ -37,6 +37,9 @@ FEEDER_DROP_PER_KVA = 0.0004
 """Fraction of voltage lost per kVA on a phase."""
 RECLOSE_S = 30
 PHASE_V = (0.002, -0.003, 0.001)
+BASELINE_H = 2000.0
+"""Hours of rated draw already on each circuit's energy register at startup, so every register
+starts from one shared history."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +109,7 @@ class DemoRackDomain:
         }
         for k in range(CIRCUITS):
             states[INCOMER][_KW_KEYS[k]] = 0.0
-            states[INCOMER][_KWH_KEYS[k]] = 100.0 + k
+            states[INCOMER][_KWH_KEYS[k]] = _BASE[k] * BASELINE_H
         for b in BREAKERS:
             states[b] = {
                 "trip": False,
@@ -117,7 +120,7 @@ class DemoRackDomain:
                 "q_kvar": 0.0,
             }
         for m in METERS:
-            states[m] = {"energy_kwh": 50.0, "has_alarm": False, "hz": HZ}
+            states[m] = {"energy_kwh": 0.0, "has_alarm": False, "hz": HZ}
         _flow(states, ctx, integrate=False)
         return states
 
@@ -179,28 +182,36 @@ def _flow(a: dict[str, AssetState], ctx: StepContext, *, integrate: bool) -> Non
     ]
     for k in range(3):
         inc[f"p{k + 1}"], inc[f"q{k + 1}"], inc[f"v{k + 1}"] = phase_p[k], phase_q[k], volts[k]
-    inc["energy_kwh"] = inc["energy_kwh"] + sum(phase_p) * hours
+    # Aggregate registers are derived from the circuit registers, never integrated on their own.
+    inc["energy_kwh"] = sum(inc[key] for key in _KWH_KEYS)
     inc["has_alarm"] = (not live) or any_tripped
 
     for m, meter in METERS.items():
         s = a[m]
         p, q = [0.0] * 3, [0.0] * 3
         tripped = False
+        supplied = False
+        kwh = 0.0
         for i in meter.breakers:
             tripped = tripped or bool(breakers[i]["trip"])
+            supplied = supplied or bool(breakers[i]["closed"])
             for k in _CIRCUITS_OF[i]:
                 kw = inc[_KW_KEYS[k]]
+                kwh += inc[_KWH_KEYS[k]]
                 slot = 0 if meter.phases == 1 else _PHASE_OF[k]
                 p[slot] += kw
                 q[slot] += kw * _TAN[k]
-        v = list(volts) if meter.phases == 3 else [volts[0], 0.0, 0.0]
+        # A meter is live only while the incomer and at least one of its feeders are closed.
+        on = live and supplied
+        v = (list(volts) if meter.phases == 3 else [volts[0], 0.0, 0.0]) if on else [0.0] * 3
         if meter.dc:
             p = [DC_SHARE * RECTIFIER_EFF * p[0], 0.0, 0.0]
             q = [0.0, 0.0, 0.0]
-            v = [DC_V if live else 0.0, 0.0, 0.0]
+            v = [DC_V if on else 0.0, 0.0, 0.0]
+            kwh *= DC_SHARE * RECTIFIER_EFF
         for k in range(3):
             s[f"p{k + 1}"], s[f"q{k + 1}"], s[f"v{k + 1}"] = p[k], q[k], v[k]
-        s["hz"] = 0.0 if meter.dc else hz
-        s["energy_kwh"] = s["energy_kwh"] + sum(p) * hours
+        s["hz"] = hz if on and not meter.dc else 0.0
+        s["energy_kwh"] = kwh
         s["has_alarm"] = (not live) or tripped
-        s["live"] = live
+        s["live"] = on
