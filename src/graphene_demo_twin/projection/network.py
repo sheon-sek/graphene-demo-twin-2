@@ -18,6 +18,7 @@ from graphene_demo_twin.sim.network import (
     ROLES,
     SUPERVISORS,
     TOPOLOGY,
+    Network,
     Port,
     network,
     role_of,
@@ -26,6 +27,11 @@ from graphene_demo_twin.sim.network import (
 SUPERVISOR_POINTS = frozenset({"Loss of Signal Alarm"})
 """Members the supervisor computes itself, so they keep good quality when the asset's
 communication is lost."""
+DEVICE_HEALTH_POINTS = frozenset({"Comm", "Status"})
+"""A network device's health as the supervisor judges it: good quality and never stale-held,
+so a lost device reads Disconnected rather than its last healthy values."""
+QUALITY_RANK = (Quality.GOOD, Quality.UNCERTAIN, Quality.BAD)
+"""Qualities from best to worst."""
 DEVICE_POINTS = {
     "CPU": "cpu_pct",
     "Memory": "mem_pct",
@@ -65,10 +71,10 @@ def network_bindings(asset_model: AssetModel, design: PlantDesign) -> list[Bindi
         ports = net.ports[d]
         bindings.append(Binding(f"{view}/Port Count", _const(len(ports))))
         for label, display in (("Ports Up", 1), ("Ports Down", 2), ("Ports Off", 0)):
-            bindings.append(Binding(f"{view}/{label}", _count(d, ports, display)))
+            bindings.append(Binding(f"{view}/{label}", _count(net, d, ports, display)))
         for port in ports:
             at = f"{view}/Ports/Port {port.number:02d}"
-            for name, read in _port(d, port).items():
+            for name, read in _port(net, d, port).items():
                 bindings.append(Binding(f"{at}/{name}", read))
     for path, gw in GATEWAY_STATUS.items():
         if path in asset_model.points:
@@ -84,10 +90,9 @@ def network_quality(asset_model: AssetModel, design: PlantDesign) -> list[Qualit
     bindings: list[QualityBinding] = []
     by_node: dict[str, str] = {d: d for d in net.devices}
     by_node.update(net.switches)
+    exempt = SUPERVISOR_POINTS | DEVICE_HEALTH_POINTS
     for asset, node in by_node.items():
-        paths = tuple(
-            p.path for p in asset_model.points_of(asset) if p.name not in SUPERVISOR_POINTS
-        )
+        paths = tuple(p.path for p in asset_model.points_of(asset) if p.name not in exempt)
         bindings.append(QualityBinding(paths, _comm(node)))
     # A field device whose own device logic reads its communication (the airside's Loss of
     # Signal) carries its quality in its state.
@@ -130,16 +135,15 @@ def network_quality(asset_model: AssetModel, design: PlantDesign) -> list[Qualit
             views.setdefault(node, []).append(p.path)
     bindings += (QualityBinding(tuple(paths), _comm(node)) for node, paths in views.items())
 
-    # A KPI view point belongs to no placed asset of its own: the supervisor computes it from
-    # what its SCADA servers collect, so its quality is the pair's.
-    pair = SUPERVISORS
+    # A KPI view point is the supervisor's own computation from what its SCADA servers
+    # collect, so its quality is the pair's; the gateway status points are its reachability.
     kpi = tuple(
         p.path
         for p in asset_model.points.values()
-        if p.asset is None and p.support and p.path.split("/", 1)[0] in KPI_VIEWS
+        if p.path.split("/", 1)[0] in KPI_VIEWS and p.path not in GATEWAY_STATUS
     )
     if kpi:
-        bindings.append(QualityBinding(kpi, _pair(pair)))
+        bindings.append(QualityBinding(kpi, _pair(SUPERVISORS)))
     return bindings
 
 
@@ -148,7 +152,11 @@ def _pair(devices: tuple[str, ...]) -> Callable[[WorldState], Quality]:
     is degraded, bad only when neither does."""
 
     def read(state: WorldState) -> Quality:
-        return max((Quality(state.assets[d]["comm"]) for d in devices), default=Quality.BAD)
+        return min(
+            (Quality(state.assets[d]["comm"]) for d in devices),
+            key=QUALITY_RANK.index,
+            default=Quality.BAD,
+        )
 
     return read
 
@@ -170,19 +178,15 @@ def _comm(node: str) -> Callable[[WorldState], Quality]:
 
 
 def _field_comm(node: str, gateway: str) -> Callable[[WorldState], Quality]:
-    """A field device's quality: the gateway's, or worse where its own polls are lost. The
+    """A field device's quality: the worse of the gateway's and its own polls'. The
     device's own state may not be modelled at all, in which case it has no variables and only
     a comm-loss fault on it can degrade its points."""
 
     def read(state: WorldState) -> Quality:
         own = state.assets.get(node)
         loss = own.get("quality.comm_loss", 0.0) if own else 0.0
-        if loss >= 0.5:
-            return Quality.BAD
-        quality = Quality(state.assets[gateway]["comm"])
-        if loss > 0.0:
-            return Quality.UNCERTAIN
-        return quality
+        own_q = Quality.BAD if loss >= 0.5 else Quality.UNCERTAIN if loss > 0.0 else Quality.GOOD
+        return max(own_q, Quality(state.assets[gateway]["comm"]), key=QUALITY_RANK.index)
 
     return read
 
@@ -199,28 +203,42 @@ def _uptime_days(node: str) -> Callable[[WorldState], Scalar]:
     return read
 
 
-def _link_up(state: WorldState, switch: str, port: Port) -> bool:
+def _link_up(state: WorldState, switch: str, port: Port, flappers: tuple[str, ...]) -> bool:
+    """One state per physical link, the same from both ends: down with either device, or
+    while a switch whose flapping port it is has it dropped."""
     if port.peer is None:
         return False
     a = state.assets
-    s = a[switch]
-    if not (s["up"] and a[port.peer]["up"]):
+    if not (a[switch]["up"] and a[port.peer]["up"]):
         return False
-    return not (s["flap_down"] and port.number == FLAP_PORT)
+    return not any(a[f]["flap_down"] for f in flappers)
 
 
-def _display(state: WorldState, switch: str, port: Port) -> int:
+def _flappers(net: Network, switch: str, port: Port) -> tuple[str, ...]:
+    """The switches whose flapping port carries this port's link."""
+    if port.peer is None:
+        return ()
+    link = frozenset((switch, port.peer))
+    return tuple(sw for sw, flap in net.flap_link.items() if frozenset(flap) == link)
+
+
+def _display(state: WorldState, switch: str, port: Port, flappers: tuple[str, ...]) -> int:
     """The UDT's Display Status: 0 Off (admin down), 1 Up, 2 Down."""
     if port.peer is None:
         return 0
-    return 1 if _link_up(state, switch, port) else 2
+    return 1 if _link_up(state, switch, port, flappers) else 2
 
 
-def _count(switch: str, ports: tuple[Port, ...], display: int) -> Callable[[WorldState], Scalar]:
-    return lambda state: sum(_display(state, switch, p) == display for p in ports)
+def _count(
+    net: Network, switch: str, ports: tuple[Port, ...], display: int
+) -> Callable[[WorldState], Scalar]:
+    flappers = [_flappers(net, switch, p) for p in ports]
+    return lambda state: sum(
+        _display(state, switch, p, f) == display for p, f in zip(ports, flappers, strict=True)
+    )
 
 
-def _port(switch: str, port: Port) -> dict[str, Callable[[WorldState], Scalar]]:
+def _port(net: Network, switch: str, port: Port) -> dict[str, Callable[[WorldState], Scalar]]:
     peer = port.peer
     if peer is None:
         return {
@@ -236,10 +254,11 @@ def _port(switch: str, port: Port) -> dict[str, Callable[[WorldState], Scalar]]:
         }
     role = ROLES[role_of(peer)]
     poe = 6.5 if role_of(peer) == "kvm" else 0.0
-    flaps = port.number == FLAP_PORT
+    flaps = port.number == FLAP_PORT and switch in net.flap_link
+    flappers = _flappers(net, switch, port)
 
     def up(state: WorldState) -> bool:
-        return _link_up(state, switch, port)
+        return _link_up(state, switch, port, flappers)
 
     def load(state: WorldState) -> float:
         """How busy the link is: the peer's CPU relative to its idle, as a traffic proxy."""
@@ -248,7 +267,7 @@ def _port(switch: str, port: Port) -> dict[str, Callable[[WorldState], Scalar]]:
     return {
         "Admin Status": _const(1),
         "Description": _const(peer.rsplit("/", 1)[-1]),
-        "Display Status": lambda s: _display(s, switch, port),
+        "Display Status": lambda s: _display(s, switch, port, flappers),
         "Error Count": (lambda s: s.assets[switch]["flap_errors"]) if flaps else _const(0),
         "In Utilization": lambda s: min(role.link_in * load(s), 100.0) if up(s) else 0.0,
         "Link Status": lambda s: 1 if up(s) else 2,

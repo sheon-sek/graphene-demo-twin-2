@@ -321,9 +321,10 @@ def test_communication_faults_change_quality_along_the_network(plant_design, pro
     assert p.quality(f"{CRAC3}/Loss of Signal Alarm") is Quality.GOOD
     assert p.values[f"{CRAC3}/Loss of Signal Alarm"] is True
     assert p.quality(f"{CRAC1}/Supply Air Temperature") is Quality.GOOD
-    assert p.quality(f"{SWITCH}/Status") is Quality.BAD
-    assert p.quality(f"{EWS}/Status") is Quality.BAD  # downstream on the network
-    assert p.quality("Network Topology/EWS-B/Status") is Quality.GOOD
+    assert p.quality(f"{SWITCH}/CPU") is Quality.BAD
+    assert p.values[f"{SWITCH}/Status"] == 1  # the supervisor reads it Disconnected
+    assert p.quality(f"{EWS}/CPU") is Quality.BAD  # downstream on the network
+    assert p.quality("Network Topology/EWS-B/CPU") is Quality.GOOD
     # Communication loss does not change the physical world.
     assert sim.state.assets["DH03"] == _sim_at(plant_design, 3).state.assets["DH03"]
 
@@ -570,7 +571,7 @@ def test_a_preview_of_a_quality_fault_lists_the_network_in_order(
         "Network Topology/OWS-A3",
     } - {"Network Topology/DATABASE SERVER A"}
     assert "Network Topology/DATABASE SERVER B" not in nodes
-    assert any(d.path == f"{EWS}/Status" and d.predicted_quality == "bad" for d in preview.diffs)
+    assert any(d.path == f"{EWS}/CPU" and d.predicted_quality == "bad" for d in preview.diffs)
 
 
 def test_a_preview_rejects_what_the_live_world_would_reject(plant_design, asset_model, projector):
