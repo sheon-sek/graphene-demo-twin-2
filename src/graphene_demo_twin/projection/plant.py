@@ -514,7 +514,9 @@ def _pumps_and_valves(layout) -> Iterable[Binding]:
         cells = [c for leg in layout.legs for c in leg.cells if f"/R_{plant}_CT" in c]
         yield Binding(
             f"Cooling Towers Plant/HasAlarm_R_{plant}",
-            lambda s, cells=cells: any(s.assets[c]["trip"] for c in cells),
+            lambda s, cells=cells: any(
+                s.assets[c]["trip"] or s.assets[c.replace("_CT", "_P")]["has_alarm"] for c in cells
+            ),
         )
     for pump in layout.pumps:
         yield Binding(f"{pump}/On_Off", _fn(pump, lambda x: int(x["running"])))

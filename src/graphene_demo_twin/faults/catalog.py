@@ -492,6 +492,85 @@ STANDARD_CATALOG = FaultCatalog(
             "The tank's transfer pump trips: while its gensets run, their day tanks drain and "
             "are not refilled, until the engines shut down on low fuel.",
         ),
+        FaultSpec(
+            "water.municipal_loss",
+            "Municipal supply loss",
+            "CW Ground Valve",
+            FaultCategory.EXTERNAL,
+            "constraint.supply_loss",
+            1.0,
+            "fraction of mains flow lost",
+            "The mains supply to the site fails: the ground tanks stop refilling and drain as "
+            "the transfer and AC makeup pumps draw on them.",
+            where=lambda design: ("Cold Water and Sanitary System/G_V1",),
+        ),
+        FaultSpec(
+            "ground_valve.stuck",
+            "Valve stuck",
+            "CW Ground Valve",
+            FaultCategory.EQUIPMENT,
+            "constraint.stuck",
+            1.0,
+            "stuck",
+            "The valve's actuator seizes and it holds its position whatever it is commanded "
+            "(once the level passes half): a stuck tank inlet stops floating on level.",
+        ),
+        FaultSpec(
+            "roof_valve.stuck",
+            "Valve stuck",
+            "CW Roof Valve",
+            FaultCategory.EQUIPMENT,
+            "constraint.stuck",
+            1.0,
+            "stuck",
+            "The valve's actuator seizes and it holds its position whatever it is commanded "
+            "(once the level passes half): a stuck roof tank inlet can overfill its tank.",
+        ),
+        FaultSpec(
+            "transfer_pump.trip",
+            "Transfer pump trip",
+            "CW Transfer Pump",
+            FaultCategory.EQUIPMENT,
+            "constraint.trip",
+            1.0,
+            "trip",
+            "The pump trips on overload (once the level passes half). The standby pump takes "
+            "its place; with all three lost the roof tanks drain at what the towers evaporate.",
+        ),
+        FaultSpec(
+            "roof_tank.level_sensor",
+            "Level sensor reads high",
+            "CW Roof Tank",
+            FaultCategory.SENSOR,
+            "observation.level_offset_pct",
+            40.0,
+            "% of level",
+            "The roof tank's level transmitter reads high. The water is unchanged, but the "
+            "transfer pumps, controlled on the reading, start late or not at all.",
+        ),
+        FaultSpec(
+            "makeup_pump.failure",
+            "Makeup pump failure",
+            "Makeup Water Pump",
+            FaultCategory.EQUIPMENT,
+            "constraint.trip",
+            1.0,
+            "trip",
+            "The cell's makeup pump trips (once the level passes half): its basin falls with "
+            "evaporation until the cell trips on low basin level.",
+        ),
+        FaultSpec(
+            "leak.pipe_leak",
+            "Pipe leak",
+            "Water Leak Cable Sensor",
+            FaultCategory.EQUIPMENT,
+            "constraint.leak_lps",
+            2.0,
+            "L/s",
+            "A pipe leaks in the room this cable runs under. Water pools on the floor and the "
+            "cable alarms, with its position, once the water reaches it; the closed CHW loop "
+            "(or, in a water plant room, the tanks) loses the water.",
+        ),
     ]
 )
 """The catalog, consumed by the device models in `sim` (the stand-ins in `sim.placeholder`

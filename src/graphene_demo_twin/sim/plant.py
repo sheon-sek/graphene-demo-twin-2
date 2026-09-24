@@ -125,9 +125,6 @@ condenser water flowing, it settles to the wet bulb within minutes."""
 FAN_KW, FAN_MIN_PCT, FAN_PCT_PER_S = 11.0, 20.0, 5.0
 FAN_KP, FAN_KI = 10.0, 0.1
 BASIN_KG = 20_000.0
-BASIN_LEVEL_PCT, BASIN_DRAW_PCT, BASIN_TAU_S = 80.0, 10.0, 300.0
-"""Basin level with no heat rejected, how far full rejection draws it down while makeup
-catches up, and how fast it follows."""
 CELL_VOLTS, CELL_PF = 400.0, 0.86
 
 ETA = 0.5
@@ -532,7 +529,6 @@ class ChillerPlantDomain:
                         basin = sp
             p[f"{leg.tower}.basin_c"] = basin
             p[f"{leg.tower}.fan_i"] = fan if running else FAN_MIN_PCT
-            p[f"{leg.tower}.level_pct"] = BASIN_LEVEL_PCT
             for cell in leg.cells:
                 a[cell] |= {"fan_pct": fan, "running": running}
             for tank in leg.tanks:
@@ -808,7 +804,8 @@ class ChillerPlantDomain:
             for cell in cells:
                 s = a[cell]
                 powered_cell = live(cell)
-                loss = s.get("constraint.fan_loss", 0.0)
+                # A basin at its low-level trip (`sim.water`) stops the fan like a fan fault.
+                loss = 1.0 if s.get("basin_low") else s.get("constraint.fan_loss", 0.0)
                 if not settle:
                     if powered_cell and loss < 0.9 and cmd > 0.0:
                         s["fan_pct"] += min(max(cmd - s["fan_pct"], -step), step)
@@ -836,10 +833,6 @@ class ChillerPlantDomain:
             if not settle:
                 heat = c["cooling_kw"] + c["power_kw"] if flowing else 0.0
                 basin += (heat - q_tower) * dt / (CP * BASIN_KG)
-                target = BASIN_LEVEL_PCT - BASIN_DRAW_PCT * max(q_tower, 0.0) / (
-                    CELL_KW * len(leg.cells)
-                )
-                p[k["level_pct"]] += (target - p[k["level_pct"]]) * dt / BASIN_TAU_S
                 if spinning:
                     p[k["run_s"]] += dt
             p[k["basin_c"]] = basin
@@ -908,7 +901,7 @@ def _supply_flags(design: PlantDesign) -> dict[str, str | None]:
 @functools.cache
 def _tower_keys(tower: str) -> dict[str, str]:
     """A Tower Group's variables on the plant's AssetState, by name."""
-    names = ("basin_c", "cwr_c", "fan_i", "fan_pct", "level_pct", "power_kw", "rejected_kw")
+    names = ("basin_c", "cwr_c", "fan_i", "fan_pct", "power_kw", "rejected_kw")
     return {n: f"{tower}.{n}" for n in (*names, "run_s", "run_h0")}
 
 
@@ -1045,7 +1038,7 @@ def _plant_initial(ctx: StepContext) -> AssetState:
     p["delivery"] = 1.0
     for tower, hours in INITIAL_TOWER_HOURS.items():
         p |= {f"{tower}.basin_c": CWS_SP_C, f"{tower}.cwr_c": CWS_SP_C, f"{tower}.fan_i": 0.0}
-        p |= {f"{tower}.level_pct": BASIN_LEVEL_PCT, f"{tower}.rejected_kw": 0.0}
+        p |= {f"{tower}.rejected_kw": 0.0}
         p |= {f"{tower}.fan_pct": 0.0, f"{tower}.power_kw": 0.0}
         p |= {f"{tower}.run_s": 0.0, f"{tower}.run_h0": hours}
     return p

@@ -11,6 +11,7 @@ from graphene_demo_twin.projection import (
     plant_bindings,
     site_bindings,
     thermal_bindings,
+    water_bindings,
 )
 from graphene_demo_twin.sim import (
     Domain,
@@ -23,13 +24,15 @@ from graphene_demo_twin.sim.electrical import ElectricalDomain
 from graphene_demo_twin.sim.it_load import ITLoadDomain
 from graphene_demo_twin.sim.plant import ChillerPlantDomain
 from graphene_demo_twin.sim.site import SiteLoadDomain, SitePowerDomain
+from graphene_demo_twin.sim.water import WaterDomain
 from graphene_demo_twin.sim.weather import WeatherDomain
 
 
 def default_domains(catalog: FaultCatalog = STANDARD_CATALOG) -> list[Domain]:
     """Faults first, so every model reads this step's fault levels; then the network, the
     weather and IT Load that drive the site, the DX CRAC units, the chiller plant, the
-    chilled-water units and Cooling Blocks on the water it supplied, the other loads, the
+    chilled-water units and Cooling Blocks on the water it supplied, the water network
+    that makes up what the towers lose, the other loads, the
     electrical network that supplies all of them, the thermal zones every load dissipates its
     power into and every unit cools, the sensors that observe the halls, and last the site's
     power totals."""
@@ -41,6 +44,7 @@ def default_domains(catalog: FaultCatalog = STANDARD_CATALOG) -> list[Domain]:
         CracDomain(),
         ChillerPlantDomain(),
         ChilledWaterUnitDomain(),
+        WaterDomain(),
         SiteLoadDomain(),
         ElectricalDomain(),
         ThermalZoneDomain(),
@@ -67,6 +71,7 @@ def default_projector(
             *thermal_bindings(asset_model, design),
             *electrical_bindings(asset_model, design),
             *plant_bindings(asset_model, design),
+            *water_bindings(asset_model, design),
         ],
         placeholder_quality(asset_model, design, catalog.asset_types(Mechanism.QUALITY)),
     )
