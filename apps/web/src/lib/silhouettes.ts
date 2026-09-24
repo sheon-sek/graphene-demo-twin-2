@@ -42,7 +42,11 @@ const RULES: [RegExp, Family][] = [
   [/^(IPS|RCMS|Chiller Plant Controller)$/, 'panel'],
   [/^Breaker$/, 'breaker'],
   [/^Genset$/, 'genset'],
-  [/^(Temperature and Humidity|Environment Monitoring)$/, 'sensor'],
+  [
+    /^(Temperature and Humidity|Environment Monitoring|Smoke Detector|Heat Detector|Manual Call Point)$/,
+    'sensor',
+  ],
+  [/^(Fire Zone|Lift)$/, 'panel'],
   [/^Water Leak Cable Sensor$/, 'leakSensor'],
   [/^Network (Device|Switch)$/, 'network'],
   [/^(CDU|Production\/.*)$/, 'rack'],

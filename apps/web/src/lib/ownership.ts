@@ -20,7 +20,9 @@ export function ownerResolver(
 ): OwnerOf {
   const assets = new Set(assetPaths);
   const observers = new Map<string, string>();
-  for (const u of unexported) for (const folder of u.observedBy) observers.set(folder, u.id);
+  // A folder several Unexported Assets share (a fire zone's) belongs to the first: the zone.
+  for (const u of unexported)
+    for (const folder of u.observedBy) if (!observers.has(folder)) observers.set(folder, u.id);
   return (path) => {
     for (let cut = path.lastIndexOf('/'); cut > 0; cut = path.lastIndexOf('/', cut - 1)) {
       const at = path.slice(0, cut);

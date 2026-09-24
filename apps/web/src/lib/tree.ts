@@ -67,11 +67,28 @@ export function buildTree(
   }
   for (const asset of assets) add(asset);
 
+  // A folder selects the first Unexported Asset it observes (a fire zone, listed before its
+  // devices); each later one sharing the folder gets a leaf of its own inside it.
   for (const u of unexported) {
     for (const folder of u.observedBy) {
       add(folder);
-      tree.byPath.get(folder)!.selects = u.id;
-      if (!tree.nodeFor.has(u.id)) tree.nodeFor.set(u.id, folder);
+      const node = tree.byPath.get(folder)!;
+      if (node.selects === null || node.selects === u.id) {
+        node.selects = u.id;
+        if (!tree.nodeFor.has(u.id)) tree.nodeFor.set(u.id, folder);
+      } else if (!tree.nodeFor.has(u.id)) {
+        const leaf = `${folder}/${u.id}`;
+        tree.byPath.set(leaf, {
+          path: leaf,
+          name: u.name,
+          parent: folder,
+          kind: 'asset',
+          children: [],
+          selects: u.id,
+        });
+        node.children.push(leaf);
+        tree.nodeFor.set(u.id, leaf);
+      }
     }
   }
   return tree;
