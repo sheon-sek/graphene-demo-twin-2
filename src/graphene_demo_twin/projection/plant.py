@@ -226,6 +226,13 @@ def _supervisor(layout) -> Iterable[Binding]:
         "Cooling Blocks/CB-001/Pump Minimum Speed": p("pump_min_pct"),
         "Cooling Blocks/CB-001/Tower Approach SP": p("approach_sp_k"),
         "Cooling Blocks/CB-001/System Status": loop_status,
+        "Cooling Blocks/CB-001/Enabled": lambda s: s.assets[PLANT]["running_count"] > 0,
+        "Cooling Blocks/CB-001/Loop Enable": lambda s: (
+            "ENABLED" if s.assets[PLANT]["running_count"] > 0 else "DISABLED"
+        ),
+        "Cooling Blocks/CB-001/Mode": lambda s: (
+            "AUTO" if s.assets[PLANT]["dp_mode"] == "AUTO" else "MANUAL"
+        ),
         # Pumps.
         "Pumps/P-CHWR-01/Flow": p("flow_lps", M3H),
         "Pumps/P-CHWR-01/Frequency": _var(layout.secondary, "hz"),

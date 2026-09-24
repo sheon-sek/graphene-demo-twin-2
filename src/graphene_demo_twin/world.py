@@ -6,6 +6,7 @@ from graphene_demo_twin.plant_design import PlantDesign
 from graphene_demo_twin.projection import (
     Projector,
     airside_bindings,
+    demorack_bindings,
     electrical_bindings,
     network_bindings,
     network_quality,
@@ -16,6 +17,7 @@ from graphene_demo_twin.projection import (
 )
 from graphene_demo_twin.sim import Domain, ThermalZoneDomain, ZoneSensorDomain
 from graphene_demo_twin.sim.airside import ChilledWaterUnitDomain, CracDomain
+from graphene_demo_twin.sim.demorack import DemoRackDomain
 from graphene_demo_twin.sim.electrical import ElectricalDomain
 from graphene_demo_twin.sim.it_load import ITLoadDomain
 from graphene_demo_twin.sim.network import NetworkDomain
@@ -32,8 +34,8 @@ def default_domains(catalog: FaultCatalog = STANDARD_CATALOG) -> list[Domain]:
     chilled-water units and Cooling Blocks on the water it supplied, the water network
     that makes up what the towers lose, the other loads, the
     electrical network that supplies all of them, the thermal zones every load dissipates its
-    power into and every unit cools, the sensors that observe the halls, and last the site's
-    power totals."""
+    power into and every unit cools, the sensors that observe the halls, then the site's
+    power totals, and last the Demo Rack, which shares nothing with the site."""
     return [
         FaultDomain(catalog),
         NetworkDomain(),
@@ -48,6 +50,7 @@ def default_domains(catalog: FaultCatalog = STANDARD_CATALOG) -> list[Domain]:
         ThermalZoneDomain(),
         ZoneSensorDomain(),
         SitePowerDomain(),
+        DemoRackDomain(),
     ]
 
 
@@ -71,6 +74,7 @@ def default_projector(
             *plant_bindings(asset_model, design),
             *network_bindings(asset_model, design),
             *water_bindings(asset_model, design),
+            *demorack_bindings(asset_model, design),
         ],
         network_quality(asset_model, design),
     )

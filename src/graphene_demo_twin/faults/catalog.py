@@ -707,6 +707,39 @@ STANDARD_CATALOG = FaultCatalog(
             "the bus stays dead while its gensets run, and the UPS batteries run down.",
         ),
         FaultSpec(
+            "breaker.trip",
+            "Breaker trip",
+            "Breaker",
+            FaultCategory.EQUIPMENT,
+            "constraint.breaker_trip",
+            1.0,
+            "trip",
+            "A Demo Rack breaker opens (once the level passes half): its nine circuits lose "
+            "supply and the meters behind it read zero. It recloses 30 s after the Clear.",
+        ),
+        FaultSpec(
+            "breaker.earth_fault",
+            "Earth fault",
+            "Breaker",
+            FaultCategory.EQUIPMENT,
+            "constraint.earth_fault",
+            1.0,
+            "leak",
+            "Leakage to earth on a Demo Rack circuit (once the level passes half): the "
+            "breaker's EF bit sets and it trips on the fault, like a breaker trip.",
+        ),
+        FaultSpec(
+            "e820.incomer_trip",
+            "Incomer trip",
+            "Production/E820",
+            FaultCategory.EQUIPMENT,
+            "constraint.incomer_trip",
+            1.0,
+            "trip",
+            "The Demo Rack's own incomer trips (once the level passes half): every circuit "
+            "and demo meter loses supply. The site is unaffected.",
+        ),
+        FaultSpec(
             "ups.rectifier_failure",
             "Rectifier failure",
             "UPS",

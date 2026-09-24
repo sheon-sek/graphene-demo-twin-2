@@ -13,6 +13,7 @@ from graphene_demo_twin.asset_model import AssetModel
 from graphene_demo_twin.plant_design import PlantDesign
 from graphene_demo_twin.projection.projector import Binding
 from graphene_demo_twin.sim import WorldState
+from graphene_demo_twin.sim.it_load import it_equipment
 from graphene_demo_twin.sim.thermal import cold_aisle_sensors, halls, hot_aisle_sensors
 
 DATA_HALLS = "Chiller System Control/Data Halls"
@@ -51,6 +52,10 @@ def _zones(design: PlantDesign) -> Iterable[Binding]:
     for hall in halls(design):
         yield Binding(f"{DATA_HALLS}/DH{int(hall[2:])} Temperature", _var(hall, "temp_c"))
     yield Binding(f"{DATA_HALLS}/Current Heat Load", _over(list(halls(design)), "heat_kw", sum))
+    yield Binding(
+        f"{DATA_HALLS}/Energy Consumption",
+        _over(list(it_equipment(design)), "energy_kwh", sum),
+    )
 
 
 def _var(node: str, name: str) -> Callable[[WorldState], float]:

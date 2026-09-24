@@ -51,6 +51,8 @@ TARGET = {
     "GPM96": "Meter/Level 2_MSB A_4",  # chiller CH-001's feeder
     "GPQM96": "Meter/Level 2_MSB A_3",  # A-side UPS feeders for DH05-08
     "BCPM": "BCPM/3L1",
+    "Breaker": "DemoRack/Breaker1",  # the Demo Rack, standalone
+    "Production/E820": "DemoRack/E820",
     "UPS": "UPS/UPS 1",
     "Genset": "Genset/Genset 1",
     "Diesel": "Diesel/Tank 1",

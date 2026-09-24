@@ -35,6 +35,7 @@ SUPPORT_SCOPES: tuple[str, ...] = (
     "Smart Alarm Logic",
     "Testing",
     "Meter/decoder1",
+    "Meter/GEM630CTL",
     "Breaker",
     "Line",
     "Temperature_Controls",
