@@ -14,6 +14,8 @@ Rev 0.3 (2026-09-23) authors the load side of the power graph for #19 (review it
 
 Rev 0.4 (2026-09-24) adds the ceiling cooling units' air connections for #22 (review item A17, not yet reviewed). Each hall's CCU supplies air to that hall, so its cooling reaches the hall's heat balance like the other units'. The CDUs' air connection to DH08 carries no air: they remove the liquid-cooled share of its IT Load directly.
 
+Rev 0.5 (2026-09-24) adds fire protection and the lifts for #26 (review item A18, not yet reviewed). The `Fire Protection System` and `Lift Monitoring System` folders hold loose points with no UDT, so every fire zone (`~FZ-L1-Z2`), every device in it (`~L1-Z2-SD1`: smoke and heat detectors, call points, alarm valves, fire pumps) and every lift (`~LIFT-1`–`3`) is an Unexported Asset observed through its folder. The loader accepts those two folders as observation paths. A zone and its devices stand in the zone's first room, where a fire in that zone burns. A zone in alarm shuts down the PAHUs supplying air into its rooms. They report through GATEWAY B, which now also carries `Life Safety`.
+
 Key decisions the design encodes:
 
 - One chiller plant with four chillers. CH-004 is an Unexported Asset (ADR-0004).

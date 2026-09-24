@@ -6409,8 +6409,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 29.8,
-   "y": 4,
+   "x": 25.0,
+   "y": 10,
    "role": "800 kVA UPS 1 of 3 for DH01 (side A)",
    "sys": "Electrical"
   },
@@ -6419,7 +6419,7 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 51.0,
+   "x": 65.4,
    "y": 4,
    "role": "800 kVA UPS 2 of 3 for DH01 (side B)",
    "sys": "Electrical"
@@ -6429,8 +6429,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 34.6,
-   "y": 4,
+   "x": 29.8,
+   "y": 10,
    "role": "800 kVA UPS 3 of 3 for DH01 (side A)",
    "sys": "Electrical"
   },
@@ -6439,8 +6439,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 39.4,
-   "y": 4,
+   "x": 34.6,
+   "y": 10,
    "role": "800 kVA UPS 1 of 3 for DH02 (side A)",
    "sys": "Electrical"
   },
@@ -6449,7 +6449,7 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 55.8,
+   "x": 70.2,
    "y": 4,
    "role": "800 kVA UPS 2 of 3 for DH02 (side B)",
    "sys": "Electrical"
@@ -6459,8 +6459,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 60.6,
-   "y": 4,
+   "x": 51.0,
+   "y": 10,
    "role": "800 kVA UPS 3 of 3 for DH02 (side B)",
    "sys": "Electrical"
   },
@@ -6469,8 +6469,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 44.2,
-   "y": 4,
+   "x": 39.4,
+   "y": 10,
    "role": "800 kVA UPS 1 of 3 for DH03 (side A)",
    "sys": "Electrical"
   },
@@ -6479,8 +6479,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 65.4,
-   "y": 4,
+   "x": 55.8,
+   "y": 10,
    "role": "800 kVA UPS 2 of 3 for DH03 (side B)",
    "sys": "Electrical"
   },
@@ -6489,7 +6489,7 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 25.0,
+   "x": 44.2,
    "y": 10,
    "role": "800 kVA UPS 3 of 3 for DH03 (side A)",
    "sys": "Electrical"
@@ -6499,8 +6499,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 29.8,
-   "y": 10,
+   "x": 25.0,
+   "y": 16,
    "role": "800 kVA UPS 1 of 3 for DH04 (side A)",
    "sys": "Electrical"
   },
@@ -6509,8 +6509,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 70.2,
-   "y": 4,
+   "x": 60.6,
+   "y": 10,
    "role": "800 kVA UPS 2 of 3 for DH04 (side B)",
    "sys": "Electrical"
   },
@@ -6519,7 +6519,7 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 51.0,
+   "x": 65.4,
    "y": 10,
    "role": "800 kVA UPS 3 of 3 for DH04 (side B)",
    "sys": "Electrical"
@@ -6529,8 +6529,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 34.6,
-   "y": 10,
+   "x": 29.8,
+   "y": 16,
    "role": "800 kVA UPS 1 of 3 for DH05 (side A)",
    "sys": "Electrical"
   },
@@ -6539,7 +6539,7 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 55.8,
+   "x": 70.2,
    "y": 10,
    "role": "800 kVA UPS 2 of 3 for DH05 (side B)",
    "sys": "Electrical"
@@ -6549,8 +6549,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 39.4,
-   "y": 10,
+   "x": 34.6,
+   "y": 16,
    "role": "800 kVA UPS 3 of 3 for DH05 (side A)",
    "sys": "Electrical"
   },
@@ -6559,8 +6559,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 44.2,
-   "y": 10,
+   "x": 39.4,
+   "y": 16,
    "role": "800 kVA UPS 1 of 3 for DH06 (side A)",
    "sys": "Electrical"
   },
@@ -6569,8 +6569,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 60.6,
-   "y": 10,
+   "x": 51.0,
+   "y": 16,
    "role": "800 kVA UPS 2 of 3 for DH06 (side B)",
    "sys": "Electrical"
   },
@@ -6579,8 +6579,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 65.4,
-   "y": 10,
+   "x": 55.8,
+   "y": 16,
    "role": "800 kVA UPS 3 of 3 for DH06 (side B)",
    "sys": "Electrical"
   },
@@ -6589,7 +6589,7 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 25.0,
+   "x": 44.2,
    "y": 16,
    "role": "800 kVA UPS 1 of 3 for DH07 (side A)",
    "sys": "Electrical"
@@ -6599,8 +6599,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 70.2,
-   "y": 10,
+   "x": 60.6,
+   "y": 16,
    "role": "800 kVA UPS 2 of 3 for DH07 (side B)",
    "sys": "Electrical"
   },
@@ -6609,8 +6609,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 29.8,
-   "y": 16,
+   "x": 25.0,
+   "y": 22,
    "role": "800 kVA UPS 3 of 3 for DH07 (side A)",
    "sys": "Electrical"
   },
@@ -6619,8 +6619,8 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSA",
-   "x": 34.6,
-   "y": 16,
+   "x": 29.8,
+   "y": 22,
    "role": "960 kVA UPS 1 of 3 for DH08 (side A)",
    "sys": "Electrical"
   },
@@ -6629,7 +6629,7 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 51.0,
+   "x": 65.4,
    "y": 16,
    "role": "960 kVA UPS 2 of 3 for DH08 (side B)",
    "sys": "Electrical"
@@ -6639,7 +6639,7 @@
    "type": "UPS",
    "unexported": false,
    "room": "G-UPSB",
-   "x": 55.8,
+   "x": 70.2,
    "y": 16,
    "role": "960 kVA UPS 3 of 3 for DH08 (side B)",
    "sys": "Electrical"
@@ -7045,6 +7045,356 @@
    "sys": "Cooling"
   },
   {
+   "path": "~FZ-G-Z1",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "G-HV",
+   "x": 1.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 1 on Ground: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-G-Z2",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "G-UPSA",
+   "x": 23.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 2 on Ground: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-G-Z3",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "G-UPSB",
+   "x": 49.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 3 on Ground: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-G-Z4",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "G-WTR",
+   "x": 1.5,
+   "y": 23.5,
+   "role": "Fire zone Zone 4 on Ground: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-G-Z5",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "G-NOC",
+   "x": 55.5,
+   "y": 37.5,
+   "role": "Fire zone Zone 5 on Ground: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L1-CA",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "L1-COM",
+   "x": 55.5,
+   "y": 37.5,
+   "role": "Fire zone Common Area on Level 1: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L1-SA",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "L1-SUP",
+   "x": 1.5,
+   "y": 37.5,
+   "role": "Fire zone Support Area on Level 1: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L1-Z1",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "DH01",
+   "x": 1.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 1 on Level 1: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L1-Z2",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "DH02",
+   "x": 25.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 2 on Level 1: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L1-Z3",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "DH03",
+   "x": 49.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 3 on Level 1: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L1-Z4",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "DH04",
+   "x": 73.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 4 on Level 1: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L2-CA",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "L2-COM",
+   "x": 55.5,
+   "y": 37.5,
+   "role": "Fire zone Common Area on Level 2: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L2-SA",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "L2-SUP",
+   "x": 1.5,
+   "y": 37.5,
+   "role": "Fire zone Support Area on Level 2: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L2-Z1",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "DH05",
+   "x": 1.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 1 on Level 2: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L2-Z2",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "DH06",
+   "x": 25.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 2 on Level 2: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L2-Z3",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "DH07",
+   "x": 49.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 3 on Level 2: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-L2-Z4",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "DH08",
+   "x": 73.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 4 on Level 2: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-R-SA",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "R-AIR",
+   "x": 63.5,
+   "y": 19.5,
+   "role": "Fire zone Support Area on Roof: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-R-Z1",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "R-CHP",
+   "x": 1.5,
+   "y": 19.5,
+   "role": "Fire zone Zone 1 on Roof: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-R-Z2",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "R-CT1",
+   "x": 1.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 2 on Roof: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-R-Z3",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "R-CT2",
+   "x": 49.5,
+   "y": 1.5,
+   "role": "Fire zone Zone 3 on Roof: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~FZ-R-Z4",
+   "type": "Fire Zone",
+   "unexported": true,
+   "room": "R-BT",
+   "x": 41.5,
+   "y": 19.5,
+   "role": "Fire zone Zone 4 on Roof: the fire panel zone its detectors report into",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z1-CP1",
+   "type": "Manual Call Point",
+   "unexported": true,
+   "room": "G-HV",
+   "x": 3.0,
+   "y": 1.5,
+   "role": "Manual Call Point CP1 of fire zone Zone 1 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z1-HD1",
+   "type": "Heat Detector",
+   "unexported": true,
+   "room": "G-HV",
+   "x": 4.5,
+   "y": 1.5,
+   "role": "Heat Detector HD1 of fire zone Zone 1 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z1-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "G-HV",
+   "x": 6.0,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 1 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z2-AV1",
+   "type": "Alarm Valve",
+   "unexported": true,
+   "room": "G-UPSA",
+   "x": 25.0,
+   "y": 1.5,
+   "role": "Alarm Valve AV1 of fire zone Zone 2 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z2-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "G-UPSA",
+   "x": 26.5,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 2 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z2-SD2",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "G-UPSA",
+   "x": 28.0,
+   "y": 1.5,
+   "role": "Smoke Detector SD2 of fire zone Zone 2 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z3-FP1",
+   "type": "Fire Pump",
+   "unexported": true,
+   "room": "G-UPSB",
+   "x": 51.0,
+   "y": 1.5,
+   "role": "Fire Pump FP1 of fire zone Zone 3 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z3-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "G-UPSB",
+   "x": 52.5,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 3 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z4-CP1",
+   "type": "Manual Call Point",
+   "unexported": true,
+   "room": "G-WTR",
+   "x": 3.0,
+   "y": 23.5,
+   "role": "Manual Call Point CP1 of fire zone Zone 4 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z4-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "G-WTR",
+   "x": 4.5,
+   "y": 23.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 4 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z4-SD2",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "G-WTR",
+   "x": 6.0,
+   "y": 23.5,
+   "role": "Smoke Detector SD2 of fire zone Zone 4 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z5-HD1",
+   "type": "Heat Detector",
+   "unexported": true,
+   "room": "G-NOC",
+   "x": 57.0,
+   "y": 37.5,
+   "role": "Heat Detector HD1 of fire zone Zone 5 on Ground",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~G-Z5-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "G-NOC",
+   "x": 58.5,
+   "y": 37.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 5 on Ground",
+   "sys": "Life Safety"
+  },
+  {
    "path": "~IT-DH01",
    "type": "IT Load",
    "unexported": true,
@@ -7125,6 +7475,316 @@
    "sys": "IT"
   },
   {
+   "path": "~L1-CA-CP1",
+   "type": "Manual Call Point",
+   "unexported": true,
+   "room": "L1-COM",
+   "x": 57.0,
+   "y": 37.5,
+   "role": "Manual Call Point CP1 of fire zone Common Area on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-CA-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "L1-COM",
+   "x": 58.5,
+   "y": 37.5,
+   "role": "Smoke Detector SD1 of fire zone Common Area on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-SA-FP1",
+   "type": "Fire Pump",
+   "unexported": true,
+   "room": "L1-SUP",
+   "x": 3.0,
+   "y": 37.5,
+   "role": "Fire Pump FP1 of fire zone Support Area on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-SA-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "L1-SUP",
+   "x": 4.5,
+   "y": 37.5,
+   "role": "Smoke Detector SD1 of fire zone Support Area on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-Z1-CP1",
+   "type": "Manual Call Point",
+   "unexported": true,
+   "room": "DH01",
+   "x": 3.0,
+   "y": 1.5,
+   "role": "Manual Call Point CP1 of fire zone Zone 1 on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-Z1-HD1",
+   "type": "Heat Detector",
+   "unexported": true,
+   "room": "DH01",
+   "x": 4.5,
+   "y": 1.5,
+   "role": "Heat Detector HD1 of fire zone Zone 1 on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-Z1-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "DH01",
+   "x": 6.0,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 1 on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-Z2-AV1",
+   "type": "Alarm Valve",
+   "unexported": true,
+   "room": "DH02",
+   "x": 27.0,
+   "y": 1.5,
+   "role": "Alarm Valve AV1 of fire zone Zone 2 on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-Z2-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "DH02",
+   "x": 28.5,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 2 on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-Z2-SD2",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "DH02",
+   "x": 30.0,
+   "y": 1.5,
+   "role": "Smoke Detector SD2 of fire zone Zone 2 on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-Z3-HD1",
+   "type": "Heat Detector",
+   "unexported": true,
+   "room": "DH03",
+   "x": 51.0,
+   "y": 1.5,
+   "role": "Heat Detector HD1 of fire zone Zone 3 on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-Z3-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "DH03",
+   "x": 52.5,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 3 on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-Z4-CP1",
+   "type": "Manual Call Point",
+   "unexported": true,
+   "room": "DH04",
+   "x": 75.0,
+   "y": 1.5,
+   "role": "Manual Call Point CP1 of fire zone Zone 4 on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L1-Z4-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "DH04",
+   "x": 76.5,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 4 on Level 1",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-CA-CP1",
+   "type": "Manual Call Point",
+   "unexported": true,
+   "room": "L2-COM",
+   "x": 57.0,
+   "y": 37.5,
+   "role": "Manual Call Point CP1 of fire zone Common Area on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-CA-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "L2-COM",
+   "x": 58.5,
+   "y": 37.5,
+   "role": "Smoke Detector SD1 of fire zone Common Area on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-SA-FP1",
+   "type": "Fire Pump",
+   "unexported": true,
+   "room": "L2-SUP",
+   "x": 3.0,
+   "y": 37.5,
+   "role": "Fire Pump FP1 of fire zone Support Area on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-SA-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "L2-SUP",
+   "x": 4.5,
+   "y": 37.5,
+   "role": "Smoke Detector SD1 of fire zone Support Area on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-Z1-CP1",
+   "type": "Manual Call Point",
+   "unexported": true,
+   "room": "DH05",
+   "x": 3.0,
+   "y": 1.5,
+   "role": "Manual Call Point CP1 of fire zone Zone 1 on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-Z1-HD1",
+   "type": "Heat Detector",
+   "unexported": true,
+   "room": "DH05",
+   "x": 4.5,
+   "y": 1.5,
+   "role": "Heat Detector HD1 of fire zone Zone 1 on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-Z1-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "DH05",
+   "x": 6.0,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 1 on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-Z2-AV1",
+   "type": "Alarm Valve",
+   "unexported": true,
+   "room": "DH06",
+   "x": 27.0,
+   "y": 1.5,
+   "role": "Alarm Valve AV1 of fire zone Zone 2 on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-Z2-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "DH06",
+   "x": 28.5,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 2 on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-Z2-SD2",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "DH06",
+   "x": 30.0,
+   "y": 1.5,
+   "role": "Smoke Detector SD2 of fire zone Zone 2 on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-Z3-HD1",
+   "type": "Heat Detector",
+   "unexported": true,
+   "room": "DH07",
+   "x": 51.0,
+   "y": 1.5,
+   "role": "Heat Detector HD1 of fire zone Zone 3 on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-Z3-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "DH07",
+   "x": 52.5,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 3 on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-Z4-CP1",
+   "type": "Manual Call Point",
+   "unexported": true,
+   "room": "DH08",
+   "x": 75.0,
+   "y": 1.5,
+   "role": "Manual Call Point CP1 of fire zone Zone 4 on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~L2-Z4-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "DH08",
+   "x": 76.5,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 4 on Level 2",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~LIFT-1",
+   "type": "Lift",
+   "unexported": true,
+   "room": "G-CORE",
+   "x": 46,
+   "y": 28,
+   "role": "Lift 1 in the central core, serving Ground to Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~LIFT-2",
+   "type": "Lift",
+   "unexported": true,
+   "room": "G-CORE",
+   "x": 49,
+   "y": 28,
+   "role": "Lift 2 in the central core, serving Ground to Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~LIFT-3",
+   "type": "Lift",
+   "unexported": true,
+   "room": "G-CORE",
+   "x": 52,
+   "y": 28,
+   "role": "Lift 3 in the central core, serving Ground to Roof",
+   "sys": "Life Safety"
+  },
+  {
    "path": "~P-CWS-01",
    "type": "Pump header view",
    "unexported": true,
@@ -7143,6 +7803,156 @@
    "y": 56,
    "role": "Chiller plant Controller: the sequencer, the DP and bypass PIDs and their setpoints",
    "sys": "Cooling"
+  },
+  {
+   "path": "~R-SA-CP1",
+   "type": "Manual Call Point",
+   "unexported": true,
+   "room": "R-AIR",
+   "x": 65.0,
+   "y": 19.5,
+   "role": "Manual Call Point CP1 of fire zone Support Area on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-SA-FP1",
+   "type": "Fire Pump",
+   "unexported": true,
+   "room": "R-AIR",
+   "x": 66.5,
+   "y": 19.5,
+   "role": "Fire Pump FP1 of fire zone Support Area on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-SA-HD1",
+   "type": "Heat Detector",
+   "unexported": true,
+   "room": "R-AIR",
+   "x": 68.0,
+   "y": 19.5,
+   "role": "Heat Detector HD1 of fire zone Support Area on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z1-AV1",
+   "type": "Alarm Valve",
+   "unexported": true,
+   "room": "R-CHP",
+   "x": 3.0,
+   "y": 19.5,
+   "role": "Alarm Valve AV1 of fire zone Zone 1 on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z1-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "R-CHP",
+   "x": 4.5,
+   "y": 19.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 1 on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z1-SD2",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "R-CHP",
+   "x": 6.0,
+   "y": 19.5,
+   "role": "Smoke Detector SD2 of fire zone Zone 1 on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z2-AV1",
+   "type": "Alarm Valve",
+   "unexported": true,
+   "room": "R-CT1",
+   "x": 3.0,
+   "y": 1.5,
+   "role": "Alarm Valve AV1 of fire zone Zone 2 on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z2-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "R-CT1",
+   "x": 4.5,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 2 on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z2-SD2",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "R-CT1",
+   "x": 6.0,
+   "y": 1.5,
+   "role": "Smoke Detector SD2 of fire zone Zone 2 on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z3-AV1",
+   "type": "Alarm Valve",
+   "unexported": true,
+   "room": "R-CT2",
+   "x": 51.0,
+   "y": 1.5,
+   "role": "Alarm Valve AV1 of fire zone Zone 3 on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z3-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "R-CT2",
+   "x": 52.5,
+   "y": 1.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 3 on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z3-SD2",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "R-CT2",
+   "x": 54.0,
+   "y": 1.5,
+   "role": "Smoke Detector SD2 of fire zone Zone 3 on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z4-AV1",
+   "type": "Alarm Valve",
+   "unexported": true,
+   "room": "R-BT",
+   "x": 43.0,
+   "y": 19.5,
+   "role": "Alarm Valve AV1 of fire zone Zone 4 on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z4-SD1",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "R-BT",
+   "x": 44.5,
+   "y": 19.5,
+   "role": "Smoke Detector SD1 of fire zone Zone 4 on Roof",
+   "sys": "Life Safety"
+  },
+  {
+   "path": "~R-Z4-SD2",
+   "type": "Smoke Detector",
+   "unexported": true,
+   "room": "R-BT",
+   "x": 46.0,
+   "y": 19.5,
+   "role": "Smoke Detector SD2 of fire zone Zone 4 on Roof",
+   "sys": "Life Safety"
   },
   {
    "path": "~WX-01",
@@ -10763,6 +11573,654 @@
    "observedBy": [
     "Chiller System Control/Pumps/P-CWS-01"
    ]
+  },
+  {
+   "id": "~FZ-G-Z1",
+   "name": "Fire zone Ground Zone 1",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 1"
+   ]
+  },
+  {
+   "id": "~G-Z1-CP1",
+   "name": "Ground Zone 1 CP1",
+   "type": "Manual Call Point",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 1"
+   ]
+  },
+  {
+   "id": "~G-Z1-HD1",
+   "name": "Ground Zone 1 HD1",
+   "type": "Heat Detector",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 1"
+   ]
+  },
+  {
+   "id": "~G-Z1-SD1",
+   "name": "Ground Zone 1 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 1"
+   ]
+  },
+  {
+   "id": "~FZ-G-Z2",
+   "name": "Fire zone Ground Zone 2",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 2"
+   ]
+  },
+  {
+   "id": "~G-Z2-AV1",
+   "name": "Ground Zone 2 AV1",
+   "type": "Alarm Valve",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 2"
+   ]
+  },
+  {
+   "id": "~G-Z2-SD1",
+   "name": "Ground Zone 2 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 2"
+   ]
+  },
+  {
+   "id": "~G-Z2-SD2",
+   "name": "Ground Zone 2 SD2",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 2"
+   ]
+  },
+  {
+   "id": "~FZ-G-Z3",
+   "name": "Fire zone Ground Zone 3",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 3"
+   ]
+  },
+  {
+   "id": "~G-Z3-FP1",
+   "name": "Ground Zone 3 FP1",
+   "type": "Fire Pump",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 3"
+   ]
+  },
+  {
+   "id": "~G-Z3-SD1",
+   "name": "Ground Zone 3 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 3"
+   ]
+  },
+  {
+   "id": "~FZ-G-Z4",
+   "name": "Fire zone Ground Zone 4",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 4"
+   ]
+  },
+  {
+   "id": "~G-Z4-CP1",
+   "name": "Ground Zone 4 CP1",
+   "type": "Manual Call Point",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 4"
+   ]
+  },
+  {
+   "id": "~G-Z4-SD1",
+   "name": "Ground Zone 4 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 4"
+   ]
+  },
+  {
+   "id": "~G-Z4-SD2",
+   "name": "Ground Zone 4 SD2",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 4"
+   ]
+  },
+  {
+   "id": "~FZ-G-Z5",
+   "name": "Fire zone Ground Zone 5",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 5"
+   ]
+  },
+  {
+   "id": "~G-Z5-HD1",
+   "name": "Ground Zone 5 HD1",
+   "type": "Heat Detector",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 5"
+   ]
+  },
+  {
+   "id": "~G-Z5-SD1",
+   "name": "Ground Zone 5 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Ground/Zone 5"
+   ]
+  },
+  {
+   "id": "~FZ-L1-CA",
+   "name": "Fire zone Level 1 Common Area",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 1/Common Area"
+   ]
+  },
+  {
+   "id": "~L1-CA-CP1",
+   "name": "Level 1 Common Area CP1",
+   "type": "Manual Call Point",
+   "observedBy": [
+    "Fire Protection System/Level 1/Common Area"
+   ]
+  },
+  {
+   "id": "~L1-CA-SD1",
+   "name": "Level 1 Common Area SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 1/Common Area"
+   ]
+  },
+  {
+   "id": "~FZ-L1-SA",
+   "name": "Fire zone Level 1 Support Area",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 1/Support Area"
+   ]
+  },
+  {
+   "id": "~L1-SA-FP1",
+   "name": "Level 1 Support Area FP1",
+   "type": "Fire Pump",
+   "observedBy": [
+    "Fire Protection System/Level 1/Support Area"
+   ]
+  },
+  {
+   "id": "~L1-SA-SD1",
+   "name": "Level 1 Support Area SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 1/Support Area"
+   ]
+  },
+  {
+   "id": "~FZ-L1-Z1",
+   "name": "Fire zone Level 1 Zone 1",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 1"
+   ]
+  },
+  {
+   "id": "~L1-Z1-CP1",
+   "name": "Level 1 Zone 1 CP1",
+   "type": "Manual Call Point",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 1"
+   ]
+  },
+  {
+   "id": "~L1-Z1-HD1",
+   "name": "Level 1 Zone 1 HD1",
+   "type": "Heat Detector",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 1"
+   ]
+  },
+  {
+   "id": "~L1-Z1-SD1",
+   "name": "Level 1 Zone 1 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 1"
+   ]
+  },
+  {
+   "id": "~FZ-L1-Z2",
+   "name": "Fire zone Level 1 Zone 2",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 2"
+   ]
+  },
+  {
+   "id": "~L1-Z2-AV1",
+   "name": "Level 1 Zone 2 AV1",
+   "type": "Alarm Valve",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 2"
+   ]
+  },
+  {
+   "id": "~L1-Z2-SD1",
+   "name": "Level 1 Zone 2 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 2"
+   ]
+  },
+  {
+   "id": "~L1-Z2-SD2",
+   "name": "Level 1 Zone 2 SD2",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 2"
+   ]
+  },
+  {
+   "id": "~FZ-L1-Z3",
+   "name": "Fire zone Level 1 Zone 3",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 3"
+   ]
+  },
+  {
+   "id": "~L1-Z3-HD1",
+   "name": "Level 1 Zone 3 HD1",
+   "type": "Heat Detector",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 3"
+   ]
+  },
+  {
+   "id": "~L1-Z3-SD1",
+   "name": "Level 1 Zone 3 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 3"
+   ]
+  },
+  {
+   "id": "~FZ-L1-Z4",
+   "name": "Fire zone Level 1 Zone 4",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 4"
+   ]
+  },
+  {
+   "id": "~L1-Z4-CP1",
+   "name": "Level 1 Zone 4 CP1",
+   "type": "Manual Call Point",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 4"
+   ]
+  },
+  {
+   "id": "~L1-Z4-SD1",
+   "name": "Level 1 Zone 4 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 1/Zone 4"
+   ]
+  },
+  {
+   "id": "~FZ-L2-CA",
+   "name": "Fire zone Level 2 Common Area",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 2/Common Area"
+   ]
+  },
+  {
+   "id": "~L2-CA-CP1",
+   "name": "Level 2 Common Area CP1",
+   "type": "Manual Call Point",
+   "observedBy": [
+    "Fire Protection System/Level 2/Common Area"
+   ]
+  },
+  {
+   "id": "~L2-CA-SD1",
+   "name": "Level 2 Common Area SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 2/Common Area"
+   ]
+  },
+  {
+   "id": "~FZ-L2-SA",
+   "name": "Fire zone Level 2 Support Area",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 2/Support Area"
+   ]
+  },
+  {
+   "id": "~L2-SA-FP1",
+   "name": "Level 2 Support Area FP1",
+   "type": "Fire Pump",
+   "observedBy": [
+    "Fire Protection System/Level 2/Support Area"
+   ]
+  },
+  {
+   "id": "~L2-SA-SD1",
+   "name": "Level 2 Support Area SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 2/Support Area"
+   ]
+  },
+  {
+   "id": "~FZ-L2-Z1",
+   "name": "Fire zone Level 2 Zone 1",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 1"
+   ]
+  },
+  {
+   "id": "~L2-Z1-CP1",
+   "name": "Level 2 Zone 1 CP1",
+   "type": "Manual Call Point",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 1"
+   ]
+  },
+  {
+   "id": "~L2-Z1-HD1",
+   "name": "Level 2 Zone 1 HD1",
+   "type": "Heat Detector",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 1"
+   ]
+  },
+  {
+   "id": "~L2-Z1-SD1",
+   "name": "Level 2 Zone 1 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 1"
+   ]
+  },
+  {
+   "id": "~FZ-L2-Z2",
+   "name": "Fire zone Level 2 Zone 2",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 2"
+   ]
+  },
+  {
+   "id": "~L2-Z2-AV1",
+   "name": "Level 2 Zone 2 AV1",
+   "type": "Alarm Valve",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 2"
+   ]
+  },
+  {
+   "id": "~L2-Z2-SD1",
+   "name": "Level 2 Zone 2 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 2"
+   ]
+  },
+  {
+   "id": "~L2-Z2-SD2",
+   "name": "Level 2 Zone 2 SD2",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 2"
+   ]
+  },
+  {
+   "id": "~FZ-L2-Z3",
+   "name": "Fire zone Level 2 Zone 3",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 3"
+   ]
+  },
+  {
+   "id": "~L2-Z3-HD1",
+   "name": "Level 2 Zone 3 HD1",
+   "type": "Heat Detector",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 3"
+   ]
+  },
+  {
+   "id": "~L2-Z3-SD1",
+   "name": "Level 2 Zone 3 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 3"
+   ]
+  },
+  {
+   "id": "~FZ-L2-Z4",
+   "name": "Fire zone Level 2 Zone 4",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 4"
+   ]
+  },
+  {
+   "id": "~L2-Z4-CP1",
+   "name": "Level 2 Zone 4 CP1",
+   "type": "Manual Call Point",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 4"
+   ]
+  },
+  {
+   "id": "~L2-Z4-SD1",
+   "name": "Level 2 Zone 4 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Level 2/Zone 4"
+   ]
+  },
+  {
+   "id": "~FZ-R-SA",
+   "name": "Fire zone Roof Support Area",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Roof/Support Area"
+   ]
+  },
+  {
+   "id": "~R-SA-CP1",
+   "name": "Roof Support Area CP1",
+   "type": "Manual Call Point",
+   "observedBy": [
+    "Fire Protection System/Roof/Support Area"
+   ]
+  },
+  {
+   "id": "~R-SA-FP1",
+   "name": "Roof Support Area FP1",
+   "type": "Fire Pump",
+   "observedBy": [
+    "Fire Protection System/Roof/Support Area"
+   ]
+  },
+  {
+   "id": "~R-SA-HD1",
+   "name": "Roof Support Area HD1",
+   "type": "Heat Detector",
+   "observedBy": [
+    "Fire Protection System/Roof/Support Area"
+   ]
+  },
+  {
+   "id": "~FZ-R-Z1",
+   "name": "Fire zone Roof Zone 1",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 1"
+   ]
+  },
+  {
+   "id": "~R-Z1-AV1",
+   "name": "Roof Zone 1 AV1",
+   "type": "Alarm Valve",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 1"
+   ]
+  },
+  {
+   "id": "~R-Z1-SD1",
+   "name": "Roof Zone 1 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 1"
+   ]
+  },
+  {
+   "id": "~R-Z1-SD2",
+   "name": "Roof Zone 1 SD2",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 1"
+   ]
+  },
+  {
+   "id": "~FZ-R-Z2",
+   "name": "Fire zone Roof Zone 2",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 2"
+   ]
+  },
+  {
+   "id": "~R-Z2-AV1",
+   "name": "Roof Zone 2 AV1",
+   "type": "Alarm Valve",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 2"
+   ]
+  },
+  {
+   "id": "~R-Z2-SD1",
+   "name": "Roof Zone 2 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 2"
+   ]
+  },
+  {
+   "id": "~R-Z2-SD2",
+   "name": "Roof Zone 2 SD2",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 2"
+   ]
+  },
+  {
+   "id": "~FZ-R-Z3",
+   "name": "Fire zone Roof Zone 3",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 3"
+   ]
+  },
+  {
+   "id": "~R-Z3-AV1",
+   "name": "Roof Zone 3 AV1",
+   "type": "Alarm Valve",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 3"
+   ]
+  },
+  {
+   "id": "~R-Z3-SD1",
+   "name": "Roof Zone 3 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 3"
+   ]
+  },
+  {
+   "id": "~R-Z3-SD2",
+   "name": "Roof Zone 3 SD2",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 3"
+   ]
+  },
+  {
+   "id": "~FZ-R-Z4",
+   "name": "Fire zone Roof Zone 4",
+   "type": "Fire Zone",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 4"
+   ]
+  },
+  {
+   "id": "~R-Z4-AV1",
+   "name": "Roof Zone 4 AV1",
+   "type": "Alarm Valve",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 4"
+   ]
+  },
+  {
+   "id": "~R-Z4-SD1",
+   "name": "Roof Zone 4 SD1",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 4"
+   ]
+  },
+  {
+   "id": "~R-Z4-SD2",
+   "name": "Roof Zone 4 SD2",
+   "type": "Smoke Detector",
+   "observedBy": [
+    "Fire Protection System/Roof/Zone 4"
+   ]
+  },
+  {
+   "id": "~LIFT-1",
+   "name": "Lift 1",
+   "type": "Lift",
+   "observedBy": [
+    "Lift Monitoring System/Lift 1"
+   ]
+  },
+  {
+   "id": "~LIFT-2",
+   "name": "Lift 2",
+   "type": "Lift",
+   "observedBy": [
+    "Lift Monitoring System/Lift 2"
+   ]
+  },
+  {
+   "id": "~LIFT-3",
+   "name": "Lift 3",
+   "type": "Lift",
+   "observedBy": [
+    "Lift Monitoring System/Lift 3"
+   ]
   }
  ],
  "views": [
@@ -10893,7 +12351,8 @@
   ],
   "GATEWAY B": [
    "Electrical",
-   "Environment"
+   "Environment",
+   "Life Safety"
   ]
  },
  "basis": {
@@ -11137,11 +12596,17 @@
    "area": "Airside",
    "title": "Ceiling cooling units serve their hall",
    "text": "Rev 0.4. Each hall's ceiling cooling units (CCU-001–008) supply air to that hall, so their cooling reaches its heat balance like the other units'. The CDUs' air connection to DH08 carries no air: they remove the liquid-cooled share of its IT Load directly."
+  },
+  {
+   "id": "A18",
+   "area": "Life safety",
+   "title": "Fire zones, fire devices and lifts",
+   "text": "Rev 0.5 (#26). The Fire Protection System and Lift Monitoring System folders hold loose points with no UDT, so each fire zone (~FZ-<floor>-<zone>), each device in it (~<floor>-<zone>-SD1 etc.: smoke and heat detectors, call points, alarm valves, fire pumps) and each lift (~LIFT-1–3) is an Unexported Asset observed through its folder. A zone stands in its first room (Ground Zone 1 in the HV intake, Common Areas in the common area, Roof Support Area on the AHU deck) and a fire in it heats that room. A zone in alarm shuts down the PAHUs that supply air into its rooms. They report through GATEWAY B (Life Safety)."
   }
  ],
  "counts": {
   "exported": 639,
-  "unexported": 28,
+  "unexported": 109,
   "edges": 562,
   "shafts": 5
  }

@@ -293,6 +293,67 @@ def _secondary_pump(design: PlantDesign) -> tuple[str, ...]:
     return (plant_layout(design).secondary,)
 
 
+def _life_safety_faults() -> tuple[FaultSpec, ...]:
+    """Fire protection and the lifts (#26)."""
+    detectors = {"smoke_detector": "Smoke Detector", "heat_detector": "Heat Detector"}
+    return (
+        FaultSpec(
+            "fire.room_fire",
+            "Fire",
+            "Fire Zone",
+            FaultCategory.EXTERNAL,
+            "constraint.fire_kw",
+            250.0,
+            "kW",
+            "A fire breaks out in the zone's room: smoke fills it and the ceiling heats, its "
+            "detectors alarm, the zone's fresh-air handlers shut down and the lifts return to "
+            "the ground floor. In a sprinklered zone the heads open, the alarm valve flows, the "
+            "fire pumps start and the fire is knocked down. The fire's heat and the lost fresh "
+            "air warm and humidify the room.",
+        ),
+        *(
+            FaultSpec(
+                f"{prefix}.fault",
+                "Detector fault",
+                kind,
+                FaultCategory.EQUIPMENT,
+                "constraint.detector_fault",
+                1.0,
+                "fault",
+                "The detector fails (a dirty chamber, a broken head): the panel shows it in "
+                "fault, and it no longer detects a fire in its zone.",
+            )
+            for prefix, kind in detectors.items()
+        ),
+        *(
+            FaultSpec(
+                f"{prefix}.false_alarm",
+                "False alarm",
+                kind,
+                FaultCategory.SENSOR,
+                "observation.false_alarm",
+                1.0,
+                "alarm",
+                "The device reports a fire that is not there (dust or steam in a detector, a "
+                "call point knocked): the zone goes into alarm, its fresh-air handlers shut "
+                "down and the lifts are recalled, while the air itself is clean.",
+            )
+            for prefix, kind in {**detectors, "call_point": "Manual Call Point"}.items()
+        ),
+        FaultSpec(
+            "lift.stuck",
+            "Lift stuck",
+            "Lift",
+            FaultCategory.EQUIPMENT,
+            "constraint.stuck",
+            1.0,
+            "stuck",
+            "The car stops where it is, between floors if it was travelling, with its doors "
+            "shut; on Clear it carries on to the landing it was heading for.",
+        ),
+    )
+
+
 def _cooling_faults() -> tuple[FaultSpec, ...]:
     """The chiller plant's faults, and those of the air units on its chilled water (#23)."""
     return (
@@ -768,6 +829,7 @@ STANDARD_CATALOG = FaultCatalog(
             "The tank's transfer pump trips: while its gensets run, their day tanks drain and "
             "are not refilled, until the engines shut down on low fuel.",
         ),
+        *_life_safety_faults(),
     ]
 )
 """The catalog, consumed by the device models in `sim`."""

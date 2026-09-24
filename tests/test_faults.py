@@ -62,6 +62,11 @@ TARGET = {
     "FWU": "FWU/G_FWU1",
     "Ceiling Cooling Units": "~CCU-001",
     "CDU": "TIW/CDU-01",
+    "Fire Zone": "~FZ-L1-Z2",  # DH02
+    "Smoke Detector": "~L1-Z2-SD1",
+    "Heat Detector": "~L1-Z1-HD1",
+    "Manual Call Point": "~L1-Z4-CP1",
+    "Lift": "~LIFT-1",
 }
 
 

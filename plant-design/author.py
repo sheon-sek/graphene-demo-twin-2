@@ -8,6 +8,7 @@ that every exported asset is placed. Run from the repo root:
 """
 import json, re, collections, sys
 from pathlib import Path
+
 REF = Path(__file__).resolve().parent.parent / 'reference/graphene/real-graphene-demo-tag-instances.json'
 d = json.load(open(REF))
 
@@ -187,6 +188,43 @@ for a in [p for p in A if A[p]['type'] == 'Water Leak Cable Sensor']:
     fl = a.split('/')[1]; z = a.split('/')[2]; rid = LEAK_ZONES[fl][z]; r = rooms[rid]
     put(a, rid, r['x'] + r['w'] / 2, r['y'] + r['h'] - 2, f'Leak detection cable under {r["name"]}', 'Water')
 
+# Fire protection and lifts (#26): the export has no UDTs for them, only loose points, so each
+# fire zone, each detection or suppression device and each lift is an Unexported Asset observed
+# through its loose folder. A zone's devices stand in its first room (the zone's fire sits there).
+FIRE_TYPES = {'SD': 'Smoke Detector', 'HD': 'Heat Detector', 'CP': 'Manual Call Point', 'AV': 'Alarm Valve', 'FP': 'Fire Pump'}
+FLOOR_CODE = {'Ground': 'G', 'Level 1': 'L1', 'Level 2': 'L2', 'Roof': 'R'}
+def zone_code(z): return {'Common Area': 'CA', 'Support Area': 'SA'}.get(z, z.replace('Zone ', 'Z'))
+def loose_points(n, path):
+    for c in n.get('tags', []):
+        p = f"{path}/{c['name']}" if path else c['name']
+        if c.get('tagType') == 'Folder':
+            yield from loose_points(c, p)
+        elif c.get('tagType') == 'AtomicTag':
+            yield p
+fire_devices = collections.defaultdict(list)
+lifts = []
+for p in loose_points(d, ''):
+    if p.startswith('Fire Protection System/'):
+        folder, dev = p.rsplit('/', 1)
+        fire_devices[folder].append(dev)
+    elif p.startswith('Lift Monitoring System/'):
+        lift = p.split('/')[1]
+        if lift not in lifts: lifts.append(lift)
+for folder in sorted(fire_devices, key=nat):
+    _, fl, z = folder.split('/')
+    zrooms = [r for r in rooms.values() if r['floor'] == fl and r['fire'] == z]
+    assert zrooms, folder
+    r = zrooms[0]; code = f'{FLOOR_CODE[fl]}-{zone_code(z)}'
+    ghost(f'~FZ-{code}', f'Fire zone {fl} {z}', 'Fire Zone', [folder])
+    put(f'~FZ-{code}', r['id'], r['x'] + 1.5, r['y'] + 1.5, f'Fire zone {z} on {fl}: the fire panel zone its detectors report into', 'Life Safety')
+    for i, dev in enumerate(sorted(fire_devices[folder], key=nat)):
+        ghost(f'~{code}-{dev}', f'{fl} {z} {dev}', FIRE_TYPES[dev[:2]], [folder])
+        put(f'~{code}-{dev}', r['id'], r['x'] + 3 + i * 1.5, r['y'] + 1.5, f'{FIRE_TYPES[dev[:2]]} {dev} of fire zone {z} on {fl}', 'Life Safety')
+for i, lift in enumerate(sorted(lifts, key=nat)):
+    n = lift.split()[-1]
+    ghost(f'~LIFT-{n}', lift, 'Lift', [f'Lift Monitoring System/{lift}'])
+    put(f'~LIFT-{n}', 'G-CORE', 46 + i * 3, 28, f'{lift} in the central core, serving Ground to Roof', 'Life Safety')
+
 # Electrical
 for i in range(1, 5):
     a = f'Meter/SPPA Incomer {i}'; side = 'A' if i <= 2 else 'B'
@@ -340,7 +378,7 @@ link('net', 'Network Topology/MAIN CORE SWITCH A', 'Network Topology/MAIN CORE S
 for s in ('MAIN CORE SWITCH A', 'MAIN CORE SWITCH B', 'SERVER DISTRIBUTION SWITCH A', 'SERVER DISTRIBUTION SWITCH B'):
     a = f'Network Switches/{s}'
     put(a, 'L1-SUP', place[f'Network Topology/{s}']['x'], place[f'Network Topology/{s}']['y'] + 1.2, 'Same physical switch as Network Topology entry — port-level view (48 ports)', 'Network')
-GATEWAY_DOMAINS = {'GATEWAY A': ['Cooling', 'Airside', 'Water'], 'GATEWAY B': ['Electrical', 'Environment']}
+GATEWAY_DOMAINS = {'GATEWAY A': ['Cooling', 'Airside', 'Water'], 'GATEWAY B': ['Electrical', 'Environment', 'Life Safety']}
 
 # Demo Rack — standalone, not on the site
 for a in sorted([p for p in A if p.startswith('DemoRack/')], key=nat):
@@ -407,6 +445,7 @@ reviews = [
  dict(id='A15', area='Site', title='Service shafts', text='Rev 0.2. Five risers beside the lift core, Ground to Roof: electrical (power), chilled & condenser water, supply-air duct, cold water, control network. Every connection that changes floor runs up its discipline\'s shaft. Diesel stays on the Ground floor and needs none.'),
  dict(id='A16', area='Electrical', title='Load side of the power graph', text='Rev 0.3. Every consumer hangs off exactly one board or sub-meter, so each meter reads what its authored loads draw. Meter1–4 feed the five cells of Tower Groups CT-001–004, Meter5–7 the chiller pumps, Meter8–9 the makeup pumps of tower plants P1 and P2, Meter10–12 the roof, Level 1 and ground air units (CCU-005–008 on Meter10, CCU-001–004 on Meter11), Meter13 the CDUs, Meter15 the diesel tanks\' fuel pumps, Meter18 the transfer, booster and AC makeup pumps. Lighting: MSB A_6 lights the Ground rooms, DB_22 DH01–04, Meter17 the other Level 1 rooms, MSB B_14 Level 2 and the roof plant rooms, and Meter19 the outdoor areas and security. Meter14 (lifts) and Meter16 (genset auxiliaries) have no authored loads; their draw is a stand-in on the meter. The three-phase sub-meters Meter14, 17 and 19 hang off the essential-services board DB_24, not the single-phase lighting board DB_22.'),
  dict(id='A17', area='Airside', title='Ceiling cooling units serve their hall', text='Rev 0.4. Each hall\'s ceiling cooling units (CCU-001–008) supply air to that hall, so their cooling reaches its heat balance like the other units\'. The CDUs\' air connection to DH08 carries no air: they remove the liquid-cooled share of its IT Load directly.'),
+ dict(id='A18', area='Life safety', title='Fire zones, fire devices and lifts', text='Rev 0.5 (#26). The Fire Protection System and Lift Monitoring System folders hold loose points with no UDT, so each fire zone (~FZ-<floor>-<zone>), each device in it (~<floor>-<zone>-SD1 etc.: smoke and heat detectors, call points, alarm valves, fire pumps) and each lift (~LIFT-1–3) is an Unexported Asset observed through its folder. A zone stands in its first room (Ground Zone 1 in the HV intake, Common Areas in the common area, Roof Support Area on the AHU deck) and a fire in it heats that room. A zone in alarm shuts down the PAHUs that supply air into its rooms. They report through GATEWAY B (Life Safety).'),
 ]
 
 out = dict(version='0.4', date='2026-09-24', floors=FLOORS, rooms=list(rooms.values()), shafts=shafts,

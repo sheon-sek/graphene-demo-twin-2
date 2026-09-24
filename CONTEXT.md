@@ -56,6 +56,10 @@ _Avoid_: tower bank, cell set
 The electrical power drawn by IT equipment in one Data Hall; all of it becomes heat in that hall.
 _Avoid_: rack load, server load
 
+**Fire Zone**:
+One zone of the fire alarm panel on one floor (`Fire Protection System/<floor>/<zone>`), covering one or more rooms. A zone in alarm shuts down the fresh-air handlers supplying its rooms and recalls the lifts.
+_Avoid_: fire area, detection loop
+
 **Demo Rack**:
 The standalone demonstration cabinet exported as `DemoRack/`, with its own small electrical system that is not connected to the site.
 _Avoid_: test rack, lab rack

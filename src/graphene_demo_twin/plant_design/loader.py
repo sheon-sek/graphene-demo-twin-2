@@ -25,6 +25,9 @@ PLANT_VIEWS: tuple[str, ...] = ("Chiller System Control", "Chiller_System", "Das
 HALL_AGGREGATES = "Environment Monitoring"
 """Each Data Hall's folder here (`Environment Monitoring/<floor>/<hall>`) also observes: its
 loose points, outside any sensor's UDT instance, aggregate the hall (cold aisle, IT Load)."""
+DEVICE_FOLDERS: tuple[str, ...] = ("Fire Protection System", "Lift Monitoring System")
+"""Loose folders with no UDT instances: their points observe the life-safety devices and lifts,
+which are Unexported Assets (#26)."""
 
 
 class PlantDesignError(ValueError):
@@ -334,7 +337,9 @@ def _check_observed_by(
     for folder in asset.observed_by:
         if folder.startswith(f"{HALL_AGGREGATES}/"):
             problems += _check_hall_aggregate(asset, folder, asset_model, rooms)
-        elif not any(folder == v or folder.startswith(f"{v}/") for v in PLANT_VIEWS):
+        elif not any(
+            folder == v or folder.startswith(f"{v}/") for v in (*PLANT_VIEWS, *DEVICE_FOLDERS)
+        ):
             problems.append(
                 f"unexported asset {asset.id} is observed outside a Plant View: {folder}"
             )

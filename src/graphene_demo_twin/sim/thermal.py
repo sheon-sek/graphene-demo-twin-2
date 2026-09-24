@@ -3,11 +3,11 @@ volume with first-order thermal inertia, and the sensors placed in it observe it
 
 Heat in is everything that dissipates in the room: a hall's IT Load, a UPS room's module
 losses, a switch room's transformer losses, the control room's circuits and the load its UPS
-carries, and every room's lighting. Heat out is the cooling its air suppliers (its upstream
-`air` connections in the Plant Design) actually deliver: each removes heat in proportion to its
-airflow and to how far the room's return air sits above the air it supplies. Zones exchange
-heat only through those connections; the Plant Design joins no zone to another, so every zone
-is independent.
+carries, every room's lighting, and a fire burning in it. Heat out is the cooling its air
+suppliers (its upstream `air` connections in the Plant Design) actually deliver: each removes
+heat in proportion to its airflow and to how far the room's return air sits above the air it
+supplies. Zones exchange heat only through those connections; the Plant Design joins no zone
+to another, so every zone is independent.
 
 Moisture: the fresh-air handlers serving a zone hold its dew point low, a little above it on
 humid days; without one running it drifts towards the outdoor dew point. Relative humidity
@@ -50,6 +50,7 @@ SUPPORT_DESIGN_KW = 150.0
 CRAC_TYPE = "CRAC"
 FRESH_AIR_TYPE = "PAHU"
 LIQUID_TYPE = "CDU"
+FIRE_ZONE_TYPE = "Fire Zone"
 AIR_UNIT_TYPES = frozenset({CRAC_TYPE, "PAHU", "FCU", "FWU", LIQUID_TYPE, "Ceiling Cooling Units"})
 """Cooling equipment: what it draws leaves with the refrigerant or the chilled water, not
 as heat in the room it stands in."""
@@ -439,17 +440,20 @@ def served_room(design: PlantDesign, unit: str) -> str | None:
 
 @functools.cache
 def heat_sources(design: PlantDesign, zone: str) -> tuple[tuple[str, str], ...]:
-    """(node, the variable holding the heat it dissipates) for the zone itself (its lighting)
-    and every load on the power graph placed in it, except its cooling equipment and the
-    meters whose stand-in draw is spent elsewhere. A UPS module dissipates its losses: what
-    it draws to charge its battery is stored, and what it delivers is spent where its load
-    is. A UPS with no branch below it (the control UPS) carries a load in its own room, so
-    what it delivers is spent there too."""
+    """(node, the variable holding the heat it dissipates) for the zone itself (its lighting),
+    any fire burning in it, and every load on the power graph placed in it, except its cooling
+    equipment and the meters whose stand-in draw is spent elsewhere. A UPS module dissipates
+    its losses: what it draws to charge its battery is stored, and what it delivers is spent
+    where its load is. A UPS with no branch below it (the control UPS) carries a load in its
+    own room, so what it delivers is spent there too."""
     net = network(design)
     stand_ins = {f.meter for f in net.feeds if f.stand_in}
     powered_nodes = {*net.supply_flag, *net.it, *net.ups, *net.incomers}
     sources: list[tuple[str, str]] = [(zone, "power_kw")]
     for a in design.assets_in(zone):
+        if a.type_id == FIRE_ZONE_TYPE:  # a fire in the room (`sim.life_safety`)
+            sources.append((a.path, "fire_kw"))
+            continue
         if a.path not in powered_nodes or a.type_id in AIR_UNIT_TYPES or a.path in stand_ins:
             continue
         if a.path not in net.ups_branch:
