@@ -191,6 +191,19 @@ def test_a_fault_moves_only_the_points_downstream_of_it(asset_model, plant_desig
     # The transformers' losses in turn warm the HV room a touch, so its DX unit works a
     # little harder.
     downstream |= {pt.path for pt in asset_model.points_of("CRAC/G_CRAC4")}
+    # The control network's devices sit in rooms whose temperature follows the site's heat
+    # and answer to the same power draw: their gauges (CPU, temperature, ping) move, and the
+    # switch port view follows its device (#25). The devices' comm quality is not a value
+    # change, so it is not in this set.
+    from graphene_demo_twin.sim.network import network as control_network
+
+    cn = control_network(plant_design)
+    downstream |= {
+        pt.path
+        for d in (*cn.devices, *cn.switches)
+        for pt in asset_model.points_of(d)
+        if pt.name not in ("Comm", "Status")
+    }
     # The hall's chilled-water units take up more of its heat, so the chiller plant sees it,
     # and through the water it supplies every zone, the other halls move by millikelvin:
     # their sensors, their Plant View temperatures, their DX units and every chilled-water

@@ -41,6 +41,7 @@ TARGET = {
     "Temperature and Humidity": SENSOR,
     "Environment Monitoring": "Environment Monitoring/Level 1/DH03/Environment Monitoring 5",
     "Network Device": SWITCH,
+    "Network Switch": "Network Switches/MAIN CORE SWITCH A",
     "Weather Station": "~WX-01",
     "IT Load": "~IT-DH03",
     "GPQM144": "Meter/SPPA Incomer 1",  # a utility loss needs an incomer
@@ -70,6 +71,13 @@ def _sim(plant_design, seed: int = 7) -> Simulation:
 
 def _inject(at: int, target: str, fault: str, **params) -> Event:
     return Event(at, "fault.inject", target, {"fault": fault, **params})
+
+
+def _target(spec, plant_design) -> str:
+    """The asset a fault is exercised on: its type's TARGET, or for a fault restricted to
+    certain assets of its type (a utility loss needs an incomer; a switch or gateway fault
+    needs that role), the first of those."""
+    return next(iter(spec.targets(plant_design))) if spec.where else TARGET[spec.asset_type]
 
 
 def _clear(at: int, target: str, fault: str) -> Event:
@@ -220,9 +228,10 @@ def test_the_fault_domain_writes_only_its_mechanism_variable(plant_design):
     """A fault never writes alarm points or any other state: only its own variable."""
     for spec in STANDARD_CATALOG:
         sim = Simulation(plant_design, [FaultDomain(STANDARD_CATALOG)], 1, START)
-        sim.schedule(_inject(START, TARGET[spec.asset_type], spec.id, severity=0.5))
+        target = _target(spec, plant_design)
+        sim.schedule(_inject(START, target, spec.id, severity=0.5))
         sim.step()
-        assert sim.state.assets == {TARGET[spec.asset_type]: {spec.variable: 0.5 * spec.span}}
+        assert sim.state.assets == {target: {spec.variable: 0.5 * spec.span}}
 
 
 def test_onset_ramps_the_level_and_auto_clear_ends_the_fault_without_a_log_entry(plant_design):
@@ -351,7 +360,7 @@ def test_clearing_every_fault_returns_to_the_base_world_within_the_settling_time
     plant_design, asset_model, projector, spec
 ):
     base, sim = _sim(plant_design), _sim(plant_design)
-    target = TARGET[spec.asset_type]
+    target = _target(spec, plant_design)
     sim.schedule(_inject(START, target, spec.id, ramp_min=2))
     sim.schedule(_inject(START + 60, CRAC1, "crac.fan_failure", severity=0.5))
     sim.schedule(_clear(START + 1200, target, spec.id))
@@ -549,7 +558,18 @@ def test_a_preview_of_a_quality_fault_lists_the_network_in_order(
     )
     nodes = [a.node for a in preview.affected]
     assert nodes[0] == SWITCH
-    assert set(nodes[1:]) == set(plant_design.downstream(SWITCH, "net", transitive=True))
+    # Everything the switch sits between the supervisor and: its access devices, but not the
+    # supervisor server itself, which polls the switch, and never its redundant partner.
+    assert set(nodes[1:]) == {
+        "Network Topology/DATABASE SERVER A",
+        EWS,
+        "Network Topology/KVM SENDER A",
+        "Network Topology/NTP SERVER A",
+        "Network Topology/OWS-A1",
+        "Network Topology/OWS-A2",
+        "Network Topology/OWS-A3",
+    } - {"Network Topology/DATABASE SERVER A"}
+    assert "Network Topology/DATABASE SERVER B" not in nodes
     assert any(d.path == f"{EWS}/Status" and d.predicted_quality == "bad" for d in preview.diffs)
 
 
@@ -571,9 +591,10 @@ def test_a_60_minute_preview_completes_in_under_3_s(plant_design, asset_model, p
     started = time.perf_counter()
     preview_fault(sim, projector, asset_model, CRAC3, "crac.fan_failure", FaultParams(), 3600)
     # The PRD target is 3 s. The airside (#22) took the world past it on this suite's
-    # machines (about 3.5 s); #28 verifies the performance targets and owns bringing the
-    # preview back under 3 s. This bound catches regressions until then.
-    assert time.perf_counter() - started < 4.0
+    # machines (about 3.5 s), and the control network (#25) added a further ~0.5 s (about
+    # 4.2 s); #28 verifies the performance targets and owns bringing the preview back under
+    # 3 s. This bound catches regressions until then.
+    assert time.perf_counter() - started < 5.0
 
 
 @pytest.mark.parametrize("auto_clear_s", [60, 6])

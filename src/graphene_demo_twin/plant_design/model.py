@@ -128,6 +128,7 @@ class PlantDesign:
         connections: Iterable[Connection],
         it_basis: Iterable[ITBasis] = (),
         shafts: Iterable[Shaft] = (),
+        gateways: Mapping[str, Iterable[str]] | None = None,
     ) -> None:
         self._version = version
         self._floors: tuple[Floor, ...] = tuple(floors)
@@ -140,6 +141,10 @@ class PlantDesign:
         self._it_basis: Mapping[str, ITBasis] = MappingProxyType({b.hall: b for b in it_basis})
         self._shafts: Mapping[str, Shaft] = MappingProxyType({s.id: s for s in shafts})
         self._shaft_for = {k: s for s in self.shafts.values() for k in s.carries}
+        self._gateways: Mapping[str, tuple[str, ...]] = MappingProxyType(
+            {gw: tuple(systems) for gw, systems in (gateways or {}).items()}
+        )
+        self._gateway_for = {sys: gw for gw, systems in self._gateways.items() for sys in systems}
 
         self._floors_by_name = {f.name: f for f in self.floors}
         by_room: dict[str, list[PlacedAsset]] = {rid: [] for rid in self.rooms}
@@ -188,6 +193,16 @@ class PlantDesign:
     @property
     def shafts(self) -> Mapping[str, Shaft]:
         return self._shafts
+
+    @property
+    def gateways(self) -> Mapping[str, tuple[str, ...]]:
+        """The control network's field gateways: each gateway's asset path, and the systems
+        (`PlacedAsset.system`) whose field devices it carries."""
+        return self._gateways
+
+    def gateway_for(self, system: str) -> str | None:
+        """The gateway carrying the field devices of `system`, or None if none does."""
+        return self._gateway_for.get(system)
 
     def shaft_for(self, kind: ConnectionKind | str) -> Shaft | None:
         """The shaft connections of `kind` change floor in, or None if none carries it."""

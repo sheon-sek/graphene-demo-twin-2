@@ -168,6 +168,8 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
     problems += shaft_problems
     problems += _check_floor_changes(connections, shafts, rooms, assets)
     problems += _check_phases(connections, asset_model)
+    gateways, gateway_problems = _parse_gateways(raw.get("gateways", {}), assets)
+    problems += gateway_problems
 
     if problems:
         raise PlantDesignError(problems)
@@ -180,7 +182,35 @@ def parse_plant_design(raw: dict[str, Any], asset_model: AssetModel) -> PlantDes
         connections=connections,
         it_basis=it_basis.values(),
         shafts=shafts,
+        gateways=gateways,
     )
+
+
+GATEWAY_FOLDER = "Network Topology"
+"""Where the gateways the design names (`GATEWAY A`) sit in the Asset Model."""
+
+
+def _parse_gateways(
+    raw: dict[str, list[str]], assets: dict[str, PlacedAsset]
+) -> tuple[dict[str, tuple[str, ...]], list[str]]:
+    """Gateway asset path → the systems it carries; a system is carried by at most one."""
+    problems: list[str] = []
+    systems = {a.system for a in assets.values()}
+    gateways: dict[str, tuple[str, ...]] = {}
+    carrier: dict[str, str] = {}
+    for name, carried in raw.items():
+        path = f"{GATEWAY_FOLDER}/{name}"
+        if path not in assets or assets[path].type_id != "Network Device":
+            problems.append(f"gateway {name} is not a placed Network Device ({path})")
+            continue
+        for system in carried:
+            if system not in systems:
+                problems.append(f"gateway {name} carries an unknown system: {system}")
+            elif system in carrier:
+                problems.append(f"system {system} is carried by {carrier[system]} and {name}")
+            carrier.setdefault(system, name)
+        gateways[path] = tuple(carried)
+    return gateways, problems
 
 
 def _parse_shafts(

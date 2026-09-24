@@ -1,33 +1,31 @@
 """The world as currently modelled: its domains, in step order, and its projection."""
 
 from graphene_demo_twin.asset_model import AssetModel
-from graphene_demo_twin.faults import STANDARD_CATALOG, FaultCatalog, FaultDomain, Mechanism
+from graphene_demo_twin.faults import STANDARD_CATALOG, FaultCatalog, FaultDomain
 from graphene_demo_twin.plant_design import PlantDesign
 from graphene_demo_twin.projection import (
     Projector,
     airside_bindings,
     electrical_bindings,
-    placeholder_quality,
+    network_bindings,
+    network_quality,
     plant_bindings,
     site_bindings,
     thermal_bindings,
 )
-from graphene_demo_twin.sim import (
-    Domain,
-    PlaceholderNetworkDomain,
-    ThermalZoneDomain,
-    ZoneSensorDomain,
-)
+from graphene_demo_twin.sim import Domain, ThermalZoneDomain, ZoneSensorDomain
 from graphene_demo_twin.sim.airside import ChilledWaterUnitDomain, CracDomain
 from graphene_demo_twin.sim.electrical import ElectricalDomain
 from graphene_demo_twin.sim.it_load import ITLoadDomain
+from graphene_demo_twin.sim.network import NetworkDomain
 from graphene_demo_twin.sim.plant import ChillerPlantDomain
 from graphene_demo_twin.sim.site import SiteLoadDomain, SitePowerDomain
 from graphene_demo_twin.sim.weather import WeatherDomain
 
 
 def default_domains(catalog: FaultCatalog = STANDARD_CATALOG) -> list[Domain]:
-    """Faults first, so every model reads this step's fault levels; then the network, the
+    """Faults first, so every model reads this step's fault levels; then the control network
+    (which only decides what the supervisor sees), the
     weather and IT Load that drive the site, the DX CRAC units, the chiller plant, the
     chilled-water units and Cooling Blocks on the water it supplied, the other loads, the
     electrical network that supplies all of them, the thermal zones every load dissipates its
@@ -35,7 +33,7 @@ def default_domains(catalog: FaultCatalog = STANDARD_CATALOG) -> list[Domain]:
     power totals."""
     return [
         FaultDomain(catalog),
-        PlaceholderNetworkDomain(catalog.asset_types(Mechanism.QUALITY)),
+        NetworkDomain(),
         WeatherDomain(),
         ITLoadDomain(),
         CracDomain(),
@@ -67,6 +65,7 @@ def default_projector(
             *thermal_bindings(asset_model, design),
             *electrical_bindings(asset_model, design),
             *plant_bindings(asset_model, design),
+            *network_bindings(asset_model, design),
         ],
-        placeholder_quality(asset_model, design, catalog.asset_types(Mechanism.QUALITY)),
+        network_quality(asset_model, design),
     )

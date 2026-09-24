@@ -159,9 +159,17 @@ class Projector:
             for p in asset_model.points.values()
         )
 
-    def project(self, state: WorldState, only: Collection[str] | None = None) -> Projection:
+    def project(
+        self,
+        state: WorldState,
+        only: Collection[str] | None = None,
+        hold: Projection | None = None,
+    ) -> Projection:
         """Every point's value and quality, or with `only` just those points' (the others keep
-        their fallback or type default, and good quality)."""
+        their fallback or type default, and good quality).
+
+        With `hold`, the previous projection, a point whose communication is lost (bad by its
+        quality binding) keeps the value `hold` gave it: the last value that got through."""
         values = dict(self._template)
         degraded: dict[str, Quality] = {}
         data_types = self._data_types
@@ -189,6 +197,10 @@ class Projector:
                 for path in q.paths:
                     if degraded.get(path) is not Quality.BAD:
                         degraded[path] = quality
+                if quality is Quality.BAD and hold is not None:
+                    held = hold.values
+                    for path in q.paths:
+                        values[path] = held[path]
         return Projection(state.time, MappingProxyType(values), MappingProxyType(degraded))
 
     def differences(

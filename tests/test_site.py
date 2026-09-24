@@ -534,7 +534,7 @@ def test_the_p1_kpis_have_a_causal_source(projector, asset_model):
         if not in_scope or point.support:
             continue
         if path.startswith("Other/Gateway"):
-            assert entry.source is PointSource.FALLBACK  # the control network is P4 (#25)
+            assert entry.source is PointSource.PHYSICS  # the control network is P4 (#25)
         elif point.source_class is SourceClass.STATIC_METADATA:
             continue
         else:

@@ -9,6 +9,7 @@ from typing import Any
 from graphene_demo_twin.plant_design import ConnectionKind, PlantDesign
 from graphene_demo_twin.sim import Event, EventError
 from graphene_demo_twin.sim.electrical import METER_TYPES, incomers
+from graphene_demo_twin.sim.network import NTP, network, role_of
 from graphene_demo_twin.sim.plant import plant_layout
 
 INJECT = "fault.inject"
@@ -236,6 +237,10 @@ class FaultCatalog:
         if spec.where is not None and event.target not in spec.targets(design):
             return f"{spec.id} applies only to {', '.join(spec.targets(design))}"
         return None
+
+
+def _network_role(design: PlantDesign, role: str) -> tuple[str, ...]:
+    return tuple(d for d in network(design).devices if role_of(d) == role)
 
 
 def _sensor_faults(prefix: str, asset_type: str, aisle: str) -> tuple[FaultSpec, ...]:
@@ -575,8 +580,72 @@ STANDARD_CATALOG = FaultCatalog(
             "quality.comm_loss",
             1.0,
             "fraction of packets lost",
-            "The device stops forwarding: it and everything downstream of it on the network "
-            "lose quality.",
+            "The device stops forwarding: it and everything the supervisor reaches only "
+            "through it lose quality.",
+        ),
+        FaultSpec(
+            "network.switch_failure",
+            "Switch failure",
+            "Network Device",
+            FaultCategory.COMMUNICATION,
+            "quality.device_failure",
+            1.0,
+            "fail",
+            "The switch dies (once the level passes half): its links go down, and every "
+            "device and field point the supervisor reaches only through it goes Bad and "
+            "stale. The equipment behind it keeps running. On Clear it reboots.",
+            where=lambda design: _network_role(design, "switch"),
+        ),
+        FaultSpec(
+            "network.gateway_failure",
+            "Gateway failure",
+            "Network Device",
+            FaultCategory.COMMUNICATION,
+            "quality.device_failure",
+            1.0,
+            "fail",
+            "The field gateway dies (once the level passes half): every point of the systems "
+            "it carries goes Bad and stale, while the equipment keeps running. On Clear it "
+            "reboots.",
+            where=lambda design: _network_role(design, "gateway"),
+        ),
+        FaultSpec(
+            "network.port_flap",
+            "Port flap",
+            "Network Switch",
+            FaultCategory.COMMUNICATION,
+            "quality.port_flap",
+            1.0,
+            "fraction of each cycle down",
+            "The switch's first uplink port flaps: its link drops for part of every 20 s, "
+            "errors climb, the switch works harder, and everything reached through the link "
+            "turns Uncertain.",
+            default_severity=0.5,
+        ),
+        FaultSpec(
+            "network.server_overload",
+            "Server overload",
+            "Network Device",
+            FaultCategory.EQUIPMENT,
+            "constraint.cpu_overload",
+            1.0,
+            "share of spare CPU consumed",
+            "A runaway process eats the server's spare CPU and memory: it answers slowly and "
+            "warns. A SCADA server past 95 % CPU overruns its scan, so what only it serves "
+            "goes Uncertain; its redundant partner keeps the rest good.",
+            where=lambda design: _network_role(design, "server"),
+        ),
+        FaultSpec(
+            "network.ntp_drift",
+            "NTP drift",
+            "Network Device",
+            FaultCategory.SENSOR,
+            "observation.clock_drift_s_per_h",
+            60.0,
+            "s/h",
+            "The time server's clock drifts, growing until Clear resynchronises it; it warns "
+            "once it is a second out.",
+            where=lambda design: (NTP,) if NTP in design.assets else (),
         ),
         FaultSpec(
             "weather.high_wet_bulb",
@@ -701,5 +770,4 @@ STANDARD_CATALOG = FaultCatalog(
         ),
     ]
 )
-"""The catalog, consumed by the device models in `sim` (the stand-ins in `sim.placeholder`
-until their P1 and P2 physics arrive)."""
+"""The catalog, consumed by the device models in `sim`."""

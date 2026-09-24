@@ -337,7 +337,9 @@ class Twin:
 
     def _project(self) -> Frame:
         state = self.live.state
-        projection = self.projector.project(state)
+        previous = getattr(self, "_frame", None)
+        hold = previous.projection if previous is not None else None
+        projection = self.projector.project(state, hold=hold)
         return Frame(next(self._seq), self._epoch, projection, state, self.live.events)
 
     def _wake(self) -> None:

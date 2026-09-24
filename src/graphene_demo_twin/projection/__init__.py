@@ -2,7 +2,7 @@
 
 from graphene_demo_twin.projection.airside import airside_bindings
 from graphene_demo_twin.projection.electrical import electrical_bindings
-from graphene_demo_twin.projection.placeholder import placeholder_quality
+from graphene_demo_twin.projection.network import network_bindings, network_quality
 from graphene_demo_twin.projection.plant import plant_bindings
 from graphene_demo_twin.projection.projector import (
     Binding,
@@ -34,7 +34,8 @@ __all__ = [
     "coerce",
     "electrical_bindings",
     "fallback_value",
-    "placeholder_quality",
+    "network_bindings",
+    "network_quality",
     "plant_bindings",
     "site_bindings",
     "thermal_bindings",
