@@ -93,6 +93,13 @@ SCENARIOS = {
         recovery_s=1500,
         tolerance=0.5,
     ),
+    "tower.group_fan_failure": Scenario(
+        CT1_CELL,
+        f"{CSC}/Cooling Towers/CT-001/Alarm Status",
+        _becomes("FAN TRIP"),
+        "Cooling Towers Plant/R_P1_CT5/System Failure_Trip",  # another cell of the group
+        recovery_s=5,
+    ),
     "tower.fill_fouling": Scenario(
         CT1_CELL,
         f"{CSC}/Cooling Towers/CT-001/Fan Speed",
@@ -331,10 +338,12 @@ def test_a_crac_compressor_failure_leaves_the_lag_compressor(plant_design, proje
 
 CHW_SUPPLY = re.compile(
     r"(Chilled Water Supply Temp(erature)?|CHWS Temp|CHWS TS|TS-01/Temperature"
-    r"|BT-01/Temperature|Chilled Water Supply Inlet Temp)$"
+    r"|BT-01/Temperature|Chilled Water Supply (Inlet|Outlet) Temp"
+    r"|Buffer Tanks/BT-00\d/(Inlet|Outlet) Temp)$"
 )
-"""Every point that observes the chilled water the plant supplies. A buffer tank's outlet
-is not among them: isolated with its leg, a standby tank holds the charge it had."""
+"""Every point that observes the chilled water the plant supplies, in the UDTs and the
+Plant Views. An isolated buffer tank keeps its charge, but its outlet pipe stands and the
+sensor in it warms toward the plant room."""
 
 
 def test_all_chillers_stopped_warms_the_chilled_water_on_every_observer(plant_design, projector):
@@ -351,6 +360,8 @@ def test_all_chillers_stopped_warms_the_chilled_water_on_every_observer(plant_de
     assert {"FCU", "FWU", "Buffer Tank", f"{CSC}/Chillers", f"{CS}/Cooling Blocks"} <= groups
     assert f"{CS}/Main Headers/TS-01/Temperature" in observers
     assert sum(p.startswith(f"{CS}/Cooling Blocks/") for p in observers) == 16
+    tanks = [p for p in observers if "Buffer Tank" in p]
+    assert len(tanks) == 8 * 4, tanks  # UDT inlet and outlet, Plant View inlet and outlet
     for path in observers:
         assert v[path] > 16.0, path  # nominal is 14 °C
     # The CRACs are DX: none of their points observes the chilled water.
@@ -360,13 +371,12 @@ def test_all_chillers_stopped_warms_the_chilled_water_on_every_observer(plant_de
 
 
 def test_a_tower_fan_failure_is_read_from_the_points_as_a_chain(plant_design, projector):
-    """CT-001's fans all fail: its condenser water warms, then CH-001's condenser pressure,
-    then its power; then the sequencer brings on another chiller. Each link is read from
-    points alone, in that order."""
+    """One fault fails CT-001's fans: its condenser water warms, then CH-001's condenser
+    pressure, then its power; then the sequencer brings on another chiller. Each link is read
+    from points alone, in that order."""
     base, sim = _sim(plant_design), _sim(plant_design)
     cells = plant_layout(plant_design).legs[0].cells
-    for cell in cells:
-        sim.schedule(_inject(START, cell, "tower.fan_failure"))
+    sim.schedule(_inject(START, CT1_CELL, "tower.group_fan_failure"))
     b = projector.project(base.state).values
     links = {  # (point, how far it must move to count as changed)
         "cw": (f"{CSC}/Cooling Towers/CT-001/CWS Temp", 0.05),
@@ -391,6 +401,14 @@ def test_a_tower_fan_failure_is_read_from_the_points_as_a_chain(plant_design, pr
     v = projector.project(sim.state).values
     assert all(v[f"{cell}/System Failure_Trip"] for cell in cells)
     assert v[f"{CSC}/Cooling Towers/CT-001/Fan Speed"] == 0.0
+    # Past the chiller's trip reset the group's failure still shows, and the sequencer does
+    # not start CH-001 again against it.
+    for _ in range(12):
+        sim.advance(150)
+        v = projector.project(sim.state).values
+        assert all(v[f"{cell}/System Failure_Trip"] for cell in cells), sim.time
+        assert v[f"{CSC}/Cooling Towers/CT-001/Alarm Status"] == "FAN TRIP"
+        assert not v[f"{CSC}/Chillers/CH-001/Commands/Start"], sim.time
 
 
 def test_one_tower_fan_failure_is_made_up_by_the_rest_of_its_group(plant_design, projector):

@@ -431,7 +431,7 @@ def _tank(tank: str) -> Iterable[Binding]:
     members |= {
         "Buffer Tank Temperature Alarm": _var(tank, "alarm"),
         "Chilled Water Supply Inlet Temp": _var(tank, "in_c"),
-        "Chilled Water Supply Outlet Temp": _var(tank, "t1"),
+        "Chilled Water Supply Outlet Temp": _var(tank, "out_c"),
         "Chiller Buffer Tank Mode Status": _var(tank, "mode"),
         "Chiller Buffer Tank Recharge": _fn(tank, lambda x: x["recharge_lps"] > 0.0),
         "Chiller Buffer Tank Recharge Pipe Flow Meter": _var(tank, "recharge_lps"),
@@ -463,7 +463,7 @@ def _tank(tank: str) -> Iterable[Binding]:
         "Inlet Temp": _var(tank, "in_c"),
         "Level": _fn(tank, _level),
         "Mode": _const("AUTO"),
-        "Outlet Temp": _var(tank, "t1"),
+        "Outlet Temp": _var(tank, "out_c"),
         "Pressure": _var(tank, "pressure_kpa"),
         "Status": _fn(tank, _tank_status),
         "Water Temp": _var(tank, "avg_c"),

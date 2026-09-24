@@ -374,6 +374,19 @@ def _cooling_faults() -> tuple[FaultSpec, ...]:
             "for it, condenser water warms, and with it condenser pressure and chiller power.",
         ),
         FaultSpec(
+            "tower.group_fan_failure",
+            "Tower Group fan failure",
+            "Cooling Tower",
+            FaultCategory.EQUIPMENT,
+            "constraint.group_fan_loss",
+            1.0,
+            "fraction of airflow",
+            "The starter panel feeding the fans of the cell's whole Tower Group fails: every "
+            "cell loses airflow and trips past 90 %. Condenser water warms, then condenser "
+            "pressure and chiller power, until the chiller's high-pressure trip hands its "
+            "load to another; the sequencer starts no chiller on the group while it acts.",
+        ),
+        FaultSpec(
             "tower.fill_fouling",
             "Fill fouling",
             "Cooling Tower",
