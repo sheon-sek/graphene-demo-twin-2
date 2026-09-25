@@ -1,0 +1,40 @@
+#23 review fixes: commit c65049f on fix/23 (not pushed; no issues touched)
+
+Note: ./reports/23.txt and ./reviews/23.txt weren't in the worktree. I used /tmp/herdr-orch/reports/23.txt and /tmp/herdr-orch/reviews/23.txt instead.
+
+## Findings
+
+1. plant.py:827, a tower cell's trip clears when condenser flow stops (major): FIXED.
+   - A cell's trip now follows only the fan loss (loss >= FAN_TRIP_LOSS = 0.9) and no longer needs condenser flow.
+   - The branch for a group that isn't running used to reset `trip` to False. It now keeps the trip, and sets the group's fan-trip alarm, while the fault acts. So the cell's System Failure_Trip, the group's Alarm Status "FAN TRIP" and the plant's alarm summary stay raised after the chiller stops.
+   - New `_tower_failed(leg)`: the sequencer (`_available`) won't start a chiller whose Tower Group has lost every fan.
+   - A chiller that is already running keeps running until its own high-pressure trip stops it. So the issue's evidence chain (CW, then pressure, then power, then staging) still shows, and there's no retry after the 15-minute trip reset.
+   - The loss logic is now in one helper, `_fan_loss`, used by the physics and by `_tower_ua`. It covers the cell's own fault, a failure of its group's fans, and a low basin (the basin-low trip from #24).
+   - Test: the chain test now runs 1800 s past staging. It checks that every cell's trip, the group's Alarm Status and "CH-001 not commanded to start" all hold throughout.
+
+2. test_cooling_faults.py:362, the acceptance test injects five faults (major): FIXED.
+   - New catalog fault `tower.group_fan_failure` (Cooling Tower, equipment, `constraint.group_fan_loss`). It is injected on any one cell and fails every fan in that cell's Tower Group (a failed starter panel).
+   - The chain test now uses this single injection, and passes through the whole point-only chain.
+   - `tower.fan_failure` on one cell still has the other cells make up for it (that test is unchanged).
+   - The new fault has a Fault Preview scenario and a Clear-recovery scenario (SCENARIOS). The coverage test and test_faults pass: the "Cooling Tower" target already existed.
+
+3. test_cooling_faults.py:332, buffer tank outlet points stay at about 14 °C (major): FIXED, by having a no-flow tank's outlet reading evolve as stagnant water.
+   - New tank variable `out_c`: the sensor in the tank's outlet pipe. With flow it reads t1. With no flow the pipe water stands and the reading warms toward PLANT_ROOM_C = 26 °C, with a time constant DEAD_LEG_TAU_S = 600 s. Settling starts an isolated tank at the plant room temperature.
+   - Both "Chilled Water Supply Outlet Temp" and the Plant View "Outlet Temp" now read `out_c`. The tank's charge (its layers, avg_c) is unchanged.
+   - The acceptance regex now includes the UDT Inlet and Outlet points and the Plant View `Buffer Tanks/BT-00n/(Inlet|Outlet) Temp`. It asserts all 32 tank aliases are present, and every one reads above 16 °C.
+   - Side effect worth knowing: in the base world, the standby tanks' outlet points read about 26 °C (a standing pipe) where they used to read 14 °C.
+   - I rejected two alternatives:
+     - Non-good quality: CONTEXT.md reserves quality changes for communication faults.
+     - Discharging the tanks into the loop to ride through: this changes the hydraulics a lot, and 240 t of tanks would hold the supply cold for about 25 minutes.
+
+No minor findings were raised.
+
+## Tests
+- Targeted: all of test_cooling_faults.py, test_faults.py and test_water.py passed (not slow).
+- ruff format and ruff check: clean.
+- Full suite (`-m "not slow"`), run once: reached 100% with 542 dots and no F or E. The log has no final "N passed" summary line: the run most likely hit the 480 s timeout during teardown or reporting. I didn't re-run it, per the speed rules.
+
+## Deferred
+- Slow-marked tests were not run. This includes the parametrized "clear every fault returns to base within settling", which now also covers tower.group_fan_failure.
+- The 60-minute preview timing test is in the full run, and no failure was reported there. Another worktree's (feat27) log shows it failing on timing, which is known budget debt (#28).
+- Playwright/e2e: not run, apps/web is untouched.
