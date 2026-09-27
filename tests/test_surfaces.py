@@ -102,7 +102,6 @@ def test_opc_ua_browses_the_export_reads_sim_time_and_rejects_writes(
                 for segment in path.split("/"):
                     node = await node.get_child(ua.QualifiedName(segment, idx))
                 assert node.nodeid == point_node_id(path, idx)
-                assert node.nodeid.Identifier == f"point:{path}"
 
                 data_value = await node.read_data_value()
                 point = asset_model.point(path)
@@ -125,6 +124,19 @@ def test_opc_ua_browses_the_export_reads_sim_time_and_rejects_writes(
             assert await float4.read_data_type_as_variant_type() == ua.VariantType.Float
 
     asyncio.run(exercise())
+
+
+def test_opc_ua_node_id_escapes_colons_without_changing_export_paths():
+    namespace_index = 2
+    assert point_node_id(
+        "Genset/Genset 1/AC Voltage: L1-N", namespace_index
+    ).Identifier == "point:Genset/Genset 1/AC Voltage%3A L1-N"
+    assert point_node_id(
+        "Genset/Genset 1/AC Voltage%3A L1-N", namespace_index
+    ).Identifier == "point:Genset/Genset 1/AC Voltage%253A L1-N"
+    assert point_node_id("Dashboard/Total IT Load", namespace_index).Identifier == (
+        "point:Dashboard/Total IT Load"
+    )
 
 
 @pytest.mark.slow

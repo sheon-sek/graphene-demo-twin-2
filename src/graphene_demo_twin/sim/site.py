@@ -43,7 +43,7 @@ from graphene_demo_twin.sim.thermal import (
     ua_kw_per_k,
 )
 from graphene_demo_twin.sim.water import WATER, water_nodes
-from graphene_demo_twin.sim.weather import DAY_S, LOCAL_OFFSET_S, site_air
+from graphene_demo_twin.sim.weather import DAY_S, LOCAL_OFFSET_S, site_air, ytd_hours
 
 SITE = "site"
 """World-state key of the site as a whole: its power totals, the energy each floor has used
@@ -222,6 +222,13 @@ class SitePowerDomain:
     def complete(self, state: WorldState, ctx: StepContext) -> None:
         self._totals(state, ctx.design)
         site = state.assets[SITE]
+        # Each floor's energy per load class holds the year so far, like the IT registers.
+        # `complete` runs until the state settles, so assign rather than accumulate.
+        hours = ytd_hours(ctx.time)
+        seeded: dict[str, float] = {}
+        for node, key in _energy_keys(ctx.design):
+            seeded[key] = seeded.get(key, 0.0) + state.assets[node]["power_kw"] * hours
+        site.update(seeded)
         for window in AVERAGE_WINDOWS:
             for q in AVERAGED:
                 site[f"avg.{window}.{q}"] = site[q]

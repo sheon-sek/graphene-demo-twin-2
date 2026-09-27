@@ -64,7 +64,7 @@ def test_serve_parses_overrides():
 def test_documented_opc_ua_contract_matches_the_code():
     assert NAMESPACE in DOC
     assert f"opc.tcp://<host>:<opc-port>{ENDPOINT_PATH}" in DOC
-    assert "point:<exportPath>" in DOC
+    assert "point:<encodedExportPath>" in DOC
 
 
 def test_documented_http_routes_match_the_app(asset_model, plant_design, tmp_path):

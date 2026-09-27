@@ -21,6 +21,8 @@ from graphene_demo_twin.asset_model.model import AssetModel, Point, UdtInstance,
 REFERENCE_DIR = Path(__file__).resolve().parents[3] / "reference" / "graphene"
 INSTANCES_FILE = "real-graphene-demo-tag-instances.json"
 DEFINITIONS_FILE = "real-graphene-demo-udt-definitions.json"
+SUPPLEMENT_FILE = "demo-twin-supplement-tag-instances.json"
+"""Tags the live gateway has but the export above predates (RCMS425, per-hall PUE); same shape."""
 
 IGNITION_DEFAULT_DATA_TYPE = "Int4"
 IGNITION_DEFAULT_VALUE_SOURCE = "memory"
@@ -34,6 +36,8 @@ def load_asset_model(reference_dir: Path = REFERENCE_DIR) -> AssetModel:
     types = _TypeLibrary(definitions)
     walker = _InstanceWalker(types)
     walker.walk(instances, prefix="", owner=None)
+    if (supplement := reference_dir / SUPPLEMENT_FILE).exists():
+        walker.walk(_read(supplement), prefix="", owner=None)
     return AssetModel(types.udt_types(), walker.udt_instances, walker.points)
 
 

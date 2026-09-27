@@ -35,7 +35,7 @@ class UdtInstance:
 @dataclass(frozen=True, slots=True)
 class Point:
     path: str
-    """Export path; the registry key and the OPC UA NodeId suffix."""
+    """Export path and registry key; OPC UA NodeIds encode reserved path characters."""
     name: str
     """Member name: the last path element."""
     member: str | None

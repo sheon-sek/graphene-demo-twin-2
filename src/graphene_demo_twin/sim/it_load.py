@@ -16,7 +16,7 @@ from graphene_demo_twin.sim.engine import StepContext
 from graphene_demo_twin.sim.events import Event
 from graphene_demo_twin.sim.noise import Noise
 from graphene_demo_twin.sim.state import AssetState, WorldState
-from graphene_demo_twin.sim.weather import DAY_S, LOCAL_OFFSET_S
+from graphene_demo_twin.sim.weather import DAY_S, LOCAL_OFFSET_S, ytd_hours
 
 IT_TYPE = "IT Load"
 
@@ -67,7 +67,8 @@ class ITLoadDomain:
                 "design_kw": basis.design_kw,
                 "utilisation": (u := it_utilisation(ctx.noise, basis, ctx.time)),
                 "power_kw": basis.design_kw * u,
-                "energy_kwh": 0.0,
+                # The register starts with the year so far, not from zero at every start.
+                "energy_kwh": basis.design_kw * u * ytd_hours(ctx.time),
             }
             for node, basis in it_equipment(ctx.design).items()
         }
