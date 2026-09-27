@@ -6,3 +6,4 @@ The v2 rebuild keeps exactly one thing from v1: the Asset Model exported from ou
 
 - Twin Extensions are re-derived from what v2's physics and diagnosis need, under `Twin Extensions/`, and carry no compatibility promise.
 - The OPC UA surface (namespace `urn:eetarp:graphene:demo:twin`, NodeId `point:<encodedExportPath>`, SourceTimestamp = sim time, read-only) is part of the external contract alongside the Asset Model. Reserved characters in NodeId suffixes are encoded as documented by ADR-0005; BrowseNames and folder paths preserve the exact Asset Model export paths.
+- Tags the live gateway has but the export predates are added through a supplement file in the export's shape (ADR-0006). The contract is now 8,811 points.

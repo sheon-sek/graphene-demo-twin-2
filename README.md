@@ -2,7 +2,8 @@
 
 A deterministic virtual datacenter. It simulates equipment, physical networks, control and
 faults as one causal world. It then projects that world onto the exact tag structure of our
-Ignition/Graphene estate: the frozen Asset Model of 8,741 points. Operators observe and drive
+Ignition/Graphene estate: the frozen Asset Model of 8,811 points
+(the export plus a supplement of tags the live gateway has, ADR-0006). Operators observe and drive
 it through a 3D Operator Console, and Ignition and Graphene consume it over OPC UA.
 
 Every fault forms an inspectable chain: **chosen asset + fault → physical or control change →

@@ -20,7 +20,7 @@ glossary is in `CONTEXT.md`, and the decisions behind this design are in `docs/a
             │     └── WhatIfFork      (paused, accelerated, previews)  │
             ▼                                                          │
    projection.Projector ◄──────────────────────────────────────────────┘
-     (8,741 points: value + quality, typed to the Ignition data type)
+     (8,811 points: value + quality, typed to the Ignition data type)
             │
             ▼
    twin.Twin ── publishes one Frame per Live World second (the Coherent World)
