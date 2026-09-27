@@ -23,7 +23,7 @@ The process runs until it receives SIGINT or SIGTERM, then stops every surface a
 
 - Endpoint: `opc.tcp://<host>:<opc-port>/graphene/twin`, with security policy None and anonymous access.
 - Namespace URI: `urn:eetarp:graphene:demo:twin`.
-- Every Asset Model point is a variable with NodeId `ns=<index>;s=point:<exportPath>` (string identifier `point:<exportPath>`). Its BrowseName is the last path segment, under folders that mirror the export path from `Objects`. Folder NodeIds are `folder:<path>`.
+- Every Asset Model point is a variable with NodeId `ns=<index>;s=point:<encodedExportPath>` under folders that mirror the exact export path from `Objects`. Its BrowseName is the last path segment. In the string identifier, `%` is encoded as `%25` and `:` as `%3A` in the export path so clients that parse colons specially can address those points; all other characters are unchanged. Folder NodeIds are `folder:<path>`.
 - Data types: Float4 → Float, Float8 → Double, Int4 → Int32, Int8 → Int64, Boolean → Boolean, String → String, DateTime → DateTime. DataSet and Document are carried as JSON text in a String.
 - Every variable is read-only, and writes are rejected. Every point is rewritten once per Live World step. Its SourceTimestamp (and ServerTimestamp) is that step's sim time. Its StatusCode comes from the point's quality: Good, Uncertain or Bad.
 

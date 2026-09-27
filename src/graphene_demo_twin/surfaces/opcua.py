@@ -1,8 +1,10 @@
-"""The OPC UA surface (ADR-0001): every Asset Model point, read-only, updated once per frame.
+"""The OPC UA surface: every Asset Model point, read-only, updated once per frame.
 
 Namespace `urn:eetarp:graphene:demo:twin`; each point is a variable with NodeId
-`ns=<idx>;s=point:<exportPath>` under folders that mirror the export path, and its
-SourceTimestamp is the frame's sim time.
+`ns=<idx>;s=point:<encodedExportPath>` under folders that mirror the export path. The
+string identifier percent-escapes `%` and `:` so OPC Item Paths remain unambiguous and
+compatible with clients that parse colons specially. BrowseNames retain the exact export
+names, and SourceTimestamp is the frame's sim time.
 """
 
 import logging
@@ -40,7 +42,11 @@ _STATUS = {
 
 
 def point_node_id(path: str, namespace_index: int) -> ua.NodeId:
-    return ua.NodeId(f"point:{path}", namespace_index)
+    # Colon is a valid point-name character but some OPC clients parse it as syntax in
+    # an Item Path. Escape percent first so existing literal escape-looking names cannot
+    # collide with encoded characters (for example, `%3A` and `:` remain distinct).
+    encoded_path = path.replace("%", "%25").replace(":", "%3A")
+    return ua.NodeId(f"point:{encoded_path}", namespace_index)
 
 
 def endpoint_url(host: str, port: int) -> str:
