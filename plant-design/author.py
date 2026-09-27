@@ -408,6 +408,8 @@ for b in range(1, 15): link('power', 'DemoRack/E820', f'DemoRack/Breaker{b}')
 
 # Support assets — projected only
 SUPPORT = ['Smart Alarm Logic/', 'Dashboard/', 'Testing/', 'Meter/decoder1']
+for n in range(1, 7):  # Dashboard 1A–6A widgets show DH01–DH06 (ADR-0006)
+    place[f'Dashboard/{n}A'] = dict(room=None, x=None, y=None, role=f'Support Asset — Dashboard widget for Data Hall DH0{n}: IT load, facility load and PUE projected from the hall', sys='Support')
 for a in A:
     if a.startswith(tuple(SUPPORT)) and a not in place:
         place[a] = dict(room=None, x=None, y=None, role='Support Asset — projected, not simulated', sys='Support')
