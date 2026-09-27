@@ -7,8 +7,10 @@ condensers and fresh-air handlers its dry bulb and moisture. An external fault c
 more humid than the Base World.
 """
 
+import calendar
 import functools
 import math
+import time
 from dataclasses import dataclass
 
 from graphene_demo_twin.plant_design import PlantDesign
@@ -28,6 +30,18 @@ HUMID_SPELL_TAU_S = 600.0
 as drier air moves in."""
 DAY_S = 86_400
 YEAR_S = 365.2425 * DAY_S
+
+
+def year_start(t: int) -> int:
+    """Epoch seconds of 1 January 00:00 local time in the year of sim time `t`."""
+    year = time.gmtime(t + LOCAL_OFFSET_S).tm_year
+    return calendar.timegm((year, 1, 1, 0, 0, 0)) - LOCAL_OFFSET_S
+
+
+def ytd_hours(t: int) -> float:
+    """Hours since 1 January 00:00 local time: how much history an energy register that
+    was zeroed at year start holds at sim time `t`."""
+    return (t - year_start(t)) / 3600.0
 
 DRY_BULB_C = (24.8, 33.0)
 WET_BULB_C = (24.02, 26.98)

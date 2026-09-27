@@ -12,6 +12,7 @@ from graphene_demo_twin.sim import Scalar, WorldState
 from graphene_demo_twin.sim.demorack import (
     BANKS,
     BREAKERS,
+    DEMO,
     INCOMER,
     METERS,
     SLOTS,
@@ -23,10 +24,17 @@ CIRCUIT_POINT = re.compile(r"^(B[ab]\d)_I(\d\d)_(Current|P|PF|Q|S|Wh_Im)$")
 THDA_PCT, THDV_PCT = 7.0, 1.2
 """Current distortion of the rack's switch-mode loads and voltage distortion of its supply."""
 _DRIFT = (1.0, 1.04, 0.97)
+RCMS = f"{DEMO}/RCMS425"
+LEAK_MA_PER_KW = 0.08
+"""Protective-earth leakage of the rack's switch-mode PSU filters, per kW drawn."""
+DC_LEAK_SHARE = 0.06
+"""DC share of that leakage (rectifier front ends; what a Type B RCM sees)."""
+FAULT_MA, FAULT_DC_MA = 350.0, 21.0
+"""Residual current an earth-faulted breaker's circuits put on the rack's PE."""
 
 
 def demorack_bindings(asset_model: AssetModel, design: PlantDesign) -> list[Binding]:
-    bindings = [*_breakers(), *_incomer(asset_model), *_meters(asset_model)]
+    bindings = [*_breakers(), *_incomer(asset_model), *_meters(asset_model), *_rcms()]
     missing = [b.path for b in bindings if b.path not in asset_model.points]
     if missing:
         raise ValueError(f"Demo Rack bindings name points not in the Asset Model: {missing}")
@@ -38,6 +46,26 @@ def _breakers() -> Iterable[Binding]:
         yield Binding(f"{b}/OnOff", VariableRead(b, "closed"))
         yield Binding(f"{b}/Trip", VariableRead(b, "trip"))
         yield Binding(f"{b}/EF", VariableRead(b, "ef"))
+
+
+def _rcms() -> Iterable[Binding]:
+    """RCMS425 channel 1 on the rack incomer's protective earth: leakage scales with the load
+    the E820 sees, and an earth-faulted breaker adds its fault current until it clears."""
+
+    def ac_dc(state: WorldState) -> tuple[float, float]:
+        inc = state.assets[INCOMER]
+        kw = sum(inc[f"p{n}"] for n in range(1, 4)) if inc["live"] else 0.0
+        ef = any(state.assets[b]["ef"] for b in BREAKERS)
+        ac = kw * LEAK_MA_PER_KW * (1.0 - DC_LEAK_SHARE) + (FAULT_MA if ef else 0.0)
+        dc = kw * LEAK_MA_PER_KW * DC_LEAK_SHARE + (FAULT_DC_MA if ef else 0.0)
+        return ac, dc
+
+    # The registers hold amps; the RCMS425-D UDT scales them to mA (raw 0..1 -> 0..1000).
+    yield Binding(f"{RCMS}/I_AC_CH1", lambda st: ac_dc(st)[0] / 1000.0)
+    yield Binding(f"{RCMS}/I_DC_CH1", lambda st: ac_dc(st)[1] / 1000.0)
+    yield Binding(f"{RCMS}/I_RMS_CH1", lambda st: math.hypot(*ac_dc(st)) / 1000.0)
+    # 0 = self-test passed; 1 (the UDT's alarm value) = failed, as with no live incomer.
+    yield Binding(f"{RCMS}/TestStatus", lambda st: 0 if st.assets[INCOMER]["live"] else 1)
 
 
 def _line(a: float, b: float) -> float:
