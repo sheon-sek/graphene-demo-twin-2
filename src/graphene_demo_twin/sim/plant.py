@@ -110,7 +110,7 @@ LEG_CW_LPS = 1.18 * CHILLER_KWR / (CP * 5.0)
 """Condenser-water flow of one leg: the heat of a fully loaded chiller over 5 K."""
 CHW_HZ, CW_HZ, PUMP_HZ_PER_S = 48.0, 50.0, 5.0
 """Constant-speed primary and condenser pumps, and how fast their drives ramp."""
-CHW_PUMP_KW, CW_PUMP_KW, SECONDARY_PUMP_KW = 18.5, 30.0, 110.0
+CHW_PUMP_KW, CW_PUMP_KW, SECONDARY_PUMP_KW = 4.0, 6.0, 45.0
 
 # Secondary loop: pump head H0·s², pipework R·Q², and valves at the units that take the
 # flow their demand needs at the DP setpoint.
@@ -151,14 +151,14 @@ NATURAL_DRAFT = 0.05
 STANDING_UA = 0.3 * CELL_UA
 """Heat a cell's standing basin exchanges with the air per kelvin above the wet bulb: with no
 condenser water flowing, it settles to the wet bulb within minutes."""
-FAN_KW, FAN_MIN_PCT, FAN_PCT_PER_S = 11.0, 20.0, 5.0
+FAN_KW, FAN_MIN_PCT, FAN_PCT_PER_S = 3.0, 20.0, 5.0
 FAN_KP, FAN_KI = 10.0, 0.1
 BASIN_KG = 20_000.0
 CELL_VOLTS, CELL_PF = 400.0, 0.86
 
-ETA = 0.5
+ETA = 0.845
 """A chiller's share of the Carnot COP at its best part load."""
-IDLE_POWER = 0.1
+IDLE_POWER = 0.03
 """Share of rated power an unloaded compressor draws."""
 Q_TAU_S = 20.0
 """Capacity control: how fast the chiller moves towards the load it is asked for."""

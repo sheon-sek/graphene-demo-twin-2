@@ -13551,10 +13551,10 @@
     "hall": "DH01",
     "floor": "Level 1",
     "design_kW": 1000,
-    "operating": "55–80 %",
+    "operating": "43.5–46 %",
     "operating_pct": [
-     55,
-     80
+     43.5,
+     46
     ],
     "liquid_fraction": 0.0,
     "note": ""
@@ -13563,10 +13563,10 @@
     "hall": "DH02",
     "floor": "Level 1",
     "design_kW": 1000,
-    "operating": "55–80 %",
+    "operating": "43.5–46 %",
     "operating_pct": [
-     55,
-     80
+     43.5,
+     46
     ],
     "liquid_fraction": 0.0,
     "note": ""
@@ -13575,10 +13575,10 @@
     "hall": "DH03",
     "floor": "Level 1",
     "design_kW": 1000,
-    "operating": "55–80 %",
+    "operating": "43.5–46 %",
     "operating_pct": [
-     55,
-     80
+     43.5,
+     46
     ],
     "liquid_fraction": 0.0,
     "note": ""
@@ -13587,10 +13587,10 @@
     "hall": "DH04",
     "floor": "Level 1",
     "design_kW": 1000,
-    "operating": "55–80 %",
+    "operating": "43.5–46 %",
     "operating_pct": [
-     55,
-     80
+     43.5,
+     46
     ],
     "liquid_fraction": 0.0,
     "note": ""
@@ -13599,10 +13599,10 @@
     "hall": "DH05",
     "floor": "Level 2",
     "design_kW": 1000,
-    "operating": "55–80 %",
+    "operating": "43.5–46 %",
     "operating_pct": [
-     55,
-     80
+     43.5,
+     46
     ],
     "liquid_fraction": 0.0,
     "note": ""
@@ -13611,10 +13611,10 @@
     "hall": "DH06",
     "floor": "Level 2",
     "design_kW": 1000,
-    "operating": "55–80 %",
+    "operating": "43.5–46 %",
     "operating_pct": [
-     55,
-     80
+     43.5,
+     46
     ],
     "liquid_fraction": 0.0,
     "note": ""
@@ -13623,10 +13623,10 @@
     "hall": "DH07",
     "floor": "Level 2",
     "design_kW": 1000,
-    "operating": "55–80 %",
+    "operating": "43.5–46 %",
     "operating_pct": [
-     55,
-     80
+     43.5,
+     46
     ],
     "liquid_fraction": 0.0,
     "note": ""
@@ -13635,10 +13635,10 @@
     "hall": "DH08",
     "floor": "Level 2",
     "design_kW": 1200,
-    "operating": "55–80 %",
+    "operating": "43.5–46 %",
     "operating_pct": [
-     55,
-     80
+     43.5,
+     46
     ],
     "liquid_fraction": 0.4,
     "note": "40 % liquid-cooled via CDU-01–03"

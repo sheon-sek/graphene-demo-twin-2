@@ -436,7 +436,7 @@ fire = {'Ground': {'Zone 1': 'HV intake, genset yard, diesel farm', 'Zone 2': 'U
 
 basis = dict(
   climate='Tropical (Kuala Lumpur / Singapore class): dry bulb 24–33 °C, wet bulb 24–27 °C, RH 60–95 %; daily cycle with a deterministic seasonal drift',
-  it=[dict(hall=h, floor='Level 1' if i < 4 else 'Level 2', design_kW=1200 if h == 'DH08' else 1000, operating='55–80 %', operating_pct=[55, 80], liquid_fraction=0.4 if h == 'DH08' else 0.0, note='40 % liquid-cooled via CDU-01–03' if h == 'DH08' else '') for i, h in enumerate(HALLS)],
+  it=[dict(hall=h, floor='Level 1' if i < 4 else 'Level 2', design_kW=1200 if h == 'DH08' else 1000, operating='43.5–46 %', operating_pct=[43.5, 46], liquid_fraction=0.4 if h == 'DH08' else 0.0, note='40 % liquid-cooled via CDU-01–03' if h == 'DH08' else '') for i, h in enumerate(HALLS)],
   capacities=[
     ('Chillers', '4 × 3,500 kWr water-cooled centrifugal, 3 duty + 1 standby, CHW 14 / 20 °C'),
     ('Tower Groups', '4 groups × 5 cells, 1,000 kW rejection per cell at 27 °C WB; CW 32 / 37 °C; VFD fans'),
