@@ -145,4 +145,6 @@ class OpcUaSurface:
 def _encode(value: Scalar, variant_type: ua.VariantType) -> object:
     if variant_type is ua.VariantType.DateTime:
         return datetime.fromtimestamp(value / 1000.0, UTC)
+    if variant_type in (ua.VariantType.Float, ua.VariantType.Double):
+        return round(value, 2)
     return value
