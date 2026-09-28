@@ -40,7 +40,7 @@ UPS_TYPE, BRANCH_TYPE, GENSET_TYPE, TANK_TYPE = "UPS", "BCPM", "Genset", "Diesel
 V_LN, V_LL, HV_LL, HZ = 230.0, 400.0, 22_000.0, 50.0
 
 TX_KVA = 5000.0
-TX_NO_LOAD_KW, TX_FULL_LOAD_KW = 4.5, 40.0
+TX_NO_LOAD_KW, TX_FULL_LOAD_KW = 2.5, 20.0
 TX_MAGNETISING_KVAR, TX_REACTANCE = 25.0, 0.06
 TX_TAP, TX_DROP = 0.025, 0.045
 """Off-load tap boost, and the LV voltage drop at rated load, per unit."""
@@ -84,7 +84,7 @@ distributed-redundancy limit anywhere in its operating band."""
 CONTROL_UPS_KVA, CONTROL_UPS_KW = 100.0, 90.0
 CONTROL_LOAD_KW = 45.0
 """BMS control room and network load the control UPS carries."""
-UPS_NO_LOAD_KW, CONTROL_UPS_NO_LOAD_KW, UPS_LOSS, BYPASS_LOSS = 2.0, 0.6, 0.035, 0.005
+UPS_NO_LOAD_KW, CONTROL_UPS_NO_LOAD_KW, UPS_LOSS, BYPASS_LOSS = 1.0, 0.6, 0.012, 0.005
 BATTERY_MIN, CONTROL_BATTERY_MIN = 8.0, 15.0
 """Battery autonomy at the rated kW."""
 CHARGE_C, TAPER_SOC, CHARGE_EFFICIENCY = 1.2, 0.97, 0.95

@@ -95,28 +95,28 @@ _CLASS_OF_TYPE = {
     LIFT: LoadClass.OTHER,
     FIRE_PUMP: LoadClass.OTHER,
 }
-FAN_KW = {"PAHU": 11.0, "FCU": 2.2, "FWU": 3.0, "Ceiling Cooling Units": 7.5}
+FAN_KW = {"PAHU": 4.4, "FCU": 0.9, "FWU": 1.2, "Ceiling Cooling Units": 3.0}
 """Fan power of the chilled-water air units (`sim.airside`), which run at fixed speed."""
-CRAC_FAN_KW = 15.0
+CRAC_FAN_KW = 6.0
 """CRAC EC fan power at full speed; it follows the cube of speed."""
 SERVICE_KW = {
-    "CDU": 7.5,
-    "IPS": 2.5,
-    "RCMS": 4.0,
+    "CDU": 3.5,
+    "IPS": 1.5,
+    "RCMS": 2.0,
 }
 """Average draw of equipment whose physics comes later (the CDU loop, the control room's
 critical circuits)."""
-GENSET_AUX_KW = 30.0
+GENSET_AUX_KW = 10.0
 """Jacket-water heaters and battery chargers of the six gensets, beyond Meter16."""
 LIGHTING_W_M2 = {
-    "hall": 2.0,
-    "support": 9.0,
-    "electrical": 5.0,
-    "water": 4.0,
-    "cooling": 4.0,
-    "airside": 3.0,
-    "core": 8.0,
-    "corridor": 7.0,
+    "hall": 1.2,
+    "support": 5.4,
+    "electrical": 3.0,
+    "water": 2.4,
+    "cooling": 2.4,
+    "airside": 1.8,
+    "core": 4.8,
+    "corridor": 4.2,
     "fuel": 0.0,
 }
 OCCUPIED_KINDS = frozenset({"support", "core", "corridor"})
@@ -162,7 +162,7 @@ class SiteLoadDomain:
         for crac in assets_of(design, CRAC_TYPE):
             s = state.assets[crac]
             cooling = _crac_cooling_kw(state, design, crac)
-            cop = (3.4 - 0.08 * (dry - 27.0)) * (
+            cop = (12.5 - 0.02 * (dry - 27.0)) * (
                 1.0 - 0.5 * s.get("constraint.condenser_derate", 0.0)
             )
             compressor = cooling / cop if s["compressor_pct"] > 0.0 else 0.0
@@ -312,7 +312,7 @@ def _scheduled_loads(design: PlantDesign, office: bool, dark: bool) -> dict[str,
         else:
             watts = LIGHTING_W_M2.get(room.kind, 5.0)
             if room.kind in OCCUPIED_KINDS and not office:
-                watts *= 0.35
+                watts *= 0.9
         power[room.id] = room.w * room.h * watts / 1000.0
     for meter in stand_in_meters(design):
         power[meter] = GENSET_AUX_KW
