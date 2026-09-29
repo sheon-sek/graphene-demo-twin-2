@@ -69,4 +69,3 @@ Compatibility Fallback or a Causal Dead End: a constant, or a setpoint mirrored 
 measured point.
 
 Issues live in GitHub Issues for `sheon-sek/graphene-demo-twin-2`; see `AGENTS.md`.
-"# graphene-world-sim" 
